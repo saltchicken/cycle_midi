@@ -1,12 +1,28 @@
-use crate::ast::{Node, RenderContext, ScheduledNote, Program};
+use crate::ast::{Node, Pitch, RenderContext, ScheduledNote, Program};
 
 pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>) {
     match node {
         Node::Note { pitch, velocity, gate, .. } => {
+            let actual_pitch = match pitch {
+                Pitch::Absolute(p) => *p,
+                Pitch::Numeric(val) => {
+                    let val = *val; // Dereference from &i32 to i32
+                    if let Some(scale) = &ctx.scale {
+                        let scale_len = scale.intervals.len() as i32;
+                        let octave = val.div_euclid(scale_len);
+                        let degree = val.rem_euclid(scale_len) as usize;
+                        let note = scale.root_pitch as i32 + (octave * 12) + scale.intervals[degree] as i32;
+                        note.clamp(0, 127) as u8
+                    } else {
+                        val.clamp(0, 127) as u8
+                    }
+                }
+            };
+
             let actual_duration = ctx.duration_ms * (*gate as f64 / 100.0);
             out_notes.push(ScheduledNote {
                 channel: ctx.channel,
-                pitch: *pitch,
+                pitch: actual_pitch,
                 velocity: *velocity,
                 start_ms: ctx.start_ms,
                 duration_ms: actual_duration,
@@ -80,17 +96,25 @@ pub fn generate_next_cycle(
     }
 
     let master_duration_ms = (60_000.0 / bpm) * 4.0; // 1 Bar in 4/4
-    
     let mut notes = Vec::new();
 
     for track in &program.tracks {
         if track.is_muted { continue; }
         
+        // MIDI Standard: Channel 10 (index 9) is unpitched percussion.
+        // It ignores the global scale, but will still use a track-specific scale if you explicitly define one!
+        let active_scale = if track.channel == 9 {
+            track.scale.clone()
+        } else {
+            track.scale.clone().or(program.scale.clone())
+        };
+
         let ctx = RenderContext {
             channel: track.channel,
             start_ms: cycle_start_time_ms,
             duration_ms: master_duration_ms,
             cycle_count,
+            scale: active_scale, 
         };
         traverse_ast(&track.root_node, ctx, &mut notes);
     }

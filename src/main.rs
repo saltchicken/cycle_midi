@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let file_path = "live.mmn";
 
     if !Path::new(file_path).exists() {
-        fs::write(file_path, "#BPM=120\nT1: C4 . D4 _\nT2: {C3 | G3}").expect("Failed to create initial file");
+        fs::write(file_path, "#BPM=120\n#SCALE=C4 minor\nT1: 0 2 3 4 . 7 _\nT2(G3 minor_pentatonic): {-7 | 0}").expect("Failed to create initial file");
     }
 
     thread::spawn(move || {
@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     
                     if let Ok(contents) = fs::read_to_string(file_path) {
                         if contents.trim().is_empty() {
-                            let empty_prog = Program { bpm: None, global_silence: true, tracks: vec![] };
+                            let empty_prog = Program { bpm: None, scale: None, global_silence: true, tracks: vec![] };
                             if tx.send(empty_prog).is_ok() {
                                 println!("File empty. Silencing all tracks.");
                                 last_update = Instant::now();
@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut bpm = 120.0;
     let mut cycle_duration_ms = (60_000.0 / bpm) * 4.0;
-    let mut current_program = Program { bpm: None, global_silence: false, tracks: vec![] };
+    let mut current_program = Program { bpm: None, scale: None, global_silence: false, tracks: vec![] };
     let mut cycle_count = 0;
     
     let start_time = Instant::now();
