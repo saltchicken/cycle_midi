@@ -1,0 +1,122 @@
+# MIDI Mini-Notation (MMN) - Language Design Document
+
+## 1. Overview and Philosophy
+The MIDI Mini-Notation (MMN) is a domain-specific language designed for live coding MIDI sequences. It addresses the shortcomings of sample-first languages like TidalCycles by providing native support for standard MIDI concepts (Velocity, Gate, Chords) while drastically improving readability during live performance. 
+
+**Core Tenets:**
+* **Time is Implicit:** Time is always relative to a master "Cycle" (e.g., 1 bar). The cycle is divided equally by the number of root-level elements.
+* **Structure is Explicit:** Different types of groupings (sequential vs. parallel) use distinct visual brackets to avoid symbol soup.
+* **MIDI-First:** Modifiers for velocity and note length are attached inline via postfix operators.
+
+---
+
+## 2. Core Elements
+
+### Pitches
+Notes can be written using standard musical notation or raw MIDI integers.
+* `C4`, `D#3`, `Bb2` (Note names)
+* `60`, `62`, `127` (MIDI integer values)
+
+### Rests (`.`)
+A dot represents a rest. It occupies one fraction of the current time slot, creating clean visual negative space.
+* `C4 . D4 E4` (Cycle divided by 4: Note, Rest, Note, Note)
+
+### Sustain / Holds (`_`)
+An underscore holds the previous note for another step, extending the MIDI note-length (Gate) without re-triggering the note.
+* `60 . 62 _` (60 plays for 1/4 cycle, rest for 1/4, 62 plays for 2/4 cycle)
+
+---
+
+## 3. Grouping & Layering
+
+### Sequential Subdivisions `[ ]`
+Subdivides a specific slot of time into smaller equal parts.
+* `C4 [D4 E4] F4 .` 
+  * *Result:* The cycle is divided into 4 slots. Slot 2 is further divided in half, playing D4 and E4 as eighth notes.
+
+### Parallel Layers `{ | }`
+Plays multiple sequences simultaneously in the same timeframe, enabling easy polyrhythms and counterpoint.
+* `{ C4 E4 G4 | C3 . }` 
+  * *Result:* Layer 1 plays triplets. Layer 2 plays half-notes. Both share the same total cycle length.
+
+### Chords `+`
+Links notes together so they fire at the exact same millisecond.
+* `C4+E4+G4 [F4 A4]` 
+  * *Result:* A C-Major chord plays for half the cycle, followed by F4 and A4 playing for a quarter cycle each.
+
+---
+
+## 4. Inline MIDI Modifiers
+Modifiers are applied directly to notes, chords, or groups using postfix operators.
+
+* **Velocity `@`**: Values from 0 to 127. 
+  * `C4@100` (C4 with 100 velocity)
+* **Gate / Length `%`**: Percentage of the step size to hold the note before sending the `Note Off` message. Default is 100%.
+  * `C4%50` (C4 played staccato; Note Off fires exactly halfway through its time slot)
+* **Probability `?`**: Percentage chance (0-100) the note will fire on a given cycle.
+  * `[C4 E4]?75` (Both notes have a 75% chance of playing)
+* **Stacking Modifiers**: Modifiers can be chained.
+  * `C4+E4@80%20?50` (Chord, 80 velocity, 20% gate duration, 50% chance to play)
+
+---
+
+## 5. Algorithmic Generators
+
+### Euclidean Rhythms `(pulses, steps)`
+Generates highly musical, evenly distributed rhythms based on Euclidean geometry.
+* `C4(3,8)` 
+  * *Result:* Distributes 3 C4 notes as evenly as possible across 8 subdivisions (the classic Tresillo rhythm).
+
+### Repetition `*` and Slowdown `/`
+Multiplies or divides the rate of playback for an element within its time slot.
+* `C4*3` (Plays C4 three times evenly inside its time slot)
+* `[C4 E4]/2` (Plays C4 on the first cycle, E4 on the second cycle)
+
+### Alternators `< >`
+Cycles through the contained elements one by one each time the master loop repeats.
+* `<C4 E4 G4> D4` 
+  * *Cycle 1:* `C4 D4`
+  * *Cycle 2:* `E4 D4`
+  * *Cycle 3:* `G4 D4`
+
+---
+
+## 6. Rust Abstract Syntax Tree (AST) Mapping
+
+The notation is designed to be parsed via `nom` or `chumsky` into the following flat, recursive Rust AST structure:
+
+```rust
+#[derive(Debug, Clone, PartialEq)]
+pub enum Node {
+    /// A single MIDI note with its computed modifiers
+    Note { 
+        pitch: u8, 
+        velocity: u8, 
+        gate: u8, 
+        prob: u8 
+    },
+    
+    /// Multiple nodes firing simultaneously
+    Chord(Vec<Node>),
+    
+    /// Silence for the duration of the time slot
+    Rest,
+    
+    /// Extends the gate of the previously fired note
+    Hold,
+    
+    /// Sequential time subdivision: [ A B C ]
+    Sequence(Vec<Node>),
+    
+    /// Polyrhythmic / parallel playback: { A B | C D }
+    Parallel(Vec<Vec<Node>>),
+    
+    /// Algorithmic distribution: Node(pulses, steps)
+    Euclidean(Box<Node>, u8, u8),
+    
+    /// Rotates through children per master cycle: < A B C >
+    Alternator(Vec<Node>),
+    
+    /// Multiplier (*) or Slowdown (/)
+    SpeedModifier(Box<Node>, f32),
+}
