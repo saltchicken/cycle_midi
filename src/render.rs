@@ -75,11 +75,17 @@ pub fn generate_next_cycle(
     cycle_start_time_ms: f64, 
     cycle_count: usize
 ) -> Vec<ScheduledNote> {
+    if program.global_silence {
+        return Vec::new();
+    }
+
     let master_duration_ms = (60_000.0 / bpm) * 4.0; // 1 Bar in 4/4
     
     let mut notes = Vec::new();
 
     for track in &program.tracks {
+        if track.is_muted { continue; }
+        
         let ctx = RenderContext {
             channel: track.channel,
             start_ms: cycle_start_time_ms,

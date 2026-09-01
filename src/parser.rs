@@ -122,18 +122,28 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         .padded()
         .or_not();
 
-    let track = just('T')
-        .ignore_then(text::int(10).map(|s: String| s.parse::<u8>().unwrap()))
+    let silence_decl = just("#SILENCE")
+        .padded()
+        .or_not()
+        .map(|s| s.is_some());
+
+    let track = just('!')
+        .or_not()
+        .map(|m| m.is_some())
+        .then_ignore(just('T'))
+        .then(text::int(10).map(|s: String| s.parse::<u8>().unwrap()))
         .then_ignore(just(':'))
         .padded()
         .then(expr.padded().repeated().map(Node::Sequence))
-        .map(|(ch, root_node)| Track {
+        .map(|((is_muted, ch), root_node)| Track {
             channel: ch.saturating_sub(1).min(15), 
+            is_muted,
             root_node,
         });
 
     bpm_decl
+        .then(silence_decl)
         .then(track.repeated())
-        .map(|(bpm, tracks)| Program { bpm, tracks })
+        .map(|((bpm, global_silence), tracks)| Program { bpm, global_silence, tracks })
         .then_ignore(end())
 }

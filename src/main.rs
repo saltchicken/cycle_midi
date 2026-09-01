@@ -8,7 +8,7 @@ use render::generate_next_cycle;
 
 use chumsky::Parser;
 use midir::MidiOutput;
-use midir::os::unix::VirtualOutput;
+use midir::os::unix::VirtualOutput; //This line is critical to make the virtual output
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs;
 use std::path::Path;
@@ -59,7 +59,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     thread::sleep(Duration::from_millis(15));
                     
                     if let Ok(contents) = fs::read_to_string(file_path) {
-                        if contents.trim().is_empty() { continue; }
+                        if contents.trim().is_empty() {
+                            let empty_prog = Program { bpm: None, global_silence: true, tracks: vec![] };
+                            if tx.send(empty_prog).is_ok() {
+                                println!("File empty. Silencing all tracks.");
+                                last_update = Instant::now();
+                            }
+                            continue;
+                        }
 
                         match parser.parse(contents) {
                             Ok(new_prog) => {
@@ -89,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut bpm = 120.0;
     let mut cycle_duration_ms = (60_000.0 / bpm) * 4.0;
-    let mut current_program = Program { bpm: None, tracks: vec![] };
+    let mut current_program = Program { bpm: None, global_silence: false, tracks: vec![] };
     let mut cycle_count = 0;
     
     let start_time = Instant::now();

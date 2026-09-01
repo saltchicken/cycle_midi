@@ -14,12 +14,14 @@ pub enum Node {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Track {
     pub channel: u8,
+    pub is_muted: bool,
     pub root_node: Node,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub bpm: Option<f64>,
+    pub global_silence: bool,
     pub tracks: Vec<Track>,
 }
 
