@@ -30,8 +30,25 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
         }
         Node::Rest => {}
         Node::Hold => {
-            if let Some(last_note) = out_notes.last_mut() {
-                last_note.duration_ms += ctx.duration_ms;
+            // Grab a copy of the very last note's metadata
+            if let Some(last_note) = out_notes.last().cloned() {
+                let target_start = last_note.start_ms;
+                let target_channel = last_note.channel;
+                
+                // Iterate backwards through the scheduled notes
+                for note in out_notes.iter_mut().rev() {
+                    // Only look at notes on the current channel
+                    if note.channel == target_channel {
+                        // If it started at the exact same time as the last note, extend it!
+                        if (note.start_ms - target_start).abs() < f64::EPSILON {
+                            note.duration_ms += ctx.duration_ms;
+                        } else {
+                            // The moment we hit a note that started earlier, we've finished 
+                            // extending the chord and can safely stop looking backward.
+                            break;
+                        }
+                    }
+                }
             }
         }
         Node::Chord(elements) => {
