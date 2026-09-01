@@ -39,8 +39,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         watcher.watch(watch_dir, RecursiveMode::NonRecursive).unwrap();
         println!("Listening for changes to {} in directory {:?}...", file_path, watch_dir);
 
+        let parser = mmn_parser();
+
         if let Ok(contents) = fs::read_to_string(file_path) {
-             if let Ok(initial_prog) = mmn_parser().parse(contents) {
+             if let Ok(initial_prog) = parser.parse(contents) {
                  let _ = tx.send(initial_prog);
              }
         }
@@ -61,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(contents) = fs::read_to_string(file_path) {
                         if contents.trim().is_empty() { continue; }
 
-                        match mmn_parser().parse(contents) {
+                        match parser.parse(contents) {
                             Ok(new_prog) => {
                                 if tx.send(new_prog).is_ok() {
                                     println!("Success! AST hot-swapped.");
@@ -159,7 +161,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        thread::sleep(Duration::from_millis(1)); 
+        // 5. ELIMINATE MIDI JITTER (Hybrid Sleep Strategy)
+        let now_ms = start_time.elapsed().as_secs_f64() * 1000.0;
+        
+        // Find the absolute closest upcoming event time
+        let mut next_event_ms = next_cycle_start_ms;
+        
+        if let Some(note) = upcoming_notes.last() {
+            if note.start_ms < next_event_ms {
+                next_event_ms = note.start_ms;
+            }
+        }
+        
+        for &(off_time, _) in &active_notes {
+            if off_time < next_event_ms {
+                next_event_ms = off_time;
+            }
+        }
+
+        let wait_ms = next_event_ms - now_ms;
+
+        // Dynamic waiting strategy
+        if wait_ms > 3.0 {
+            thread::sleep(Duration::from_millis(2));
+        } else if wait_ms > 1.0 {
+            thread::sleep(Duration::from_secs_f64((wait_ms - 0.5) / 1000.0));
+        } else if wait_ms > 0.0 {
+            std::hint::spin_loop();
+        }
     }
 
     Ok(())
