@@ -11,6 +11,12 @@ pub enum Node {
     SpeedModifier(Box<Node>, f32),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Program {
+    pub bpm: Option<f64>,
+    pub root_node: Node,
+}
+
 #[derive(Debug, Clone)]
 pub struct ScheduledNote {
     pub pitch: u8,

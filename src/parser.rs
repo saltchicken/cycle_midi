@@ -1,8 +1,8 @@
 use chumsky::prelude::*;
-use crate::ast::Node;
+use crate::ast::{Node, Program};
 
-pub fn mmn_parser() -> impl Parser<char, Node, Error = Simple<char>> {
-    recursive(|expr| {
+pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
+    let expr = recursive(|expr| {
         let rest = just('.').to(Node::Rest);
         let hold = just('_').to(Node::Hold);
 
@@ -110,9 +110,23 @@ pub fn mmn_parser() -> impl Parser<char, Node, Error = Simple<char>> {
                 Postfix::Div(val) => Node::SpeedModifier(Box::new(acc), 1.0 / val),
             })
         })
-    })
-    .padded()
-    .repeated()
-    .map(Node::Sequence)
-    .then_ignore(end())
+    });
+
+    // NEW: Parse floating point for BPM
+    let float_f64 = text::int::<char, Simple<char>>(10)
+        .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
+        .collect::<String>()
+        .map(|s| s.parse::<f64>().unwrap());
+
+    // NEW: Look for an optional `#BPM=<number>` tag
+    let bpm_decl = just("#BPM=")
+        .ignore_then(float_f64)
+        .padded()
+        .or_not();
+
+    // Map everything into our new Program struct
+    bpm_decl
+        .then(expr.padded().repeated().map(Node::Sequence))
+        .map(|(bpm, root_node)| Program { bpm, root_node })
+        .then_ignore(end())
 }
