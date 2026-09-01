@@ -12,13 +12,20 @@ pub enum Node {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Track {
+    pub channel: u8,
+    pub root_node: Node,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub bpm: Option<f64>,
-    pub root_node: Node,
+    pub tracks: Vec<Track>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ScheduledNote {
+    pub channel: u8,
     pub pitch: u8,
     pub velocity: u8,
     pub start_ms: f64,
@@ -27,6 +34,7 @@ pub struct ScheduledNote {
 
 #[derive(Debug, Clone)]
 pub struct RenderContext {
+    pub channel: u8,
     pub start_ms: f64,
     pub duration_ms: f64,
     pub cycle_count: usize,

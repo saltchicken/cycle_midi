@@ -1,10 +1,11 @@
-use crate::ast::{Node, RenderContext, ScheduledNote};
+use crate::ast::{Node, RenderContext, ScheduledNote, Program};
 
 pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>) {
     match node {
         Node::Note { pitch, velocity, gate, .. } => {
             let actual_duration = ctx.duration_ms * (*gate as f64 / 100.0);
             out_notes.push(ScheduledNote {
+                channel: ctx.channel,
                 pitch: *pitch,
                 velocity: *velocity,
                 start_ms: ctx.start_ms,
@@ -69,19 +70,24 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
 }
 
 pub fn generate_next_cycle(
-    ast: &Node, 
+    program: &Program, 
     bpm: f64, 
     cycle_start_time_ms: f64, 
     cycle_count: usize
 ) -> Vec<ScheduledNote> {
     let master_duration_ms = (60_000.0 / bpm) * 4.0; // 1 Bar in 4/4
-    let ctx = RenderContext {
-        start_ms: cycle_start_time_ms,
-        duration_ms: master_duration_ms,
-        cycle_count,
-    };
-
+    
     let mut notes = Vec::new();
-    traverse_ast(ast, ctx, &mut notes);
+
+    for track in &program.tracks {
+        let ctx = RenderContext {
+            channel: track.channel,
+            start_ms: cycle_start_time_ms,
+            duration_ms: master_duration_ms,
+            cycle_count,
+        };
+        traverse_ast(&track.root_node, ctx, &mut notes);
+    }
+    
     notes
 }
