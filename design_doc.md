@@ -10,7 +10,29 @@ The MIDI Mini-Notation (MMN) is a domain-specific language designed for live cod
 
 ---
 
-## 2. Core Elements
+## 2. Program Structure, Tracks, & Directives
+
+An MMN file consists of optional global directives followed by track declarations.
+
+### Global Directives
+Directives control the overall playback state of the sequencer. They are evaluated at the top of the file before any tracks.
+* `#BPM=120` or `#BPM=128.5`: Sets the master tempo. If omitted during a live-coding session, the engine simply maintains the last known BPM.
+* `#SILENCE`: Instantly mutes all playback globally when present. Useful for quick panic stops or dramatic dropouts during a performance.
+
+### Tracks and Channels
+Sequences are routed to specific MIDI channels using track declarations `TX:`, where `X` is the channel number (1-16).
+* `T1: C4 . D4 _` 
+  * *Result:* Plays the sequence on MIDI Channel 1.
+* `T10: 36 [38 38] 42 .` 
+  * *Result:* Plays on MIDI Channel 10 (traditionally used for drum machines).
+
+**Track Muting (`!`)**
+Prefix a track declaration with an exclamation point to mute it instantly without having to delete your code.
+* `!T1: C4 E4 G4 .` (Track 1 is muted and will not generate MIDI events)
+
+---
+
+## 3. Core Elements
 
 ### Pitches
 Notes can be written using standard musical notation or raw MIDI integers.
@@ -27,7 +49,7 @@ An underscore holds the previous note for another step, extending the MIDI note-
 
 ---
 
-## 3. Grouping & Layering
+## 4. Grouping & Layering
 
 ### Sequential Subdivisions `[ ]`
 Subdivides a specific slot of time into smaller equal parts.
@@ -46,7 +68,7 @@ Links notes together so they fire at the exact same millisecond.
 
 ---
 
-## 4. Inline MIDI Modifiers
+## 5. Inline MIDI Modifiers
 Modifiers are applied directly to notes, chords, or groups using postfix operators.
 
 * **Velocity `@`**: Values from 0 to 127. 
@@ -60,7 +82,7 @@ Modifiers are applied directly to notes, chords, or groups using postfix operato
 
 ---
 
-## 5. Algorithmic Generators
+## 6. Algorithmic Generators
 
 ### Euclidean Rhythms `(pulses, steps)`
 Generates highly musical, evenly distributed rhythms based on Euclidean geometry.
@@ -81,11 +103,31 @@ Cycles through the contained elements one by one each time the master loop repea
 
 ---
 
-## 6. Rust Abstract Syntax Tree (AST) Mapping
+## 7. Rust Abstract Syntax Tree (AST) Mapping
 
-The notation is designed to be parsed via `nom` or `chumsky` into the following flat, recursive Rust AST structure:
+The notation is designed to be parsed via `chumsky` into the following structured Rust AST:
 
 ```rust
+#[derive(Debug, Clone, PartialEq)]
+pub struct Program {
+    /// Master tempo (optional to allow carrying over previous state)
+    pub bpm: Option<f64>,
+    /// Global panic / mute toggle
+    pub global_silence: bool,
+    /// All defined MIDI tracks
+    pub tracks: Vec<Track>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Track {
+    /// 0-indexed MIDI channel (0-15 corresponds to Channels 1-16)
+    pub channel: u8,
+    /// Whether the track is prefixed with the `!` mute operator
+    pub is_muted: bool,
+    /// The parsed musical sequence for this track
+    pub root_node: Node,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     /// A single MIDI note with its computed modifiers
