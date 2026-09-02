@@ -105,8 +105,16 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
 
             for i in 0..chunks_to_render {
                 let mut step_ctx = ctx.clone();
-                step_ctx.start_ms = chunk_start_ms + (i as f64 * local_duration);
+                let absolute_chunk_start = chunk_start_ms + (i as f64 * local_duration);
+                
+                step_ctx.start_ms = absolute_chunk_start;
                 step_ctx.duration_ms = local_duration;
+                
+                // FIX: Update the cycle count based on the global absolute phase of this chunk.
+                // This allows alternators < > to properly advance within fast/slow modifiers!
+                // Using .round() prevents floating point inaccuracies from rounding down incorrectly.
+                step_ctx.cycle_count = (absolute_chunk_start / local_duration).round() as usize;
+
                 // Speed modifier manipulates time, but we leave the bounding window exactly 
                 // as it was so out-of-bounds notes are automatically clipped!
                 traverse_ast(child, step_ctx, out_notes);
