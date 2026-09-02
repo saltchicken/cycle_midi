@@ -35,12 +35,19 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
         }
         Node::Rest => {}
         Node::Hold => {
-            if let Some(last_start_ms) = out_notes.last().map(|n| n.start_ms) {
-                for note in out_notes.iter_mut().rev() {
-                    if (note.start_ms - last_start_ms).abs() < f64::EPSILON {
-                        note.duration_ms += ctx.duration_ms;
-                    } else if note.start_ms < last_start_ms - f64::EPSILON {
-                        break;
+            // 1. Strict Rendering Window Check!
+            // Prevents out-of-bounds evaluations (e.g. inside `fast`) from infinitely extending the last note.
+            if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
+                if let Some(last_start_ms) = out_notes.last().map(|n| n.start_ms) {
+                    for note in out_notes.iter_mut().rev() {
+                        if (note.start_ms - last_start_ms).abs() < f64::EPSILON {
+                            note.duration_ms += ctx.duration_ms;
+                        } else {
+                            // 2. Break immediately! 
+                            // Chords are always pushed contiguously. The moment we see a different 
+                            // timestamp, we must stop to prevent bleeding into parallel layers or other tracks.
+                            break;
+                        }
                     }
                 }
             }
