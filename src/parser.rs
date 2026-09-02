@@ -3,13 +3,16 @@ use crate::ast::{Node, Pitch, Program, ScaleDef, Track};
 
 pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let int_u8 = text::int::<char, Simple<char>>(10)
-        .map(|s: String| s.parse::<u8>().unwrap());
+        .try_map(|s: String, span| {
+            s.parse::<u8>().map_err(|e| Simple::custom(span, format!("Invalid u8: {}", e)))
+        });
 
     let int_i32 = just('-').or_not()
         .then(text::int::<char, Simple<char>>(10))
-        .map(|(sign, s)| {
-            let num = s.parse::<i32>().unwrap();
-            if sign.is_some() { -num } else { num }
+        .try_map(|(sign, s), span| {
+            s.parse::<i32>()
+                .map_err(|e| Simple::custom(span, format!("Invalid i32: {}", e)))
+                .map(|num| if sign.is_some() { -num } else { num })
         });
 
     let note_name = choice((
@@ -21,7 +24,9 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     ));
 
     let pitch_val = note_name
-        .then(text::int(10).map(|s: String| s.parse::<i32>().unwrap()))
+        .then(text::int(10).try_map(|s: String, span| {
+            s.parse::<i32>().map_err(|e| Simple::custom(span, format!("Invalid octave: {}", e)))
+        }))
         .map(|(n, oct)| {
             let base = match n {
                 "C" => 0, "C#" | "Db" => 1, "D" => 2, "D#" | "Eb" => 3,
@@ -39,7 +44,9 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let float = text::int(10)
             .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
             .collect::<String>()
-            .map(|s| s.parse::<f32>().unwrap());
+            .try_map(|s, span| {
+                s.parse::<f32>().map_err(|e| Simple::custom(span, format!("Invalid float: {}", e)))
+            });
 
         let pitch = pitch_val.clone().map(Pitch::Absolute)
             .or(int_i32.clone().map(Pitch::Numeric));
@@ -103,7 +110,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let euclidean = just('(')
             .ignore_then(int_u8.clone())
             .then_ignore(just(','))
-            .then(int_u8)
+            .then(int_u8.clone())
             .then_ignore(just(')'))
             .map(|(p, s)| Postfix::Euclidean(p, s));
 
@@ -124,7 +131,9 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let float_f64 = text::int::<char, Simple<char>>(10)
         .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
         .collect::<String>()
-        .map(|s| s.parse::<f64>().unwrap());
+        .try_map(|s, span| {
+            s.parse::<f64>().map_err(|e| Simple::custom(span, format!("Invalid f64: {}", e)))
+        });
 
     #[derive(Clone)]
     enum Directive {
@@ -153,7 +162,11 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
     let directive = choice((
         just("#BPM=").ignore_then(float_f64.clone()).map(Directive::Bpm),
-        just("#QUANTIZE=").ignore_then(text::int::<char, Simple<char>>(10).map(|s| s.parse::<usize>().unwrap())).map(Directive::Quantize),
+        just("#QUANTIZE=").ignore_then(
+            text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid quantize: {}", e)))
+            })
+        ).map(Directive::Quantize),
         just("#SCALE=").ignore_then(scale_def.clone()).map(Directive::Scale),
         just("#SILENCE").to(Directive::Silence),
     )).padded();
@@ -192,8 +205,10 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         .or_not()
         .map(|m| m.is_some())
         .then_ignore(just('T'))
-        .then(text::int(10).map(|s: String| s.parse::<u8>().unwrap()))
-        .then(track_modifier.repeated()) // This allows any order, and any number of modifiers!
+        .then(text::int(10).try_map(|s: String, span| {
+            s.parse::<u8>().map_err(|e| Simple::custom(span, format!("Invalid channel: {}", e)))
+        }))
+        .then(track_modifier.repeated()) 
         .then_ignore(just(':'))
         .padded()
         .then(expr.padded().repeated().map(Node::Sequence))
@@ -202,7 +217,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             let mut track_scale = None;
             let mut track_speed = None;
 
-            // Iterate over the parsed modifiers and apply whichever ones we found
             for m in modifiers {
                 match m {
                     TrackModifier::Speed(s) => track_speed = Some(s),
