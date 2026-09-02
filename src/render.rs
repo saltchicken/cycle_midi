@@ -1,4 +1,34 @@
-use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledNote};
+use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledNote, ArpStyle, ScaleDef};
+
+pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>) -> u8 {
+    match pitch {
+        Pitch::Absolute(p) => *p,
+        Pitch::Numeric(val) => {
+            let val = *val;
+            if let Some(scale) = scale {
+                let scale_len = scale.intervals.len() as i32;
+                let octave = val.div_euclid(scale_len);
+                let degree = val.rem_euclid(scale_len) as usize;
+                let note = scale.root_pitch as i32 + (octave * 12) + scale.intervals[degree] as i32;
+                note.clamp(0, 127) as u8
+            } else {
+                val.clamp(0, 127) as u8
+            }
+        }
+    }
+}
+
+fn flatten_notes(node: &Node) -> Vec<(Pitch, u8, u8, u8)> {
+    match node {
+        Node::Note { pitch, velocity, gate, prob } => vec![(pitch.clone(), *velocity, *gate, *prob)],
+        Node::Chord(elements) | Node::Sequence(elements) | Node::Alternator(elements) => {
+            elements.iter().flat_map(flatten_notes).collect()
+        }
+        Node::Parallel(layers) => layers.iter().flat_map(|l| l.iter().flat_map(flatten_notes)).collect(),
+        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => flatten_notes(child),
+        Node::Rest | Node::Hold => vec![],
+    }
+}
 
 pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>) -> Vec<usize> {
     match node {
@@ -12,23 +42,9 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             }
 
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
-                let actual_pitch = match pitch {
-                    Pitch::Absolute(p) => *p,
-                    Pitch::Numeric(val) => {
-                        let val = *val; 
-                        if let Some(scale) = &ctx.scale {
-                            let scale_len = scale.intervals.len() as i32;
-                            let octave = val.div_euclid(scale_len);
-                            let degree = val.rem_euclid(scale_len) as usize;
-                            let note = scale.root_pitch as i32 + (octave * 12) + scale.intervals[degree] as i32;
-                            note.clamp(0, 127) as u8
-                        } else {
-                            val.clamp(0, 127) as u8
-                        }
-                    }
-                };
-
+                let actual_pitch = resolve_pitch(pitch, &ctx.scale);
                 let actual_duration = ctx.duration_ms * (*gate as f64 / 100.0);
+                
                 out_notes.push(ScheduledNote {
                     channel: ctx.channel,
                     pitch: actual_pitch,
@@ -135,6 +151,128 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                 
                 step_ctx.active_chord_indices = last_indices;
                 last_indices = traverse_ast(child, step_ctx, out_notes);
+            }
+            last_indices
+        }
+        Node::Arp(child, style) => {
+            let raw_notes = flatten_notes(child);
+            if raw_notes.is_empty() { return vec![]; }
+            
+            let mut resolved: Vec<(u8, u8, u8, u8)> = raw_notes.into_iter().map(|(pitch, vel, gate, prob)| {
+                (resolve_pitch(&pitch, &ctx.scale), vel, gate, prob)
+            }).collect();
+            
+            resolved.sort_by_key(|n| n.0);
+            
+            let mut pattern = Vec::new();
+            match style {
+                ArpStyle::Up => { pattern = resolved; }
+                ArpStyle::Down => { pattern = resolved; pattern.reverse(); }
+                ArpStyle::UpDown => {
+                    pattern = resolved.clone();
+                    let mut rev = resolved.clone();
+                    rev.reverse();
+                    if rev.len() > 2 {
+                        pattern.extend(rev[1..rev.len()-1].iter().cloned());
+                    }
+                }
+                ArpStyle::DownUp => {
+                    pattern = resolved.clone();
+                    pattern.reverse();
+                    let up = resolved.clone();
+                    if up.len() > 2 {
+                        pattern.extend(up[1..up.len()-1].iter().cloned());
+                    }
+                }
+                ArpStyle::Converge => {
+                    let mut left = 0;
+                    let mut right = resolved.len().saturating_sub(1);
+                    while left <= right {
+                        pattern.push(resolved[left].clone());
+                        if left != right {
+                            pattern.push(resolved[right].clone());
+                        }
+                        left += 1;
+                        if right == 0 { break; }
+                        right -= 1;
+                    }
+                }
+                ArpStyle::Diverge => {
+                    let mid = (resolved.len() - 1) / 2;
+                    let mut left = mid as i32;
+                    let mut right = (mid + 1) as i32;
+                    if resolved.len() % 2 != 0 {
+                        pattern.push(resolved[mid].clone());
+                        left -= 1;
+                    }
+                    while left >= 0 || right < resolved.len() as i32 {
+                        if left >= 0 {
+                            pattern.push(resolved[left as usize].clone());
+                            left -= 1;
+                        }
+                        if right < resolved.len() as i32 {
+                            pattern.push(resolved[right as usize].clone());
+                            right += 1;
+                        }
+                    }
+                }
+                ArpStyle::PinkyUp => {
+                    if resolved.len() > 1 {
+                        let pinky = resolved.last().unwrap().clone();
+                        for i in 0..resolved.len()-1 {
+                            pattern.push(resolved[i].clone());
+                            pattern.push(pinky.clone());
+                        }
+                    } else {
+                        pattern = resolved;
+                    }
+                }
+                ArpStyle::PinkyUpDown => {
+                    if resolved.len() > 1 {
+                        let pinky = resolved.last().unwrap().clone();
+                        for i in 0..resolved.len()-1 {
+                            pattern.push(resolved[i].clone());
+                            pattern.push(pinky.clone());
+                        }
+                        for i in (1..resolved.len().saturating_sub(2)).rev() {
+                            pattern.push(resolved[i].clone());
+                            pattern.push(pinky.clone());
+                        }
+                    } else {
+                        pattern = resolved;
+                    }
+                }
+            }
+
+            if pattern.is_empty() { return vec![]; }
+            let step_duration = ctx.duration_ms / pattern.len() as f64;
+            let mut last_indices = ctx.active_chord_indices.clone();
+
+            for (i, (pitch, vel, gate, prob)) in pattern.into_iter().enumerate() {
+                if prob < 100 && rand::random_range(0..100) >= prob {
+                    last_indices = vec![];
+                    continue;
+                }
+                
+                let mut step_ctx = ctx.clone();
+                step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
+                step_ctx.duration_ms = step_duration;
+                step_ctx.window_start_ms = step_ctx.window_start_ms.max(step_ctx.start_ms);
+                step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
+
+                if step_ctx.start_ms >= step_ctx.window_start_ms - 0.1 && step_ctx.start_ms < step_ctx.window_end_ms - 0.1 {
+                    let actual_duration = step_duration * (gate as f64 / 100.0);
+                    out_notes.push(ScheduledNote {
+                        channel: ctx.channel,
+                        pitch,
+                        velocity: vel,
+                        start_ms: step_ctx.start_ms,
+                        duration_ms: actual_duration,
+                    });
+                    last_indices = vec![out_notes.len() - 1];
+                } else {
+                    last_indices = vec![];
+                }
             }
             last_indices
         }

@@ -5,6 +5,18 @@ pub enum Pitch {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum ArpStyle {
+    Up,
+    Down,
+    UpDown,
+    DownUp,
+    Converge,
+    Diverge,
+    PinkyUp,
+    PinkyUpDown,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Note { pitch: Pitch, velocity: u8, gate: u8, prob: u8 },
     Chord(Vec<Node>),
@@ -15,6 +27,7 @@ pub enum Node {
     Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
     SpeedModifier(Box<Node>, f32),
+    Arp(Box<Node>, ArpStyle),
 }
 
 #[derive(Debug, Clone, PartialEq)]

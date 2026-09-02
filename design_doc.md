@@ -125,6 +125,23 @@ Cycles through the contained elements one by one each time the master loop repea
   * *Cycle 2:* `E4 D4`
   * *Cycle 3:* `G4 D4`
 
+### Arpeggiator `arp()`
+Breaks down chords or groups of notes into sequential arpeggio patterns, inspired by TidalCycles.
+* `C4+E4+G4 arp(up)`
+  * *Result:* Evaluates the chord into individual notes and plays them sequentially (C4, then E4, then G4) equally spaced within the time slot.
+* `[0 2 4] arp(updown)`
+  * *Result:* Takes the notes 0, 2, and 4 (relative to the active scale) and plays them up then down sequentially.
+
+**Supported Arp Styles:**
+* `up`: Lowest to highest pitch
+* `down`: Highest to lowest pitch
+* `updown`: Up then down (exclusive of duplicated top/bottom notes)
+* `downup`: Down then up
+* `converge`: Outside-in (lowest, highest, second lowest, second highest...)
+* `diverge`: Inside-out (middle expanding outwards)
+* `pinkyup`: Alternates between each note (lowest to highest) and the highest note.
+* `pinkyupdown`: PinkyUp going up, then coming back down.
+
 ---
 
 ## 7. Rust Abstract Syntax Tree (AST) Mapping
@@ -165,6 +182,11 @@ pub enum Pitch {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum ArpStyle {
+    Up, Down, UpDown, DownUp, Converge, Diverge, PinkyUp, PinkyUpDown
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     /// A single MIDI note with its computed modifiers
     Note { 
@@ -197,4 +219,7 @@ pub enum Node {
     
     /// Multiplier (*) or Slowdown (/)
     SpeedModifier(Box<Node>, f32),
+
+    /// Pattern generator breaking down notes into an arpeggio
+    Arp(Box<Node>, ArpStyle),
 }

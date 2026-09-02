@@ -1,5 +1,5 @@
 use chumsky::prelude::*;
-use crate::ast::{Node, Pitch, Program, ScaleDef, Track};
+use crate::ast::{Node, Pitch, Program, ScaleDef, Track, ArpStyle};
 
 pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let int_u8 = text::int::<char, Simple<char>>(10)
@@ -105,6 +105,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             Euclidean(u8, u8),
             Mul(f32),
             Div(f32),
+            Arp(ArpStyle),
         }
 
         let euclidean = just('(')
@@ -117,13 +118,33 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let speed_mul = just('*').ignore_then(float.clone()).map(Postfix::Mul);
         let speed_div = just('/').ignore_then(float).map(Postfix::Div);
 
-        let postfix = choice((euclidean, speed_mul, speed_div));
+        let arp_style = choice((
+            just("updown").to(ArpStyle::UpDown),
+            just("downup").to(ArpStyle::DownUp),
+            just("converge").to(ArpStyle::Converge),
+            just("diverge").to(ArpStyle::Diverge),
+            just("pinkyupdown").to(ArpStyle::PinkyUpDown),
+            just("pinkyup").to(ArpStyle::PinkyUp),
+            just("up").to(ArpStyle::Up),
+            just("down").to(ArpStyle::Down),
+        ));
+
+        // Making the arp block more forgiving of spaces internally
+        let arp_mod = just("arp")
+            .ignore_then(just('(').padded())
+            .ignore_then(arp_style)
+            .then_ignore(just(')').padded())
+            .map(Postfix::Arp);
+
+        // .padded() allows spaces before ANY modifier like `0+2+4 arp(up)`
+        let postfix = choice((euclidean, speed_mul, speed_div, arp_mod)).padded();
 
         atom.then(postfix.repeated()).map(|(base, postfixes)| {
             postfixes.into_iter().fold(base, |acc, post| match post {
                 Postfix::Euclidean(p, s) => Node::Euclidean(Box::new(acc), p, s),
                 Postfix::Mul(val) => Node::SpeedModifier(Box::new(acc), val),
                 Postfix::Div(val) => Node::SpeedModifier(Box::new(acc), 1.0 / val),
+                Postfix::Arp(style) => Node::Arp(Box::new(acc), style),
             })
         })
     });
