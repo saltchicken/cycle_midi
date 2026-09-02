@@ -12,7 +12,7 @@ use midir::os::unix::VirtualOutput;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 #[derive(Deserialize)]
 struct AppConfig {
     mmn_directory: String,
+    midi_port: Option<String>,
 }
 
 /// A simple helper to expand `~/` into the user's actual home directory
@@ -52,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .join("cycle_midi_workspace");
 
         let default_config_content = format!(
-            "# cycle_midi configuration\n# Specify the absolute path or use ~/ for your home directory\nmmn_directory = \"{}\"\n",
+            "# cycle_midi configuration\n# Specify the absolute path or use ~/ for your home directory\nmmn_directory = \"{}\"\n# Optional: Specify a default MIDI output port name to connect to\n# midi_port = \"Midi Through Port-0\"\n",
             default_workspace.display()
         );
         fs::write(&config_path, default_config_content).expect("Failed to write default config.toml");
@@ -144,9 +145,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let midi_out = MidiOutput::new("Cycle MIDI Scheduler")?;
-    let mut conn_out = midi_out.create_virtual("MMN Live Port")?;
-    println!("Virtual MIDI Port 'MMN Live Port' created. Route it to your synth!");
+    let mut midi_out = MidiOutput::new("Cycle MIDI Scheduler")?;
+
+    let mut conn_out = 'setup: {
+        if let Some(target_port) = &config.midi_port {
+            let ports = midi_out.ports();
+            let mut found_port = None;
+            for p in &ports {
+                if let Ok(name) = midi_out.port_name(p) {
+                    if name.to_lowercase().contains(&target_port.to_lowercase()) {
+                        found_port = Some(p.clone());
+                        println!("Found matching MIDI port: {}", name);
+                        break;
+                    }
+                }
+            }
+
+            if let Some(p) = found_port {
+                match midi_out.connect(&p, "Cycle MIDI Out") {
+                    Ok(conn) => {
+                        println!("Successfully connected to designated MIDI port!");
+                        break 'setup conn; // Return the connection instantly
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to connect to MIDI port: {}", e);
+                        // midir connect consumes the interface on failure, so we unwrap it back out for the fallback
+                        midi_out = e.into_inner();
+                    }
+                }
+            } else {
+                println!("MIDI port '{}' not found in available ports.", target_port);
+            }
+        }
+
+        // The fallback only happens if no config was set, port wasn't found, or connection failed
+        println!("Falling back to Virtual MIDI Port.");
+        let conn = midi_out.create_virtual("MMN Live Port")?;
+        println!("Virtual MIDI Port 'MMN Live Port' created. Route it to your synth!");
+        conn
+    };
 
     let mut bpm = 120.0;
     let mut cycle_duration_ms = (60_000.0 / bpm) * 4.0;
