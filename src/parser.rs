@@ -101,22 +101,41 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             rest, hold, seq_group, alt_group, parallel_group, chord_or_note,
         ));
 
-        enum Postfix {
+        #[derive(Clone)]
+        enum PostfixOp {
             Euclidean(u8, u8),
             Mul(f32),
             Div(f32),
             Arp(ArpStyle),
+            Only(usize, usize),
         }
+
+        struct Postfix {
+            op: PostfixOp,
+            cond: Option<(usize, usize)>,
+        }
+
+        let condition_clause = just("if(")
+            .ignore_then(int_u8.clone())
+            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| (interval as usize, offset.unwrap_or(0) as usize));
+
+        let only_mod = just("only(")
+            .ignore_then(int_u8.clone())
+            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| PostfixOp::Only(interval as usize, offset.unwrap_or(0) as usize));
 
         let euclidean = just('(')
             .ignore_then(int_u8.clone())
             .then_ignore(just(','))
             .then(int_u8.clone())
             .then_ignore(just(')'))
-            .map(|(p, s)| Postfix::Euclidean(p, s));
+            .map(|(p, s)| PostfixOp::Euclidean(p, s));
 
-        let speed_mul = just('*').ignore_then(float.clone()).map(Postfix::Mul);
-        let speed_div = just('/').ignore_then(float).map(Postfix::Div);
+        let speed_mul = just('*').ignore_then(float.clone()).map(PostfixOp::Mul);
+        let speed_div = just('/').ignore_then(float).map(PostfixOp::Div);
 
         let arp_style = choice((
             just("updown").to(ArpStyle::UpDown),
@@ -129,22 +148,43 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             just("down").to(ArpStyle::Down),
         ));
 
-        // Making the arp block more forgiving of spaces internally
         let arp_mod = just("arp")
             .ignore_then(just('(').padded())
             .ignore_then(arp_style)
             .then_ignore(just(')').padded())
-            .map(Postfix::Arp);
+            .map(PostfixOp::Arp);
 
-        // .padded() allows spaces before ANY modifier like `0+2+4 arp(up)`
-        let postfix = choice((euclidean, speed_mul, speed_div, arp_mod)).padded();
+        let postfix_op = choice((euclidean, speed_mul, speed_div, arp_mod, only_mod)).padded();
+
+        let postfix = postfix_op
+            .then(condition_clause.padded().or_not())
+            .map(|(op, cond)| Postfix { op, cond });
 
         atom.then(postfix.repeated()).map(|(base, postfixes)| {
-            postfixes.into_iter().fold(base, |acc, post| match post {
-                Postfix::Euclidean(p, s) => Node::Euclidean(Box::new(acc), p, s),
-                Postfix::Mul(val) => Node::SpeedModifier(Box::new(acc), val),
-                Postfix::Div(val) => Node::SpeedModifier(Box::new(acc), 1.0 / val),
-                Postfix::Arp(style) => Node::Arp(Box::new(acc), style),
+            postfixes.into_iter().fold(base, |acc, post| {
+                
+                let true_branch = match post.op {
+                    PostfixOp::Euclidean(p, s) => Node::Euclidean(Box::new(acc.clone()), p, s),
+                    PostfixOp::Mul(val) => Node::SpeedModifier(Box::new(acc.clone()), val),
+                    PostfixOp::Div(val) => Node::SpeedModifier(Box::new(acc.clone()), 1.0 / val),
+                    PostfixOp::Arp(style) => Node::Arp(Box::new(acc.clone()), style),
+                    PostfixOp::Only(interval, offset) => Node::Condition {
+                        interval,
+                        offset,
+                        true_branch: Box::new(acc.clone()),
+                        false_branch: Box::new(Node::Rest), // Falls back to silence
+                    },
+                };
+
+                match post.cond {
+                    Some((interval, offset)) => Node::Condition {
+                        interval,
+                        offset,
+                        true_branch: Box::new(true_branch),
+                        false_branch: Box::new(acc), // Falls back to unmodified branch
+                    },
+                    None => true_branch,
+                }
             })
         })
     });

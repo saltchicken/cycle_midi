@@ -144,7 +144,29 @@ Breaks down chords or groups of notes into sequential arpeggio patterns, inspire
 
 ---
 
-## 7. Rust Abstract Syntax Tree (AST) Mapping
+## 7. Conditionals
+
+Inspired by functional concepts in TidalCycles (like `every` or `whenmod`), you can conditionally apply modifiers or play notes based on the current master cycle count. This enables highly dynamic, generative sequences that evolve over time without writing long, repetitive phrases.
+
+### The `if(interval, offset)` Modifier
+Appends to any postfix modifier (like `*`, `/`, or `arp()`) to apply it *only* on specific cycles.
+* `[C4 D4] *2 if(4)`
+  * *Result:* Plays C4 and D4 twice as fast, but *only* on every 4th cycle (Cycle 0, 4, 8...). On other cycles, it plays them at their default speed.
+* `C4+E4+G4 arp(up) if(2, 1)`
+  * *Result:* Arpeggiates the chord every 2nd cycle, offset by 1 (Cycle 1, 3, 5...). On even cycles, it skips the arpeggiator and plays as a standard block chord.
+
+### The `only(interval, offset)` Node Filter
+Appends to a node to make it play *only* on specific cycles. On cycles where the condition fails, the node evaluates as a Rest (`.`).
+* `C4 only(4)`
+  * *Result:* Plays C4 on cycle 0, 4, 8... On all other cycles, this slot is completely silent.
+* `[C4 D4 only(2)]`
+  * *Result:* C4 plays every cycle, but D4 only plays every other cycle, creating rhythmic variety.
+
+*Note: The `offset` parameter is optional. `if(4)` is automatically shorthand for `if(4, 0)`.*
+
+---
+
+## 8. Rust Abstract Syntax Tree (AST) Mapping
 
 The notation is designed to be parsed via `chumsky` into the following structured Rust AST:
 

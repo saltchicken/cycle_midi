@@ -28,6 +28,12 @@ pub enum Node {
     Alternator(Vec<Node>),
     SpeedModifier(Box<Node>, f32),
     Arp(Box<Node>, ArpStyle),
+    Condition {
+        interval: usize,
+        offset: usize,
+        true_branch: Box<Node>,
+        false_branch: Box<Node>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

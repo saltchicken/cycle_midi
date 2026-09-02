@@ -18,14 +18,21 @@ pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>) -> u8 {
     }
 }
 
-fn flatten_notes(node: &Node) -> Vec<(Pitch, u8, u8, u8)> {
+fn flatten_notes(node: &Node, cycle_count: usize) -> Vec<(Pitch, u8, u8, u8)> {
     match node {
         Node::Note { pitch, velocity, gate, prob } => vec![(pitch.clone(), *velocity, *gate, *prob)],
         Node::Chord(elements) | Node::Sequence(elements) | Node::Alternator(elements) => {
-            elements.iter().flat_map(flatten_notes).collect()
+            elements.iter().flat_map(|n| flatten_notes(n, cycle_count)).collect()
         }
-        Node::Parallel(layers) => layers.iter().flat_map(|l| l.iter().flat_map(flatten_notes)).collect(),
-        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => flatten_notes(child),
+        Node::Parallel(layers) => layers.iter().flat_map(|l| l.iter().flat_map(|n| flatten_notes(n, cycle_count))).collect(),
+        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => flatten_notes(child, cycle_count),
+        Node::Condition { interval, offset, true_branch, false_branch } => {
+            if cycle_count % interval == *offset {
+                flatten_notes(true_branch, cycle_count)
+            } else {
+                flatten_notes(false_branch, cycle_count)
+            }
+        }
         Node::Rest | Node::Hold => vec![],
     }
 }
@@ -34,10 +41,8 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
     match node {
         Node::Note { pitch, velocity, gate, prob } => {
             if *prob < 100 {
-                // rand 0.10+ syntax: gen_range is now random_range, 
-                // and we can call it directly without the Rng trait
                 if rand::random_range(0..100) >= *prob {
-                    return vec![]; // Skip rendering this note
+                    return vec![]; 
                 }
             }
 
@@ -58,7 +63,6 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             vec![]
         }
         Node::Rest => {
-            // A rest breaks the chain of indices, meaning subsequent holds do nothing
             vec![]
         }
         Node::Hold => {
@@ -68,7 +72,6 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                         note.duration_ms += ctx.duration_ms;
                     }
                 }
-                // Return the same indices so multiple holds (`_ _ _`) keep extending the same notes
                 return ctx.active_chord_indices.clone();
             }
             vec![]
@@ -110,6 +113,13 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             let index = ctx.cycle_count % elements.len();
             traverse_ast(&elements[index], ctx, out_notes)
         }
+        Node::Condition { interval, offset, true_branch, false_branch } => {
+            if ctx.cycle_count % interval == *offset {
+                traverse_ast(true_branch, ctx, out_notes)
+            } else {
+                traverse_ast(false_branch, ctx, out_notes)
+            }
+        }
         Node::Euclidean(child, pulses, steps) => {
             if *steps == 0 || *pulses == 0 { return vec![]; }
             let step_duration = ctx.duration_ms / *steps as f64;
@@ -127,7 +137,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                     step_ctx.active_chord_indices = last_indices;
                     last_indices = traverse_ast(child, step_ctx, out_notes);
                 } else {
-                    last_indices = vec![]; // Rests interrupt the hold chain
+                    last_indices = vec![]; 
                 }
             }
             last_indices
@@ -155,7 +165,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             last_indices
         }
         Node::Arp(child, style) => {
-            let raw_notes = flatten_notes(child);
+            let raw_notes = flatten_notes(child, ctx.cycle_count);
             if raw_notes.is_empty() { return vec![]; }
             
             let mut resolved: Vec<(u8, u8, u8, u8)> = raw_notes.into_iter().map(|(pitch, vel, gate, prob)| {
