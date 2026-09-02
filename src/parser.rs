@@ -126,7 +126,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         .collect::<String>()
         .map(|s| s.parse::<f64>().unwrap());
 
-    // Fix: Added #[derive(Clone)] so chumsky can clone the enum during parsing combinations
     #[derive(Clone)]
     enum Directive {
         Bpm(f64),
@@ -177,39 +176,49 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         (bpm, quantize, scale, global_silence)
     });
 
-    let track_speed = choice((
-        just("fast").padded().ignore_then(float_f64.clone()).map(|v| v as f32),
-        just("slow").padded().ignore_then(float_f64.clone()).map(|v| 1.0 / (v as f32)),
-    ))
-    .padded()
-    .or_not();
+    #[derive(Clone)]
+    enum TrackModifier {
+        Speed(f32),
+        Scale(ScaleDef),
+    }
 
-    let track_scale = scale_def
-        .delimited_by(just('('), just(')'))
-        .padded()
-        .or_not();
+    let track_modifier = choice((
+        just("fast").padded().ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(v as f32)),
+        just("slow").padded().ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(1.0 / (v as f32))),
+        just("scale").padded().ignore_then(scale_def).map(TrackModifier::Scale),
+    ));
 
     let track = just('!')
         .or_not()
         .map(|m| m.is_some())
         .then_ignore(just('T'))
         .then(text::int(10).map(|s: String| s.parse::<u8>().unwrap()))
-        .then(track_speed)
-        .then(track_scale)
+        .then(track_modifier.repeated()) // This allows any order, and any number of modifiers!
         .then_ignore(just(':'))
         .padded()
         .then(expr.padded().repeated().map(Node::Sequence))
-        .map(|((((is_muted, ch), speed), scale), root_node)| {
-            let final_node = if let Some(s) = speed {
-                Node::SpeedModifier(Box::new(root_node), s)
-            } else {
-                root_node
-            };
+        .map(|(((is_muted, ch), modifiers), mut root_node)| {
+            
+            let mut track_scale = None;
+            let mut track_speed = None;
+
+            // Iterate over the parsed modifiers and apply whichever ones we found
+            for m in modifiers {
+                match m {
+                    TrackModifier::Speed(s) => track_speed = Some(s),
+                    TrackModifier::Scale(s) => track_scale = Some(s),
+                }
+            }
+
+            if let Some(s) = track_speed {
+                root_node = Node::SpeedModifier(Box::new(root_node), s);
+            }
+
             Track {
                 channel: ch.saturating_sub(1).min(15), 
                 is_muted,
-                scale,
-                root_node: final_node,
+                scale: track_scale,
+                root_node,
             }
         });
 
