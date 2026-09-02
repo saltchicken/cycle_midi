@@ -1,11 +1,8 @@
-use crate::ast::{Node, Pitch, RenderContext, ScheduledNote, Program};
+use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledNote};
 
-pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>) {
+pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>) -> Vec<usize> {
     match node {
         Node::Note { pitch, velocity, gate, .. } => {
-            // Strict Rendering Window Check!
-            // If the calculated absolute time of this note falls outside the valid 
-            // window for this slot/cycle, we drop it. (The -0.1 handles float boundaries).
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
                 let actual_pitch = match pitch {
                     Pitch::Absolute(p) => *p,
@@ -31,84 +28,94 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                     start_ms: ctx.start_ms,
                     duration_ms: actual_duration,
                 });
+                
+                return vec![out_notes.len() - 1];
             }
+            vec![]
         }
-        Node::Rest => {}
+        Node::Rest => {
+            // A rest breaks the chain of indices, meaning subsequent holds do nothing
+            vec![]
+        }
         Node::Hold => {
-            // 1. Strict Rendering Window Check!
-            // Prevents out-of-bounds evaluations (e.g. inside `fast`) from infinitely extending the last note.
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
-                if let Some(last_start_ms) = out_notes.last().map(|n| n.start_ms) {
-                    for note in out_notes.iter_mut().rev() {
-                        if (note.start_ms - last_start_ms).abs() < f64::EPSILON {
-                            note.duration_ms += ctx.duration_ms;
-                        } else {
-                            // 2. Break immediately! 
-                            // Chords are always pushed contiguously. The moment we see a different 
-                            // timestamp, we must stop to prevent bleeding into parallel layers or other tracks.
-                            break;
-                        }
+                for &idx in &ctx.active_chord_indices {
+                    if let Some(note) = out_notes.get_mut(idx) {
+                        note.duration_ms += ctx.duration_ms;
                     }
                 }
+                // Return the same indices so multiple holds (`_ _ _`) keep extending the same notes
+                return ctx.active_chord_indices.clone();
             }
+            vec![]
         }
         Node::Chord(elements) => {
+            let mut indices = vec![];
             for el in elements {
-                traverse_ast(el, ctx.clone(), out_notes);
+                indices.extend(traverse_ast(el, ctx.clone(), out_notes));
             }
+            indices
         }
         Node::Sequence(elements) => {
-            if elements.is_empty() { return; }
+            if elements.is_empty() { return vec![]; }
             let step_duration = ctx.duration_ms / elements.len() as f64;
+            
+            let mut last_indices = ctx.active_chord_indices.clone();
+            
             for (i, el) in elements.iter().enumerate() {
                 let mut step_ctx = ctx.clone();
                 step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
                 step_ctx.duration_ms = step_duration;
-                
-                // Shrink the valid rendering window to strictly this slot's bounds
                 step_ctx.window_start_ms = step_ctx.window_start_ms.max(step_ctx.start_ms);
                 step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
                 
-                traverse_ast(el, step_ctx, out_notes);
+                step_ctx.active_chord_indices = last_indices;
+                last_indices = traverse_ast(el, step_ctx, out_notes);
             }
+            last_indices
         }
         Node::Parallel(layers) => {
+            let mut all_indices = vec![];
             for layer in layers {
-                traverse_ast(&Node::Sequence(layer.clone()), ctx.clone(), out_notes);
+                all_indices.extend(traverse_ast(&Node::Sequence(layer.clone()), ctx.clone(), out_notes));
             }
+            all_indices
         }
         Node::Alternator(elements) => {
-            if elements.is_empty() { return; }
+            if elements.is_empty() { return vec![]; }
             let index = ctx.cycle_count % elements.len();
-            traverse_ast(&elements[index], ctx, out_notes);
+            traverse_ast(&elements[index], ctx, out_notes)
         }
         Node::Euclidean(child, pulses, steps) => {
-            if *steps == 0 || *pulses == 0 { return; }
+            if *steps == 0 || *pulses == 0 { return vec![]; }
             let step_duration = ctx.duration_ms / *steps as f64;
+            let mut last_indices = ctx.active_chord_indices.clone();
+            
             for i in 0..*steps {
                 let is_hit = ((i as usize * *pulses as usize) % (*steps as usize)) < (*pulses as usize);
                 if is_hit {
                     let mut step_ctx = ctx.clone();
                     step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
                     step_ctx.duration_ms = step_duration;
-                    
                     step_ctx.window_start_ms = step_ctx.window_start_ms.max(step_ctx.start_ms);
                     step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
                     
-                    traverse_ast(child, step_ctx, out_notes);
+                    step_ctx.active_chord_indices = last_indices;
+                    last_indices = traverse_ast(child, step_ctx, out_notes);
+                } else {
+                    last_indices = vec![]; // Rests interrupt the hold chain
                 }
             }
+            last_indices
         }
         Node::SpeedModifier(child, multiplier) => {
             let m = *multiplier as f64;
             let local_duration = ctx.duration_ms / m;
-            
-            // Calculate global phase alignment so sequences properly flow across cycles
             let phase_offset = ctx.start_ms.rem_euclid(local_duration);
             let chunk_start_ms = ctx.start_ms - phase_offset;
-            
-            // We iterate enough chunks to ensure the master cycle window is fully covered
             let chunks_to_render = (ctx.duration_ms / local_duration).ceil() as usize + 2;
+
+            let mut last_indices = ctx.active_chord_indices.clone();
 
             for i in 0..chunks_to_render {
                 let mut step_ctx = ctx.clone();
@@ -116,16 +123,12 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                 
                 step_ctx.start_ms = absolute_chunk_start;
                 step_ctx.duration_ms = local_duration;
-                
-                // FIX: Update the cycle count based on the global absolute phase of this chunk.
-                // This allows alternators < > to properly advance within fast/slow modifiers!
-                // Using .round() prevents floating point inaccuracies from rounding down incorrectly.
                 step_ctx.cycle_count = (absolute_chunk_start / local_duration).round() as usize;
-
-                // Speed modifier manipulates time, but we leave the bounding window exactly 
-                // as it was so out-of-bounds notes are automatically clipped!
-                traverse_ast(child, step_ctx, out_notes);
+                
+                step_ctx.active_chord_indices = last_indices;
+                last_indices = traverse_ast(child, step_ctx, out_notes);
             }
+            last_indices
         }
     }
 }
@@ -160,6 +163,7 @@ pub fn generate_next_cycle(
             window_end_ms: cycle_start_time_ms + master_duration_ms,
             cycle_count,
             scale: active_scale, 
+            active_chord_indices: vec![],
         };
         traverse_ast(&track.root_node, ctx, &mut notes);
     }

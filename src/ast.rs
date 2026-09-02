@@ -58,4 +58,5 @@ pub struct RenderContext {
     pub window_end_ms: f64,
     pub cycle_count: usize,
     pub scale: Option<ScaleDef>,
+    pub active_chord_indices: Vec<usize>,
 }

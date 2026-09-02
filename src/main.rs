@@ -7,8 +7,9 @@ use parser::mmn_parser;
 use render::generate_next_cycle;
 
 use chumsky::Parser;
+use crossbeam_channel::unbounded;
 use midir::MidiOutput;
-use midir::os::unix::VirtualOutput; 
+use midir::os::unix::VirtualOutput; // Brought back VirtualOutput for CachyOS/Linux
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
 use std::fs;
@@ -18,6 +19,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{channel, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
+use thread_priority::*;
 
 #[derive(Deserialize)]
 struct AppConfig {
@@ -25,7 +27,6 @@ struct AppConfig {
     midi_port: Option<String>,
 }
 
-/// A simple helper to expand `~/` into the user's actual home directory
 fn expand_tilde(path: &str) -> PathBuf {
     if path.starts_with("~/") {
         if let Some(mut home) = dirs::home_dir() {
@@ -37,7 +38,6 @@ fn expand_tilde(path: &str) -> PathBuf {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // --- CONFIGURATION & WORKSPACE SETUP ---
     let config_dir = dirs::config_dir()
         .expect("Could not find user config directory")
         .join("cycle_midi");
@@ -48,7 +48,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config_path = config_dir.join("config.toml");
 
-    // Auto-generate a default configuration file if one doesn't exist
     if !config_path.exists() {
         let default_workspace = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -62,7 +61,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Created default configuration file at: {}", config_path.display());
     }
 
-    // Read and parse the configuration
     let config_str = fs::read_to_string(&config_path).expect("Failed to read config.toml");
     let config: AppConfig = toml::from_str(&config_str).expect("Failed to parse config.toml");
 
@@ -73,9 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let file_path = mmn_dir.join("live.mmn");
-    // ----------------------------------------
     
-    // Set up the graceful shutdown flag and Ctrl-C handler
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
@@ -104,7 +100,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let parser = mmn_parser();
 
-        // Send the initial parse to the main thread immediately
         if let Ok(contents) = fs::read_to_string(&thread_file_path) {
              if let Ok(initial_prog) = parser.parse(contents) {
                  let _ = tx.send(initial_prog);
@@ -175,11 +170,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match midi_out.connect(&p, "Cycle MIDI Out") {
                     Ok(conn) => {
                         println!("Successfully connected to designated MIDI port!");
-                        break 'setup conn; // Return the connection instantly
+                        break 'setup conn; 
                     }
                     Err(e) => {
                         eprintln!("Failed to connect to MIDI port: {}", e);
-                        // midir connect consumes the interface on failure, so we unwrap it back out for the fallback
                         midi_out = e.into_inner();
                     }
                 }
@@ -188,23 +182,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // The fallback only happens if no config was set, port wasn't found, or connection failed
         println!("Falling back to Virtual MIDI Port.");
         let conn = midi_out.create_virtual("MMN Live Port")?;
         println!("Virtual MIDI Port 'MMN Live Port' created. Route it to your synth!");
         conn
     };
 
+    // --- MIDI I/O Thread ---
+    // Decouples blocking OS writes from the microsecond timing loop
+    let (midi_tx, midi_rx) = unbounded::<Vec<u8>>();
+    thread::spawn(move || {
+        // Removed the `Ok()` wrapper since thread_native_id() returns the ID directly
+        let thread_id = thread_native_id();
+        let _ = set_thread_priority_and_policy(
+            thread_id,
+            ThreadPriority::Max,
+            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo)
+        );
+
+        while let Ok(msg) = midi_rx.recv() {
+            let _ = conn_out.send(&msg);
+        }
+    });
+
+    // --- Real-Time Scheduler Elevation ---
+    // Elevates the primary spin-loop sequencer thread
+    let thread_id = thread_native_id();
+    if let Err(e) = set_thread_priority_and_policy(
+        thread_id,
+        ThreadPriority::Max,
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo)
+    ) {
+        eprintln!("Notice: Could not set SCHED_FIFO real-time policy (Requires elevated permissions on Linux). Jitter may occur: {:?}", e);
+    } else {
+        println!("Main timing loop elevated to SCHED_FIFO Real-Time priority!");
+    }
+
     let mut bpm = 120.0;
     let mut cycle_duration_ms = (60_000.0 / bpm) * 4.0;
     
-    // Core Engine State
     let mut current_program = Program { bpm: None, quantize: None, scale: None, global_silence: false, tracks: vec![] };
     let mut staged_program: Option<Program> = None;
     let mut current_quantize = 1;
     let mut cycle_count = 0;
 
-    // Wait synchronously for the first AST to finish compiling before starting the clock
     println!("Waiting for initial AST compilation...");
     if let Ok(initial_prog) = rx.recv() {
         current_program = initial_prog;
@@ -218,7 +239,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Initial AST loaded. Sequence running...");
     }
     
-    // NOW we start the clock!
     let start_time = Instant::now();
     let mut next_cycle_start_ms = 0.0;
     
@@ -228,7 +248,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting Scheduler Loop...");
 
     loop {
-        // Exit condition
         if !running.load(Ordering::SeqCst) {
             break; 
         }
@@ -237,7 +256,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match rx.try_recv() {
             Ok(new_prog) => {
-                // Since the first AST is already loaded, anything received here is a live edit
                 println!("AST staged! Waiting for phrase boundary...");
                 staged_program = Some(new_prog);
             }
@@ -246,8 +264,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if elapsed_ms >= next_cycle_start_ms {
-            
-            // Check for staged pattern swap
             if let Some(staged) = &staged_program {
                 let target_q = staged.quantize.unwrap_or(current_quantize);
                 let position_in_phrase = cycle_count % target_q;
@@ -257,7 +273,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     current_quantize = target_q;
                     println!("Swapped to new pattern! (Quantize: {} cycles)", current_quantize);
 
-                    // Apply BPM if it changed
                     if let Some(new_bpm) = current_program.bpm {
                         if (new_bpm - bpm).abs() > f64::EPSILON {
                             bpm = new_bpm;
@@ -287,7 +302,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         active_notes.retain(|&(off_time, channel, pitch)| {
             if elapsed_ms >= off_time {
-                let _ = conn_out.send(&[0x80 | channel, pitch, 0]);
+                // Sent to lock-free channel instead of blocking OS call
+                let _ = midi_tx.send(vec![0x80 | channel, pitch, 0]);
                 false
             } else {
                 true
@@ -297,7 +313,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         while let Some(next_note) = upcoming_notes.last() {
             if elapsed_ms >= next_note.start_ms {
                 let note = upcoming_notes.pop().unwrap();
-                let _ = conn_out.send(&[0x90 | note.channel, note.pitch, note.velocity]);
+                let _ = midi_tx.send(vec![0x90 | note.channel, note.pitch, note.velocity]);
                 active_notes.push((note.start_ms + note.duration_ms, note.channel, note.pitch));
             } else {
                 break;
@@ -332,18 +348,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Stopping playback and clearing active notes...");
     
-    // Explicitly turn off any notes we know are currently playing
     for &(_, channel, pitch) in &active_notes {
-        let _ = conn_out.send(&[0x80 | channel, pitch, 0]);
+        let _ = midi_tx.send(vec![0x80 | channel, pitch, 0]);
     }
 
-    // Safety net: Send standard MIDI CC 123 (All Notes Off) on all 16 channels
     for ch in 0..16 {
-        let _ = conn_out.send(&[0xB0 | ch, 123, 0]); 
-        // Also send CC 120 (All Sound Off) for good measure, which kills reverb/release tails
-        // let _ = conn_out.send(&[0xB0 | ch, 120, 0]); 
+        let _ = midi_tx.send(vec![0xB0 | ch, 123, 0]); 
     }
 
+    // Give the I/O thread a fraction of a second to flush the channel buffer before exit
+    thread::sleep(Duration::from_millis(50));
+    
     println!("Graceful shutdown complete.");
     Ok(())
 }
