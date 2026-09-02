@@ -126,20 +126,14 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         .collect::<String>()
         .map(|s| s.parse::<f64>().unwrap());
 
-    let bpm_decl = just("#BPM=")
-        .ignore_then(float_f64)
-        .padded()
-        .or_not();
-
-    let quantize_decl = just("#QUANTIZE=")
-        .ignore_then(text::int::<char, Simple<char>>(10).map(|s| s.parse::<usize>().unwrap()))
-        .padded()
-        .or_not();
-
-    let silence_decl = just("#SILENCE")
-        .padded()
-        .or_not()
-        .map(|s| s.is_some());
+    // Fix: Added #[derive(Clone)] so chumsky can clone the enum during parsing combinations
+    #[derive(Clone)]
+    enum Directive {
+        Bpm(f64),
+        Quantize(usize),
+        Scale(ScaleDef),
+        Silence,
+    }
 
     let scale_name = choice((
         just("major").to(vec![0, 2, 4, 5, 7, 9, 11]),
@@ -158,10 +152,30 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         .then(scale_name)
         .map(|(root, intervals)| ScaleDef { root_pitch: root, intervals });
 
-    let global_scale_decl = just("#SCALE=")
-        .ignore_then(scale_def.clone())
-        .padded()
-        .or_not();
+    let directive = choice((
+        just("#BPM=").ignore_then(float_f64).map(Directive::Bpm),
+        just("#QUANTIZE=").ignore_then(text::int::<char, Simple<char>>(10).map(|s| s.parse::<usize>().unwrap())).map(Directive::Quantize),
+        just("#SCALE=").ignore_then(scale_def.clone()).map(Directive::Scale),
+        just("#SILENCE").to(Directive::Silence),
+    )).padded();
+
+    let directives = directive.repeated().map(|dirs| {
+        let mut bpm = None;
+        let mut quantize = None;
+        let mut scale = None;
+        let mut global_silence = false;
+        
+        for d in dirs {
+            match d {
+                Directive::Bpm(v) => bpm = Some(v),
+                Directive::Quantize(v) => quantize = Some(v),
+                Directive::Scale(v) => scale = Some(v),
+                Directive::Silence => global_silence = true,
+            }
+        }
+        
+        (bpm, quantize, scale, global_silence)
+    });
 
     let track_scale = scale_def
         .delimited_by(just('('), just(')'))
@@ -184,11 +198,14 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             root_node,
         });
 
-    bpm_decl
-        .then(quantize_decl)
-        .then(global_scale_decl)
-        .then(silence_decl)
+    directives
         .then(track.repeated())
-        .map(|((((bpm, quantize), scale), global_silence), tracks)| Program { bpm, quantize, scale, global_silence, tracks })
+        .map(|((bpm, quantize, scale, global_silence), tracks)| Program { 
+            bpm, 
+            quantize, 
+            scale, 
+            global_silence, 
+            tracks 
+        })
         .then_ignore(end())
 }
