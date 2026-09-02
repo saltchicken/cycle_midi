@@ -6,7 +6,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             let actual_pitch = match pitch {
                 Pitch::Absolute(p) => *p,
                 Pitch::Numeric(val) => {
-                    let val = *val; // Dereference from &i32 to i32
+                    let val = *val; 
                     if let Some(scale) = &ctx.scale {
                         let scale_len = scale.intervals.len() as i32;
                         let octave = val.div_euclid(scale_len);
@@ -30,23 +30,15 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
         }
         Node::Rest => {}
         Node::Hold => {
-            // Grab a copy of the very last note's metadata
-            if let Some(last_note) = out_notes.last().cloned() {
-                let target_start = last_note.start_ms;
-                let target_channel = last_note.channel;
-                
-                // Iterate backwards through the scheduled notes
+            // Find the start time of the most recently scheduled note
+            if let Some(last_start_ms) = out_notes.last().map(|n| n.start_ms) {
+                // Extend ALL notes that started at that exact same time (this catches full chords)
                 for note in out_notes.iter_mut().rev() {
-                    // Only look at notes on the current channel
-                    if note.channel == target_channel {
-                        // If it started at the exact same time as the last note, extend it!
-                        if (note.start_ms - target_start).abs() < f64::EPSILON {
-                            note.duration_ms += ctx.duration_ms;
-                        } else {
-                            // The moment we hit a note that started earlier, we've finished 
-                            // extending the chord and can safely stop looking backward.
-                            break;
-                        }
+                    if (note.start_ms - last_start_ms).abs() < f64::EPSILON {
+                        note.duration_ms += ctx.duration_ms;
+                    } else if note.start_ms < last_start_ms - f64::EPSILON {
+                        // Once we hit notes from an earlier time step, we can stop looking
+                        break;
                     }
                 }
             }
@@ -118,8 +110,6 @@ pub fn generate_next_cycle(
     for track in &program.tracks {
         if track.is_muted { continue; }
         
-        // MIDI Standard: Channel 10 (index 9) is unpitched percussion.
-        // It ignores the global scale, but will still use a track-specific scale if you explicitly define one!
         let active_scale = if track.channel == 9 {
             track.scale.clone()
         } else {
