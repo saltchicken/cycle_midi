@@ -10,19 +10,76 @@ use chumsky::Parser;
 use midir::MidiOutput;
 use midir::os::unix::VirtualOutput; 
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use serde::Deserialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (tx, rx) = channel::<Program>();
-    let file_path = "live.mmn";
+#[derive(Deserialize)]
+struct AppConfig {
+    mmn_directory: String,
+}
 
-    if !Path::new(file_path).exists() {
-        fs::write(file_path, "#BPM=120\n#SCALE=C4 minor\nT1: 0 2 3 4 . 7 _\nT2(G3 minor_pentatonic): {-7 | 0}").expect("Failed to create initial file");
+/// A simple helper to expand `~/` into the user's actual home directory
+fn expand_tilde(path: &str) -> PathBuf {
+    if path.starts_with("~/") {
+        if let Some(mut home) = dirs::home_dir() {
+            home.push(&path[2..]);
+            return home;
+        }
     }
+    PathBuf::from(path)
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // --- CONFIGURATION & WORKSPACE SETUP ---
+    let config_dir = dirs::config_dir()
+        .expect("Could not find user config directory")
+        .join("cycle_midi");
+
+    if !config_dir.exists() {
+        fs::create_dir_all(&config_dir).expect("Failed to create cycle_midi config directory");
+    }
+
+    let config_path = config_dir.join("config.toml");
+
+    // Auto-generate a default configuration file if one doesn't exist
+    if !config_path.exists() {
+        let default_workspace = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("cycle_midi_workspace");
+
+        let default_config_content = format!(
+            "# cycle_midi configuration\n# Specify the absolute path or use ~/ for your home directory\nmmn_directory = \"{}\"\n",
+            default_workspace.display()
+        );
+        fs::write(&config_path, default_config_content).expect("Failed to write default config.toml");
+        println!("Created default configuration file at: {}", config_path.display());
+    }
+
+    // Read and parse the configuration
+    let config_str = fs::read_to_string(&config_path).expect("Failed to read config.toml");
+    let config: AppConfig = toml::from_str(&config_str).expect("Failed to parse config.toml");
+
+    let mmn_dir = expand_tilde(&config.mmn_directory);
+    if !mmn_dir.exists() {
+        fs::create_dir_all(&mmn_dir).expect("Failed to create designated MMN directory");
+        println!("Created MMN workspace directory at: {}", mmn_dir.display());
+    }
+
+    let file_path = mmn_dir.join("live.mmn");
+    // ----------------------------------------
+
+    let (tx, rx) = channel::<Program>();
+
+    if !file_path.exists() {
+        fs::write(&file_path, "#BPM=120\n#SCALE=C4 minor\nT1: 0 2 3 4 . 7 _\nT2(G3 minor_pentatonic): {-7 | 0}").expect("Failed to create initial file");
+    }
+
+    let thread_file_path = file_path.clone();
+    let thread_watch_dir = mmn_dir.clone();
 
     thread::spawn(move || {
         let (watch_tx, watch_rx) = channel();
@@ -31,16 +88,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Config::default().with_poll_interval(Duration::from_millis(50)),
         ).unwrap();
 
-        let parent_dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
-        let watch_dir = if parent_dir.as_os_str().is_empty() { Path::new(".") } else { parent_dir };
-        
-        watcher.watch(watch_dir, RecursiveMode::NonRecursive).unwrap();
-        println!("Listening for changes to {} in directory {:?}...", file_path, watch_dir);
+        watcher.watch(&thread_watch_dir, RecursiveMode::NonRecursive).unwrap();
+        println!("Listening for changes to {} in directory {}...", thread_file_path.display(), thread_watch_dir.display());
 
         let parser = mmn_parser();
 
         // Send the initial parse to the main thread immediately
-        if let Ok(contents) = fs::read_to_string(file_path) {
+        if let Ok(contents) = fs::read_to_string(&thread_file_path) {
              if let Ok(initial_prog) = parser.parse(contents) {
                  let _ = tx.send(initial_prog);
              }
@@ -50,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         for res in watch_rx {
             if let Ok(event) = res {
-                let is_target_file = event.paths.iter().any(|p| p.ends_with(file_path));
+                let is_target_file = event.paths.iter().any(|p| p == &thread_file_path);
                 
                 if is_target_file && !event.kind.is_access() {
                     if last_update.elapsed() < Duration::from_millis(100) {
@@ -59,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     thread::sleep(Duration::from_millis(15));
                     
-                    if let Ok(contents) = fs::read_to_string(file_path) {
+                    if let Ok(contents) = fs::read_to_string(&thread_file_path) {
                         if contents.trim().is_empty() {
                             let empty_prog = Program { bpm: None, quantize: None, scale: None, global_silence: true, tracks: vec![] };
                             if tx.send(empty_prog).is_ok() {
