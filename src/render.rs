@@ -2,7 +2,15 @@ use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledNote};
 
 pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>) -> Vec<usize> {
     match node {
-        Node::Note { pitch, velocity, gate, .. } => {
+        Node::Note { pitch, velocity, gate, prob } => {
+            if *prob < 100 {
+                // rand 0.10+ syntax: gen_range is now random_range, 
+                // and we can call it directly without the Rng trait
+                if rand::random_range(0..100) >= *prob {
+                    return vec![]; // Skip rendering this note
+                }
+            }
+
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
                 let actual_pitch = match pitch {
                     Pitch::Absolute(p) => *p,
