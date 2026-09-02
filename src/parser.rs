@@ -131,6 +131,11 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         .padded()
         .or_not();
 
+    let quantize_decl = just("#QUANTIZE=")
+        .ignore_then(text::int::<char, Simple<char>>(10).map(|s| s.parse::<usize>().unwrap()))
+        .padded()
+        .or_not();
+
     let silence_decl = just("#SILENCE")
         .padded()
         .or_not()
@@ -180,9 +185,10 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         });
 
     bpm_decl
+        .then(quantize_decl)
         .then(global_scale_decl)
         .then(silence_decl)
         .then(track.repeated())
-        .map(|(((bpm, scale), global_silence), tracks)| Program { bpm, scale, global_silence, tracks })
+        .map(|((((bpm, quantize), scale), global_silence), tracks)| Program { bpm, quantize, scale, global_silence, tracks })
         .then_ignore(end())
 }

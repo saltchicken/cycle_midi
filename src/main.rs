@@ -8,7 +8,7 @@ use render::generate_next_cycle;
 
 use chumsky::Parser;
 use midir::MidiOutput;
-use midir::os::unix::VirtualOutput; //This line is critical to make the virtual output
+use midir::os::unix::VirtualOutput; 
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs;
 use std::path::Path;
@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     
                     if let Ok(contents) = fs::read_to_string(file_path) {
                         if contents.trim().is_empty() {
-                            let empty_prog = Program { bpm: None, scale: None, global_silence: true, tracks: vec![] };
+                            let empty_prog = Program { bpm: None, quantize: None, scale: None, global_silence: true, tracks: vec![] };
                             if tx.send(empty_prog).is_ok() {
                                 println!("File empty. Silencing all tracks.");
                                 last_update = Instant::now();
@@ -71,7 +71,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match parser.parse(contents) {
                             Ok(new_prog) => {
                                 if tx.send(new_prog).is_ok() {
-                                    println!("Success! AST hot-swapped.");
                                     last_update = Instant::now();
                                 }
                             }
@@ -96,7 +95,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut bpm = 120.0;
     let mut cycle_duration_ms = (60_000.0 / bpm) * 4.0;
-    let mut current_program = Program { bpm: None, scale: None, global_silence: false, tracks: vec![] };
+    
+    // Core Engine State
+    let mut current_program = Program { bpm: None, quantize: None, scale: None, global_silence: false, tracks: vec![] };
+    let mut staged_program: Option<Program> = None;
+    let mut current_quantize = 1;
     let mut cycle_count = 0;
     
     let start_time = Instant::now();
@@ -112,20 +115,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match rx.try_recv() {
             Ok(new_prog) => {
-                current_program = new_prog.clone();
-                if let Some(new_bpm) = new_prog.bpm {
-                    if (new_bpm - bpm).abs() > f64::EPSILON {
-                        bpm = new_bpm;
-                        cycle_duration_ms = (60_000.0 / bpm) * 4.0;
-                        println!("BPM updated to: {}", bpm);
-                    }
-                }
+                println!("AST staged! Waiting for phrase boundary...");
+                staged_program = Some(new_prog);
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => break,
         }
 
         if elapsed_ms >= next_cycle_start_ms {
+            
+            // Check for staged pattern swap
+            if let Some(staged) = &staged_program {
+                let target_q = staged.quantize.unwrap_or(current_quantize);
+                let position_in_phrase = cycle_count % target_q;
+                
+                if position_in_phrase == 0 {
+                    current_program = staged_program.take().unwrap();
+                    current_quantize = target_q;
+                    println!("Swapped to new pattern! (Quantize: {} cycles)", current_quantize);
+
+                    // Apply BPM if it changed
+                    if let Some(new_bpm) = current_program.bpm {
+                        if (new_bpm - bpm).abs() > f64::EPSILON {
+                            bpm = new_bpm;
+                            cycle_duration_ms = (60_000.0 / bpm) * 4.0;
+                            println!("BPM updated to: {}", bpm);
+                        }
+                    }
+                } else {
+                    let cycles_left = target_q - position_in_phrase;
+                    println!("Swapping in {}...", cycles_left);
+                }
+            }
+
             let mut new_notes = generate_next_cycle(
                 &current_program,
                 bpm,

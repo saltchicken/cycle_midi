@@ -34,6 +34,7 @@ pub struct Track {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub bpm: Option<f64>,
+    pub quantize: Option<usize>,
     pub scale: Option<ScaleDef>,
     pub global_silence: bool,
     pub tracks: Vec<Track>,
