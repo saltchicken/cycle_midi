@@ -13,6 +13,8 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::sync::mpsc::{channel, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -72,6 +74,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let file_path = mmn_dir.join("live.mmn");
     // ----------------------------------------
+    
+    // Set up the graceful shutdown flag and Ctrl-C handler
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+    ctrlc::set_handler(move || {
+        println!("\nReceived shutdown signal! Cleaning up MIDI notes...");
+        r.store(false, Ordering::SeqCst);
+    }).expect("Error setting Ctrl-C handler");
 
     let (tx, rx) = channel::<Program>();
 
@@ -218,6 +228,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting Scheduler Loop...");
 
     loop {
+        // Exit condition
+        if !running.load(Ordering::SeqCst) {
+            break; 
+        }
+
         let elapsed_ms = start_time.elapsed().as_secs_f64() * 1000.0;
 
         match rx.try_recv() {
@@ -315,5 +330,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    println!("Stopping playback and clearing active notes...");
+    
+    // Explicitly turn off any notes we know are currently playing
+    for &(_, channel, pitch) in &active_notes {
+        let _ = conn_out.send(&[0x80 | channel, pitch, 0]);
+    }
+
+    // Safety net: Send standard MIDI CC 123 (All Notes Off) on all 16 channels
+    for ch in 0..16 {
+        let _ = conn_out.send(&[0xB0 | ch, 123, 0]); 
+        // Also send CC 120 (All Sound Off) for good measure, which kills reverb/release tails
+        // let _ = conn_out.send(&[0xB0 | ch, 120, 0]); 
+    }
+
+    println!("Graceful shutdown complete.");
     Ok(())
 }
