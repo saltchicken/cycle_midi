@@ -6,10 +6,11 @@ edition = "2024"
 [dependencies]
 chumsky = "0.9.3"
 notify = "6.1.1"
+notify-debouncer-mini = "0.4.1"
 midir = "0.9.1"
 dirs = "5.0.1"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8.12"
 ctrlc = "3.4"
-crossbeam-channel = "0.5.11"
+rtrb = "0.3.3"
 thread-priority = "1.1.0"

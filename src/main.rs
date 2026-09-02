@@ -7,10 +7,10 @@ use parser::mmn_parser;
 use render::generate_next_cycle;
 
 use chumsky::Parser;
-use crossbeam_channel::unbounded;
 use midir::MidiOutput;
 use midir::os::unix::VirtualOutput; // Brought back VirtualOutput for CachyOS/Linux
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
+use rtrb::RingBuffer;
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
@@ -88,14 +88,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let thread_file_path = file_path.clone();
     let thread_watch_dir = mmn_dir.clone();
 
+    // --- File Watcher Thread (Now Debounced) ---
     thread::spawn(move || {
         let (watch_tx, watch_rx) = channel();
-        let mut watcher = RecommendedWatcher::new(
-            watch_tx,
-            Config::default().with_poll_interval(Duration::from_millis(50)),
-        ).unwrap();
-
-        watcher.watch(&thread_watch_dir, RecursiveMode::NonRecursive).unwrap();
+        
+        let mut debouncer = new_debouncer(Duration::from_millis(150), watch_tx).unwrap();
+        debouncer.watcher().watch(&thread_watch_dir, RecursiveMode::NonRecursive).unwrap();
+        
         println!("Listening for changes to {} in directory {}...", thread_file_path.display(), thread_watch_dir.display());
 
         let parser = mmn_parser();
@@ -106,46 +105,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              }
         }
 
-        let mut last_update = Instant::now() - Duration::from_secs(1);
-
         for res in watch_rx {
-            if let Ok(event) = res {
-                let is_target_file = event.paths.iter().any(|p| p == &thread_file_path);
-                
-                if is_target_file && !event.kind.is_access() {
-                    if last_update.elapsed() < Duration::from_millis(100) {
-                        continue;
-                    }
-
-                    thread::sleep(Duration::from_millis(15));
+            match res {
+                Ok(events) => {
+                    let is_target_file = events.iter().any(|e| e.path == thread_file_path);
                     
-                    if let Ok(contents) = fs::read_to_string(&thread_file_path) {
-                        if contents.trim().is_empty() {
-                            let empty_prog = Program { bpm: None, quantize: None, scale: None, global_silence: true, tracks: vec![] };
-                            if tx.send(empty_prog).is_ok() {
-                                println!("File empty. Silencing all tracks.");
-                                last_update = Instant::now();
+                    if is_target_file {
+                        if let Ok(contents) = fs::read_to_string(&thread_file_path) {
+                            if contents.trim().is_empty() {
+                                let empty_prog = Program { bpm: None, quantize: None, scale: None, global_silence: true, tracks: vec![] };
+                                if tx.send(empty_prog).is_ok() {
+                                    println!("File empty. Silencing all tracks.");
+                                }
+                                continue;
                             }
-                            continue;
-                        }
 
-                        match parser.parse(contents) {
-                            Ok(new_prog) => {
-                                if tx.send(new_prog).is_ok() {
-                                    last_update = Instant::now();
+                            match parser.parse(contents) {
+                                Ok(new_prog) => {
+                                    let _ = tx.send(new_prog);
                                 }
-                            }
-                            Err(errs) => {
-                                println!("Syntax Error! Continuing to play old sequence.");
-                                for e in errs {
-                                    let expected: Vec<_> = e.expected().cloned().collect();
-                                    eprintln!("Expected {:?} at char {}", expected, e.span().start);
+                                Err(errs) => {
+                                    println!("Syntax Error! Continuing to play old sequence.");
+                                    for e in errs {
+                                        let expected: Vec<_> = e.expected().cloned().collect();
+                                        eprintln!("Expected {:?} at char {}", expected, e.span().start);
+                                    }
                                 }
-                                last_update = Instant::now();
                             }
                         }
                     }
                 }
+                Err(e) => eprintln!("File Watcher Error: {:?}", e),
             }
         }
     });
@@ -189,10 +179,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // --- MIDI I/O Thread ---
-    // Decouples blocking OS writes from the microsecond timing loop
-    let (midi_tx, midi_rx) = unbounded::<Vec<u8>>();
+    // Uses a lock-free RingBuffer to ensure the high-priority thread never blocks
+    let (mut midi_tx, mut midi_rx) = RingBuffer::<Vec<u8>>::new(4096);
+    
     thread::spawn(move || {
-        // Removed the `Ok()` wrapper since thread_native_id() returns the ID directly
         let thread_id = thread_native_id();
         let _ = set_thread_priority_and_policy(
             thread_id,
@@ -200,13 +190,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo)
         );
 
-        while let Ok(msg) = midi_rx.recv() {
-            let _ = conn_out.send(&msg);
+        let mut shutdown = false;
+        loop {
+            if midi_rx.is_empty() {
+                if shutdown {
+                    break;
+                }
+                thread::sleep(Duration::from_micros(500));
+                continue;
+            }
+
+            while let Ok(msg) = midi_rx.pop() {
+                if msg.is_empty() { // Sentinel for graceful thread shutdown
+                    shutdown = true;
+                    break;
+                }
+                let _ = conn_out.send(&msg);
+            }
         }
     });
 
+    macro_rules! send_midi {
+        ($msg:expr) => {
+            while midi_tx.push($msg).is_err() {
+                std::hint::spin_loop();
+            }
+        };
+    }
+
     // --- Real-Time Scheduler Elevation ---
-    // Elevates the primary spin-loop sequencer thread
     let thread_id = thread_native_id();
     if let Err(e) = set_thread_priority_and_policy(
         thread_id,
@@ -302,8 +314,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         active_notes.retain(|&(off_time, channel, pitch)| {
             if elapsed_ms >= off_time {
-                // Sent to lock-free channel instead of blocking OS call
-                let _ = midi_tx.send(vec![0x80 | channel, pitch, 0]);
+                send_midi!(vec![0x80 | channel, pitch, 0]);
                 false
             } else {
                 true
@@ -313,7 +324,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         while let Some(next_note) = upcoming_notes.last() {
             if elapsed_ms >= next_note.start_ms {
                 let note = upcoming_notes.pop().unwrap();
-                let _ = midi_tx.send(vec![0x90 | note.channel, note.pitch, note.velocity]);
+
+                // VOICE STEALING: Prevent overlapping/stuck notes
+                active_notes.retain(|&(_off_time, channel, pitch)| {
+                    if channel == note.channel && pitch == note.pitch {
+                        // Immediately fire a NoteOff before triggering the identical overlapping NoteOn
+                        send_midi!(vec![0x80 | channel, pitch, 0]);
+                        false 
+                    } else {
+                        true
+                    }
+                });
+
+                send_midi!(vec![0x90 | note.channel, note.pitch, note.velocity]);
                 active_notes.push((note.start_ms + note.duration_ms, note.channel, note.pitch));
             } else {
                 break;
@@ -349,12 +372,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Stopping playback and clearing active notes...");
     
     for &(_, channel, pitch) in &active_notes {
-        let _ = midi_tx.send(vec![0x80 | channel, pitch, 0]);
+        send_midi!(vec![0x80 | channel, pitch, 0]);
     }
 
     for ch in 0..16 {
-        let _ = midi_tx.send(vec![0xB0 | ch, 123, 0]); 
+        send_midi!(vec![0xB0 | ch, 123, 0]); 
     }
+
+    // Send empty payload sentinel to signal the IO thread to exit
+    send_midi!(vec![]);
 
     // Give the I/O thread a fraction of a second to flush the channel buffer before exit
     thread::sleep(Duration::from_millis(50));
