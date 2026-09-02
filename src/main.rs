@@ -39,6 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let parser = mmn_parser();
 
+        // Send the initial parse to the main thread immediately
         if let Ok(contents) = fs::read_to_string(file_path) {
              if let Ok(initial_prog) = parser.parse(contents) {
                  let _ = tx.send(initial_prog);
@@ -101,7 +102,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut staged_program: Option<Program> = None;
     let mut current_quantize = 1;
     let mut cycle_count = 0;
+
+    // Wait synchronously for the first AST to finish compiling before starting the clock
+    println!("Waiting for initial AST compilation...");
+    if let Ok(initial_prog) = rx.recv() {
+        current_program = initial_prog;
+        if let Some(q) = current_program.quantize {
+            current_quantize = q;
+        }
+        if let Some(new_bpm) = current_program.bpm {
+            bpm = new_bpm;
+            cycle_duration_ms = (60_000.0 / bpm) * 4.0;
+        }
+        println!("Initial AST loaded. Sequence running...");
+    }
     
+    // NOW we start the clock!
     let start_time = Instant::now();
     let mut next_cycle_start_ms = 0.0;
     
@@ -115,6 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match rx.try_recv() {
             Ok(new_prog) => {
+                // Since the first AST is already loaded, anything received here is a live edit
                 println!("AST staged! Waiting for phrase boundary...");
                 staged_program = Some(new_prog);
             }
