@@ -153,7 +153,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         .map(|(root, intervals)| ScaleDef { root_pitch: root, intervals });
 
     let directive = choice((
-        just("#BPM=").ignore_then(float_f64).map(Directive::Bpm),
+        just("#BPM=").ignore_then(float_f64.clone()).map(Directive::Bpm),
         just("#QUANTIZE=").ignore_then(text::int::<char, Simple<char>>(10).map(|s| s.parse::<usize>().unwrap())).map(Directive::Quantize),
         just("#SCALE=").ignore_then(scale_def.clone()).map(Directive::Scale),
         just("#SILENCE").to(Directive::Silence),
@@ -177,6 +177,13 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         (bpm, quantize, scale, global_silence)
     });
 
+    let track_speed = choice((
+        just("fast").padded().ignore_then(float_f64.clone()).map(|v| v as f32),
+        just("slow").padded().ignore_then(float_f64.clone()).map(|v| 1.0 / (v as f32)),
+    ))
+    .padded()
+    .or_not();
+
     let track_scale = scale_def
         .delimited_by(just('('), just(')'))
         .padded()
@@ -187,15 +194,23 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         .map(|m| m.is_some())
         .then_ignore(just('T'))
         .then(text::int(10).map(|s: String| s.parse::<u8>().unwrap()))
+        .then(track_speed)
         .then(track_scale)
         .then_ignore(just(':'))
         .padded()
         .then(expr.padded().repeated().map(Node::Sequence))
-        .map(|(((is_muted, ch), scale), root_node)| Track {
-            channel: ch.saturating_sub(1).min(15), 
-            is_muted,
-            scale,
-            root_node,
+        .map(|((((is_muted, ch), speed), scale), root_node)| {
+            let final_node = if let Some(s) = speed {
+                Node::SpeedModifier(Box::new(root_node), s)
+            } else {
+                root_node
+            };
+            Track {
+                channel: ch.saturating_sub(1).min(15), 
+                is_muted,
+                scale,
+                root_node: final_node,
+            }
         });
 
     directives
