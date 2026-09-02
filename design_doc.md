@@ -17,6 +17,7 @@ An MMN file consists of optional global directives followed by track declaration
 ### Global Directives
 Directives control the overall playback state of the sequencer. They are evaluated at the top of the file before any tracks.
 * `#BPM=120` or `#BPM=128.5`: Sets the master tempo. If omitted during a live-coding session, the engine simply maintains the last known BPM.
+* `#QUANTIZE=4`: Sets the phrase boundary for live code swapping. If you edit and save the file while the sequencer is running, the engine will stage your new pattern and wait until the current cycle count is a multiple of this number before seamlessly dropping it in. Defaults to `1` (swaps on the next immediate cycle).
 * `#SILENCE`: Instantly mutes all playback globally when present. Useful for quick panic stops or dramatic dropouts during a performance.
 
 ### Scale Definitions
@@ -39,12 +40,15 @@ Sequences are routed to specific MIDI channels using track declarations `TX:`, w
 * `T1: C4 . D4 _` 
   * *Result:* Plays the sequence on MIDI Channel 1.
 * `T10: 36 [38 38] 42 .` 
-  * *Result:* Plays on MIDI Channel 10 (traditionally used for drum machines).
+  * *Result:* Plays on MIDI Channel 10. **Note: Because Channel 10 is traditionally used for standard MIDI Drum Kits, `T10` will automatically ignore the global `#SCALE` directive so your drum mappings don't get transposed!**
 
-**Per-Track Scales**
-You can optionally lock a specific track to its own scale by providing the scale in parentheses right after the track declaration. This overrides the global `#SCALE` directive for that track only, making polytonal music very easy to write.
-* `T2(G3 minor_pentatonic): 0 2 3 4` (Track 2 plays numeric notes in G minor pentatonic)
-* `!T3(C4 lydian): 0 . 4 2` (Track 3 is muted, but ready to play in C Lydian)
+**Per-Track Modifiers (`scale`, `fast`, `slow`)**
+You can designate an entire track to play faster or slower, or lock it to a specific scale. Modifiers can be placed in any order before the colon.
+* `T1 fast 2: C4 D4` (Plays the sequence twice as fast, completing two full loops per cycle)
+* `T2 slow 2: C3 . E3 .` (Plays the sequence at half speed, taking two cycles to complete one loop)
+* `T3 scale G3 minor_pentatonic: 0 2 3 4` (Track 3 plays numeric notes in G minor pentatonic)
+* `T4 fast 2 scale D2 dorian: 0 1 2 3` (Track 4 is double speed and plays in D Dorian)
+* `T5 scale D2 dorian fast 2: 0 1 2 3` (Functionally identical to the line above)
 
 **Track Muting (`!`)**
 Prefix a track declaration with an exclamation point to mute it instantly without having to delete your code.
@@ -132,6 +136,8 @@ The notation is designed to be parsed via `chumsky` into the following structure
 pub struct Program {
     /// Master tempo (optional to allow carrying over previous state)
     pub bpm: Option<f64>,
+    /// Master cycle phrase quantization for hot-reloading patterns
+    pub quantize: Option<usize>,
     /// Master scale for numeric pitches
     pub scale: Option<ScaleDef>,
     /// Global panic / mute toggle

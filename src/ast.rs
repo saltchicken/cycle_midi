@@ -54,6 +54,8 @@ pub struct RenderContext {
     pub channel: u8,
     pub start_ms: f64,
     pub duration_ms: f64,
+    pub window_start_ms: f64,
+    pub window_end_ms: f64,
     pub cycle_count: usize,
     pub scale: Option<ScaleDef>,
 }
