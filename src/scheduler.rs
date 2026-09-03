@@ -1,5 +1,5 @@
-use crate::ast::{self, Program, ScheduledEvent};
-use crate::render::generate_next_cycle;
+use crate::ast::{self, Program};
+use crate::render::{generate_next_cycle, ScheduledEvent};
 use rtrb::Producer;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

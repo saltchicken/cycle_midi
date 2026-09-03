@@ -1,4 +1,5 @@
-use crate::ast::{Node, Pitch, RenderContext, ScheduledEvent, ArpStyle, DynamicValue};
+use crate::ast::{Node, Pitch, ArpStyle, DynamicValue};
+use crate::render::{RenderContext, ScheduledEvent};
 use rand::RngExt;
 use rand::rngs::StdRng;
 use super::math::resolve_pitch;

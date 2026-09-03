@@ -1,3 +1,5 @@
+use crate::render::math::lcm;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pitch {
     Absolute(u8),
@@ -20,19 +22,6 @@ pub enum ArpStyle {
 pub enum QuantizeMode {
     Fixed(usize),
     Auto,
-}
-
-pub fn lcm(a: usize, b: usize) -> usize {
-    if a == 0 || b == 0 { return 0; }
-    let mut x = a;
-    let mut y = b;
-    while y != 0 {
-        let t = y;
-        y = x % y;
-        x = t;
-    }
-    let gcd = x;
-    (a * b) / gcd
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -164,46 +153,4 @@ impl Program {
     pub fn pattern_length_cycles(&self) -> usize {
         self.tracks.iter().fold(1, |acc, track| lcm(acc, track.root_node.cycle_length()))
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum ScheduledEvent {
-    Note {
-        channel: u8,
-        pitch: u8,
-        velocity: u8,
-        start_ms: f64,
-        duration_ms: f64,
-    },
-    CC {
-        channel: u8,
-        controller: u8,
-        value: u8,
-        start_ms: f64,
-    }
-}
-
-impl ScheduledEvent {
-    pub fn start_ms(&self) -> f64 {
-        match self {
-            Self::Note { start_ms, .. } => *start_ms,
-            Self::CC { start_ms, .. } => *start_ms,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RenderContext {
-    pub channel: u8,
-    pub start_ms: f64,
-    pub duration_ms: f64,
-    pub window_start_ms: f64,
-    pub window_end_ms: f64,
-    pub cycle_count: usize,
-    pub macro_cycle_length: usize,
-    pub master_duration_ms: f64,
-    pub scale: Option<ScaleDef>,
-    pub active_chord_indices: Vec<usize>,
-    pub octave_offset: i32,
-    pub alternator_stride: usize,
 }

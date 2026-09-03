@@ -1,10 +1,52 @@
 pub mod math;
 pub mod traversal;
 
-use crate::ast::{Program, RenderContext, ScheduledEvent, SeedInterval};
+use crate::ast::{Program, ScaleDef, SeedInterval};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use traversal::traverse_ast;
+
+#[derive(Debug, Clone)]
+pub enum ScheduledEvent {
+    Note {
+        channel: u8,
+        pitch: u8,
+        velocity: u8,
+        start_ms: f64,
+        duration_ms: f64,
+    },
+    CC {
+        channel: u8,
+        controller: u8,
+        value: u8,
+        start_ms: f64,
+    }
+}
+
+impl ScheduledEvent {
+    pub fn start_ms(&self) -> f64 {
+        match self {
+            Self::Note { start_ms, .. } => *start_ms,
+            Self::CC { start_ms, .. } => *start_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RenderContext {
+    pub channel: u8,
+    pub start_ms: f64,
+    pub duration_ms: f64,
+    pub window_start_ms: f64,
+    pub window_end_ms: f64,
+    pub cycle_count: usize,
+    pub macro_cycle_length: usize,
+    pub master_duration_ms: f64,
+    pub scale: Option<ScaleDef>,
+    pub active_chord_indices: Vec<usize>,
+    pub octave_offset: i32,
+    pub alternator_stride: usize,
+}
 
 pub fn generate_next_cycle(
     program: &Program, 

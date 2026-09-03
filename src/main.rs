@@ -1,10 +1,8 @@
 mod ast;
-mod config;
-mod midi_io;
+mod io;
 mod parser;
 mod render;
 mod scheduler;
-mod watcher;
 
 use ast::Program;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,7 +11,7 @@ use std::sync::mpsc::channel;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Setup Config & Workspace
-    let (app_config, watch_dir, file_path) = config::initialize_config();
+    let (app_config, watch_dir, file_path) = io::config::initialize_config();
 
     // 2. Setup Global Shutdown State
     let running = Arc::new(AtomicBool::new(true));
@@ -27,10 +25,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx, rx) = channel::<Program>();
 
     // 4. Start File Watcher Thread
-    watcher::start_file_watcher(watch_dir, file_path, tx);
+    io::watcher::start_file_watcher(watch_dir, file_path, tx);
 
     // 5. Setup MIDI Out & I/O Thread
-    let midi_tx = midi_io::setup_midi(&app_config.midi_port)?;
+    let midi_tx = io::midi::setup_midi(&app_config.midi_port)?;
 
     // 6. Run the Main Real-Time Scheduler
     scheduler::run_scheduler(rx, midi_tx, running);
