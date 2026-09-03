@@ -6,6 +6,7 @@ use std::path::PathBuf;
 pub struct AppConfig {
     pub mmn_directory: String,
     pub midi_port: Option<String>,
+    pub startup_file: Option<String>, // Added this field
 }
 
 fn expand_tilde(path: &str) -> PathBuf {
@@ -35,7 +36,7 @@ pub fn initialize_config() -> (AppConfig, PathBuf, PathBuf) {
             .join("cycle_midi_workspace");
 
         let default_config_content = format!(
-            "# cycle_midi configuration\n# Specify the absolute path or use ~/ for your home directory\nmmn_directory = \"{}\"\n# Optional: Specify a default MIDI output port name to connect to\n# midi_port = \"Midi Through Port-0\"\n",
+            "# cycle_midi configuration\n# Specify the absolute path or use ~/ for your home directory\nmmn_directory = \"{}\"\n# Specify the default file to load when the engine starts\nstartup_file = \"live.mmn\"\n# Optional: Specify a default MIDI output port name to connect to\n# midi_port = \"Midi Through Port-0\"\n",
             default_workspace.display()
         );
         fs::write(&config_path, default_config_content)
@@ -55,7 +56,9 @@ pub fn initialize_config() -> (AppConfig, PathBuf, PathBuf) {
         println!("Created MMN workspace directory at: {}", mmn_dir.display());
     }
 
-    let file_path = mmn_dir.join("live.mmn");
+    // Use the configured startup_file, or fallback to live.mmn if it's not in the config file yet
+    let startup_filename = config.startup_file.as_deref().unwrap_or("live.mmn");
+    let file_path = mmn_dir.join(startup_filename);
 
     if !file_path.exists() {
         fs::write(
