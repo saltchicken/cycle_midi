@@ -1,0 +1,29 @@
+// --- CYCLE MIDI: POLYRHYTHMS & MATH ---
+// Experimenting with strange tuplets and phasing rhythms.
+
+#BPM=110
+#SCALE=D3 mixolydian
+
+// T1: The 3 vs 4 vs 5 Chord Pulse
+// This single track plays three different streams of chords simultaneously.
+// Layer 1 plays 4 times per bar, Layer 2 plays 3 times, Layer 3 plays 5 times.
+T1: {
+    [0+2+4]*4 |
+    [2+4+6]*3 |
+    [-3+0+2]*5 
+}
+
+// T2: Euclidean Lead
+// Creates a hypnotic overlapping melody by distributing 5 notes across 
+// 16 steps, arpeggiated upwards.
+T2 up 1:
+    [0 2 4 5 7](5,16) arp(up) %40
+
+// T10: Phasing Percussion
+// Kick does a standard 4/4, while the hats and rims play prime-number 
+// Euclidean distributions to create constantly shifting grooves.
+T10: {
+    36 36 36 36 |
+    42(7,16) |
+    37(5,12) 
+}

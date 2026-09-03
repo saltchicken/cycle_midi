@@ -1,0 +1,28 @@
+// --- CYCLE MIDI: AMBIENT & GENERATIVE ---
+// Slow, evolving soundscape using LFOs and probability.
+
+#BPM=75
+#SCALE=F3 lydian
+#QUANTIZE=AUTO
+
+// T1: Evolving Pad
+// Uses a 4-bar slow cycle. Picks a random chord progression every time it loops.
+// Meanwhile, a parallel layer sweeps the filter cutoff (CC 74) with a sine 
+// wave that completes one full oscillation every 8 bars (speed = 0.125).
+T1 slow 4: { 
+    [ 0+2+4+6 _ _ _ | -1+1+3+5 _ _ _ | 0+2+4+6 _ -3+-1+1+3 _ ] |
+    cc74@sine(40, 100, 0.125) 
+}
+
+// T2: Sparkling Generative Arps
+// Plays twice as fast as the master cycle.
+// Uses an alternator < > to change the base notes each cycle, 
+// arpeggiates them in a 'diverge' (inside-out) pattern, and applies 
+// a 70% probability to each note to keep it sparse and unpredictable.
+T2 fast 2 up 1: 
+    <[0 2 4 6] [2 4 6 8] [-1 1 3 5]> arp(diverge) %20?70
+
+// T3: Deep Sub Bass Drone
+// Just hits the root note and holds it, occasionally dropping an octave.
+T3 down 2 slow 4:
+    [0 _ _ _ | -7 _ _ _]?80
