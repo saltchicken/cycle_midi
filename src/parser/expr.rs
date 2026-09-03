@@ -104,7 +104,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
                 .or_not(),
         )
         .then_ignore(just(')'))
-        .map(|(interval, offset)| (interval as usize, offset.unwrap_or(0) as usize));
+        .map(|(interval, offset)| (interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
 
     let m_condition_clause = just("m_if(")
         .ignore_then(int_u8())
@@ -114,7 +114,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
                 .or_not(),
         )
         .then_ignore(just(')'))
-        .map(|(interval, offset)| (interval as usize, offset.unwrap_or(0) as usize));
+        .map(|(interval, offset)| (interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
 
     let only_mod = just("only(")
         .ignore_then(int_u8())
@@ -124,7 +124,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
                 .or_not(),
         )
         .then_ignore(just(')'))
-        .map(|(interval, offset)| PostfixOp::Only(interval as usize, offset.unwrap_or(0) as usize));
+        .map(|(interval, offset)| PostfixOp::Only(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
 
     let m_only_mod = just("m_only(")
         .ignore_then(int_u8())
@@ -135,7 +135,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
         )
         .then_ignore(just(')'))
         .map(|(interval, offset)| {
-            PostfixOp::MacroOnly(interval as usize, offset.unwrap_or(0) as usize)
+            PostfixOp::MacroOnly(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize)
         });
 
     let if_mod = just("if(")
@@ -146,7 +146,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
                 .or_not(),
         )
         .then_ignore(just(')'))
-        .map(|(interval, offset)| PostfixOp::If(interval as usize, offset.unwrap_or(0) as usize));
+        .map(|(interval, offset)| PostfixOp::If(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
 
     let m_if_mod = just("m_if(")
         .ignore_then(int_u8())
@@ -157,7 +157,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
         )
         .then_ignore(just(')'))
         .map(|(interval, offset)| {
-            PostfixOp::MacroIf(interval as usize, offset.unwrap_or(0) as usize)
+            PostfixOp::MacroIf(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize)
         });
 
     let euclidean = just('(')
