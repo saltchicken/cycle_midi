@@ -8,7 +8,7 @@ use render::generate_next_cycle;
 
 use chumsky::Parser;
 use midir::MidiOutput;
-use midir::os::unix::VirtualOutput; // Brought back VirtualOutput for CachyOS/Linux
+use midir::os::unix::VirtualOutput;
 use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
 use rtrb::RingBuffer;
 use serde::Deserialize;
@@ -88,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let thread_file_path = file_path.clone();
     let thread_watch_dir = mmn_dir.clone();
 
-    // --- File Watcher Thread (Now Debounced) ---
+    // --- File Watcher Thread ---
     thread::spawn(move || {
         let (watch_tx, watch_rx) = channel();
         
@@ -179,7 +179,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // --- MIDI I/O Thread ---
-    // Uses a lock-free RingBuffer to ensure the high-priority thread never blocks
     let (mut midi_tx, mut midi_rx) = RingBuffer::<Vec<u8>>::new(4096);
     
     thread::spawn(move || {
@@ -201,7 +200,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             while let Ok(msg) = midi_rx.pop() {
-                if msg.is_empty() { // Sentinel for graceful thread shutdown
+                if msg.is_empty() { 
                     shutdown = true;
                     break;
                 }
@@ -235,20 +234,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let mut current_program = Program { bpm: None, quantize: None, scale: None, global_silence: false, tracks: vec![] };
     let mut staged_program: Option<Program> = None;
-    let mut current_quantize = 1;
+    let mut current_quantize = ast::QuantizeMode::Fixed(1);
     let mut cycle_count = 0;
 
     println!("Waiting for initial AST compilation...");
     if let Ok(initial_prog) = rx.recv() {
         current_program = initial_prog;
-        if let Some(q) = current_program.quantize {
-            current_quantize = q;
+        if let Some(q) = &current_program.quantize {
+            current_quantize = q.clone();
         }
         if let Some(new_bpm) = current_program.bpm {
             bpm = new_bpm;
             cycle_duration_ms = (60_000.0 / bpm) * 4.0;
         }
-        println!("Initial AST loaded. Sequence running...");
+        
+        let initial_macro_len = current_program.pattern_length_cycles();
+        println!("Initial AST loaded. Macro-cycle length is {} cycles. Sequence running...", initial_macro_len);
     }
     
     let start_time = Instant::now();
@@ -268,7 +269,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match rx.try_recv() {
             Ok(new_prog) => {
-                println!("AST staged! Waiting for phrase boundary...");
+                let staged_macro_len = new_prog.pattern_length_cycles();
+                println!("AST staged! Macro-cycle length is {} cycles. Waiting for phrase boundary...", staged_macro_len);
                 staged_program = Some(new_prog);
             }
             Err(TryRecvError::Empty) => {}
@@ -277,13 +279,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if elapsed_ms >= next_cycle_start_ms {
             if let Some(staged) = &staged_program {
-                let target_q = staged.quantize.unwrap_or(current_quantize);
-                let position_in_phrase = cycle_count % target_q;
+                
+                let q_mode = staged.quantize.clone().unwrap_or(current_quantize.clone());
+                
+                let target_q_cycles = match q_mode {
+                    ast::QuantizeMode::Fixed(n) => n,
+                    ast::QuantizeMode::Auto => current_program.pattern_length_cycles(),
+                };
+
+                let position_in_phrase = cycle_count % target_q_cycles;
                 
                 if position_in_phrase == 0 {
                     current_program = staged_program.take().unwrap();
-                    current_quantize = target_q;
-                    println!("Swapped to new pattern! (Quantize: {} cycles)", current_quantize);
+                    current_quantize = q_mode;
+                    
+                    let calculated_len = current_program.pattern_length_cycles();
+                    println!("Swapped to new pattern! (Quantize: {:?} - Sequence loop length: {} cycles)", 
+                        current_quantize, calculated_len);
 
                     if let Some(new_bpm) = current_program.bpm {
                         if (new_bpm - bpm).abs() > f64::EPSILON {
@@ -293,16 +305,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 } else {
-                    let cycles_left = target_q - position_in_phrase;
-                    println!("Swapping in {}...", cycles_left);
+                    let cycles_left = target_q_cycles - position_in_phrase;
+                    println!("Swapping in {} cycles... (Waiting for full phrase length of {})", 
+                        cycles_left, target_q_cycles);
                 }
             }
+
+            let pattern_len = current_program.pattern_length_cycles();
 
             let mut new_notes = generate_next_cycle(
                 &current_program,
                 bpm,
                 next_cycle_start_ms,
                 cycle_count,
+                pattern_len,
             );
             
             new_notes.sort_by(|a, b| b.start_ms.partial_cmp(&a.start_ms).unwrap());
@@ -328,7 +344,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // VOICE STEALING: Prevent overlapping/stuck notes
                 active_notes.retain(|&(_off_time, channel, pitch)| {
                     if channel == note.channel && pitch == note.pitch {
-                        // Immediately fire a NoteOff before triggering the identical overlapping NoteOn
                         send_midi!(vec![0x80 | channel, pitch, 0]);
                         false 
                     } else {
@@ -379,10 +394,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         send_midi!(vec![0xB0 | ch, 123, 0]); 
     }
 
-    // Send empty payload sentinel to signal the IO thread to exit
     send_midi!(vec![]);
 
-    // Give the I/O thread a fraction of a second to flush the channel buffer before exit
     thread::sleep(Duration::from_millis(50));
     
     println!("Graceful shutdown complete.");

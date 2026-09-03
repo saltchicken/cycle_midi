@@ -18,6 +18,7 @@ An MMN file consists of optional global directives followed by track declaration
 Directives control the overall playback state of the sequencer. They are evaluated at the top of the file before any tracks.
 * `#BPM=120` or `#BPM=128.5`: Sets the master tempo. If omitted during a live-coding session, the engine simply maintains the last known BPM.
 * `#QUANTIZE=4`: Sets the phrase boundary for live code swapping. If you edit and save the file while the sequencer is running, the engine will stage your new pattern and wait until the current cycle count is a multiple of this number before seamlessly dropping it in. Defaults to `1` (swaps on the next immediate cycle).
+* `#QUANTIZE=auto`: Dynamically calculates the "Least Common Multiple" (LCM) of the cycle lengths across all unmuted tracks and sets the swap boundary to exactly match your longest loop.
 * `#SILENCE`: Instantly mutes all playback globally when present. Useful for quick panic stops or dramatic dropouts during a performance.
 
 ### Scale Definitions
@@ -48,6 +49,7 @@ You can designate an entire track to play faster or slower, lock it to a specifi
 * `T2 slow 2: C3 . E3 .` (Plays the sequence at half speed, taking two cycles to complete one loop)
 * `T3 scale G3 minor_pentatonic: 0 2 3 4` (Track 3 plays numeric notes in G minor pentatonic)
 * `T4 seed 42: [C4 E4]?50` (Locks the probability generator to a specific seed so it repeats identically across cycles)
+* `T4 seed 42 every 4: [C4]?50` (Sets a seed, but automatically increments the seed value every 4 *Macro-Cycles* (full pattern loops) to generate a new variation that then repeats).
 * `T5 scale D2 dorian fast 2: 0 1 2 3` (Functionally identical to the line above)
 
 **Track Muting (`!`)**
@@ -146,25 +148,25 @@ Breaks down chords or groups of notes into sequential arpeggio patterns, inspire
 
 ## 7. Conditionals
 
-Inspired by functional concepts in TidalCycles (like `every` or `whenmod`), you can conditionally apply modifiers or play notes based on the current master cycle count. This enables highly dynamic, generative sequences that evolve over time without writing long, repetitive phrases.
+Conditionals can act on two different time horizons: the **Micro-Cycle** (the standard 1-bar cycle limit) and the **Macro-Cycle** (the full length of the pattern, automatically calculated as the Least Common Multiple (LCM) of all repeating tracks combined). 
 
-### The `if(interval, offset)` Modifier
-Appends to any postfix modifier (like `*`, `/`, or `arp()`) to apply it *only* on specific cycles.
-* `[C4 D4] *2 if(4)`
-  * *Result:* Plays C4 and D4 twice as fast, but *only* on every 4th cycle (Cycle 0, 4, 8...). On other cycles, it plays them at their default speed.
-* `C4+E4+G4 arp(up) if(2, 1)`
-  * *Result:* Arpeggiates the chord every 2nd cycle, offset by 1 (Cycle 1, 3, 5...). On even cycles, it skips the arpeggiator and plays as a standard block chord.
+### Micro Conditionals (`if`, `only`)
+These evaluate against the fast, underlying 1-bar cycle count.
 
-### The `only(interval, offset)` Node Filter
-Appends to a node to make it play *only* on specific cycles. On cycles where the condition fails, the node evaluates as a Rest (`.`).
-* `C4 only(4)`
-  * *Result:* Plays C4 on cycle 0, 4, 8... On all other cycles, this slot is completely silent.
-* `[C4 D4 only(2)]`
-  * *Result:* C4 plays every cycle, but D4 only plays every other cycle, creating rhythmic variety.
+* **`if(interval, offset)`**: Appends to any postfix modifier (like `*`, `/`, or `arp()`) to apply it *only* on specific cycles.
+  * `[C4 D4] *2 if(4)` (Plays twice as fast only on cycle 0, 4, 8...)
+* **`only(interval, offset)`**: Appends to a node to make it play *only* on specific cycles. On cycles where the condition fails, it evaluates as a Rest (`.`).
+  * `C4 only(4)` (Plays C4 on cycle 0, 4, 8... completely silent on others)
 
-*Note: The `offset` parameter is optional. `if(4)` is automatically shorthand for `if(4, 0)`.*
+### Macro Conditionals (`m_if`, `m_only`)
+These evaluate against the overarching *Macro-Cycle*, allowing you to trigger variations at the true bounds of your entire arrangement.
 
----
+* **`m_if(interval, offset)`**: Applies a modifier for the ENTIRE duration of the matched macro loop count.
+  * `[C4 D4] arp(up) m_if(4)` (Arpeggiates continuously during every 4th full repetition of the multi-track pattern).
+* **`m_only(interval, offset)`**: Gates a node so it triggers **ONLY on the first cycle** of the matched macro loop count. Perfect for turnaround crash cymbals or fills that you don't want to repeat unnecessarily.
+  * `36 m_only(4)` (Plays a single crash cymbal at the exact beginning of every 4th full pattern loop, and remains silent for the rest of it).
+
+*Note: The `offset` parameter is optional for all conditionals. `if(4)` is automatically shorthand for `if(4, 0)`.*
 
 ## 8. Rust Abstract Syntax Tree (AST) Mapping
 
@@ -173,30 +175,32 @@ The notation is designed to be parsed via `chumsky` into the following structure
 ```rust
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
-    /// Master tempo (optional to allow carrying over previous state)
     pub bpm: Option<f64>,
-    /// Master cycle phrase quantization for hot-reloading patterns
-    pub quantize: Option<usize>,
-    /// Master scale for numeric pitches
+    pub quantize: Option<QuantizeMode>,
     pub scale: Option<ScaleDef>,
-    /// Global panic / mute toggle
     pub global_silence: bool,
-    /// All defined MIDI tracks
     pub tracks: Vec<Track>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum QuantizeMode {
+    Fixed(usize),
+    Auto,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Track {
-    /// 0-indexed MIDI channel (0-15 corresponds to Channels 1-16)
     pub channel: u8,
-    /// Whether the track is prefixed with the `!` mute operator
     pub is_muted: bool,
-    /// Track specific scale definition
     pub scale: Option<ScaleDef>,
-    /// Optional rng seed for locking probabilities
-    pub seed: Option<u64>,
-    /// The parsed musical sequence for this track
+    pub seed: Option<SeedDef>,
     pub root_node: Node,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeedDef {
+    pub base: u64,
+    pub macro_interval: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -212,38 +216,30 @@ pub enum ArpStyle {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    /// A single MIDI note with its computed modifiers
-    Note { 
-        pitch: Pitch, 
-        velocity: u8, 
-        gate: u8, 
-        prob: u8 
+    Note { pitch: Pitch, velocity: u8, gate: u8, prob: u8 },
+    Chord(Vec<Node>),
+    Rest,
+    Hold,
+    Sequence(Vec<Node>),
+    Parallel(Vec<Vec<Node>>),
+    Euclidean(Box<Node>, u8, u8),
+    Alternator(Vec<Node>),
+    SpeedModifier(Box<Node>, f32),
+    Arp(Box<Node>, ArpStyle),
+    
+    // Evaluates against the 1-bar cycle limit
+    Condition {
+        interval: usize,
+        offset: usize,
+        true_branch: Box<Node>,
+        false_branch: Box<Node>,
     },
     
-    /// Multiple nodes firing simultaneously
-    Chord(Vec<Node>),
-    
-    /// Silence for the duration of the time slot
-    Rest,
-    
-    /// Extends the gate of the previously fired note
-    Hold,
-    
-    /// Sequential time subdivision: [ A B C ]
-    Sequence(Vec<Node>),
-    
-    /// Polyrhythmic / parallel playback: { A B | C D }
-    Parallel(Vec<Vec<Node>>),
-    
-    /// Algorithmic distribution: Node(pulses, steps)
-    Euclidean(Box<Node>, u8, u8),
-    
-    /// Rotates through children per master cycle: < A B C >
-    Alternator(Vec<Node>),
-    
-    /// Multiplier (*) or Slowdown (/)
-    SpeedModifier(Box<Node>, f32),
-
-    /// Pattern generator breaking down notes into an arpeggio
-    Arp(Box<Node>, ArpStyle),
+    // Evaluates against the LCM of all tracks
+    MacroCondition {
+        interval: usize,
+        offset: usize,
+        true_branch: Box<Node>,
+        false_branch: Box<Node>,
+    }
 }

@@ -20,19 +20,31 @@ pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>) -> u8 {
     }
 }
 
-fn flatten_notes(node: &Node, cycle_count: usize) -> Vec<(Pitch, u8, u8, u8)> {
+fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize) -> Vec<(Pitch, u8, u8, u8)> {
     match node {
         Node::Note { pitch, velocity, gate, prob } => vec![(pitch.clone(), *velocity, *gate, *prob)],
         Node::Chord(elements) | Node::Sequence(elements) | Node::Alternator(elements) => {
-            elements.iter().flat_map(|n| flatten_notes(n, cycle_count)).collect()
+            elements.iter().flat_map(|n| flatten_notes(n, cycle_count, macro_cycle_length)).collect()
         }
-        Node::Parallel(layers) => layers.iter().flat_map(|l| l.iter().flat_map(|n| flatten_notes(n, cycle_count))).collect(),
-        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => flatten_notes(child, cycle_count),
+        Node::Parallel(layers) => layers.iter().flat_map(|l| l.iter().flat_map(|n| flatten_notes(n, cycle_count, macro_cycle_length))).collect(),
+        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => flatten_notes(child, cycle_count, macro_cycle_length),
         Node::Condition { interval, offset, true_branch, false_branch } => {
             if cycle_count % interval == *offset {
-                flatten_notes(true_branch, cycle_count)
+                flatten_notes(true_branch, cycle_count, macro_cycle_length)
             } else {
-                flatten_notes(false_branch, cycle_count)
+                flatten_notes(false_branch, cycle_count, macro_cycle_length)
+            }
+        }
+        Node::MacroCondition { interval, offset, is_gate, true_branch, false_branch } => {
+            let m_len = macro_cycle_length.max(1);
+            let macro_cycle = cycle_count / m_len;
+            let is_active_macro = macro_cycle % interval == *offset;
+            
+            // If it's a gate (m_only), restrict to the very first cycle of the matching macro block
+            if is_active_macro && (!*is_gate || (cycle_count % m_len == 0)) {
+                flatten_notes(true_branch, cycle_count, macro_cycle_length)
+            } else {
+                flatten_notes(false_branch, cycle_count, macro_cycle_length)
             }
         }
         Node::Rest | Node::Hold => vec![],
@@ -122,6 +134,17 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                 traverse_ast(false_branch, ctx, out_notes, rng)
             }
         }
+        Node::MacroCondition { interval, offset, is_gate, true_branch, false_branch } => {
+            let m_len = ctx.macro_cycle_length.max(1);
+            let macro_cycle = ctx.cycle_count / m_len;
+            let is_active_macro = macro_cycle % interval == *offset;
+            
+            if is_active_macro && (!*is_gate || (ctx.cycle_count % m_len == 0)) {
+                traverse_ast(true_branch, ctx, out_notes, rng)
+            } else {
+                traverse_ast(false_branch, ctx, out_notes, rng)
+            }
+        }
         Node::Euclidean(child, pulses, steps) => {
             if *steps == 0 || *pulses == 0 { return vec![]; }
             let step_duration = ctx.duration_ms / *steps as f64;
@@ -167,7 +190,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             last_indices
         }
         Node::Arp(child, style) => {
-            let raw_notes = flatten_notes(child, ctx.cycle_count);
+            let raw_notes = flatten_notes(child, ctx.cycle_count, ctx.macro_cycle_length);
             if raw_notes.is_empty() { return vec![]; }
             
             let mut resolved: Vec<(u8, u8, u8, u8)> = raw_notes.into_iter().map(|(pitch, vel, gate, prob)| {
@@ -295,7 +318,8 @@ pub fn generate_next_cycle(
     program: &Program, 
     bpm: f64, 
     cycle_start_time_ms: f64, 
-    cycle_count: usize
+    cycle_count: usize,
+    macro_cycle_length: usize,
 ) -> Vec<ScheduledNote> {
     if program.global_silence {
         return Vec::new();
@@ -303,6 +327,7 @@ pub fn generate_next_cycle(
 
     let master_duration_ms = (60_000.0 / bpm) * 4.0; 
     let mut notes = Vec::new();
+    let macro_cycle_count = cycle_count / macro_cycle_length.max(1);
 
     for track in &program.tracks {
         if track.is_muted { continue; }
@@ -313,9 +338,13 @@ pub fn generate_next_cycle(
             track.scale.clone().or(program.scale.clone())
         };
 
-        // Reset the RNG per cycle using the track's seed so randomness stays identical
-        let mut rng = if let Some(seed) = track.seed {
-            StdRng::seed_from_u64(seed)
+        let mut rng = if let Some(seed_def) = &track.seed {
+            let mut final_seed = seed_def.base;
+            if let Some(interval) = seed_def.macro_interval {
+                let seed_bump = (macro_cycle_count / interval) as u64;
+                final_seed = final_seed.wrapping_add(seed_bump);
+            }
+            StdRng::seed_from_u64(final_seed)
         } else {
             StdRng::seed_from_u64(rand::random::<u64>())
         };
@@ -327,6 +356,7 @@ pub fn generate_next_cycle(
             window_start_ms: cycle_start_time_ms,
             window_end_ms: cycle_start_time_ms + master_duration_ms,
             cycle_count,
+            macro_cycle_length,
             scale: active_scale, 
             active_chord_indices: vec![],
         };

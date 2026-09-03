@@ -1,5 +1,5 @@
 use chumsky::prelude::*;
-use crate::ast::{Node, Pitch, Program, ScaleDef, Track, ArpStyle};
+use crate::ast::{Node, Pitch, Program, ScaleDef, SeedDef, Track, ArpStyle, QuantizeMode};
 
 pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let int_u8 = text::int::<char, Simple<char>>(10)
@@ -108,25 +108,56 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             Div(f32),
             Arp(ArpStyle),
             Only(usize, usize),
+            MacroOnly(usize, usize),
+            If(usize, usize),
+            MacroIf(usize, usize),
         }
 
         struct Postfix {
             op: PostfixOp,
             cond: Option<(usize, usize)>,
+            m_cond: Option<(usize, usize)>,
         }
 
+        // Attachments
         let condition_clause = just("if(")
             .ignore_then(int_u8.clone())
             .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| (interval as usize, offset.unwrap_or(0) as usize));
 
+        let m_condition_clause = just("m_if(")
+            .ignore_then(int_u8.clone())
+            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| (interval as usize, offset.unwrap_or(0) as usize));
+
+        // Standalone Filters
         let only_mod = just("only(")
             .ignore_then(int_u8.clone())
             .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| PostfixOp::Only(interval as usize, offset.unwrap_or(0) as usize));
 
+        let m_only_mod = just("m_only(")
+            .ignore_then(int_u8.clone())
+            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| PostfixOp::MacroOnly(interval as usize, offset.unwrap_or(0) as usize));
+
+        let if_mod = just("if(")
+            .ignore_then(int_u8.clone())
+            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| PostfixOp::If(interval as usize, offset.unwrap_or(0) as usize));
+
+        let m_if_mod = just("m_if(")
+            .ignore_then(int_u8.clone())
+            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| PostfixOp::MacroIf(interval as usize, offset.unwrap_or(0) as usize));
+
+        // Math/Algos
         let euclidean = just('(')
             .ignore_then(int_u8.clone())
             .then_ignore(just(','))
@@ -154,11 +185,15 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then_ignore(just(')').padded())
             .map(PostfixOp::Arp);
 
-        let postfix_op = choice((euclidean, speed_mul, speed_div, arp_mod, only_mod)).padded();
+        // Include if_mod and m_if_mod so they can be parsed without needing a speed/arp operator first
+        let postfix_op = choice((
+            euclidean, speed_mul, speed_div, arp_mod, only_mod, m_only_mod, if_mod, m_if_mod
+        )).padded();
 
         let postfix = postfix_op
             .then(condition_clause.padded().or_not())
-            .map(|(op, cond)| Postfix { op, cond });
+            .then(m_condition_clause.padded().or_not())
+            .map(|((op, cond), m_cond)| Postfix { op, cond, m_cond });
 
         atom.then(postfix.repeated()).map(|(base, postfixes)| {
             postfixes.into_iter().fold(base, |acc, post| {
@@ -172,18 +207,49 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                         interval,
                         offset,
                         true_branch: Box::new(acc.clone()),
-                        false_branch: Box::new(Node::Rest), // Falls back to silence
+                        false_branch: Box::new(Node::Rest), 
+                    },
+                    PostfixOp::MacroOnly(interval, offset) => Node::MacroCondition {
+                        interval,
+                        offset,
+                        is_gate: true, // Restricts to turnaround cycle
+                        true_branch: Box::new(acc.clone()),
+                        false_branch: Box::new(Node::Rest), 
+                    },
+                    PostfixOp::If(interval, offset) => Node::Condition {
+                        interval,
+                        offset,
+                        true_branch: Box::new(acc.clone()),
+                        false_branch: Box::new(Node::Rest), 
+                    },
+                    PostfixOp::MacroIf(interval, offset) => Node::MacroCondition {
+                        interval,
+                        offset,
+                        is_gate: false, // Applies for the full duration of the macro block
+                        true_branch: Box::new(acc.clone()),
+                        false_branch: Box::new(Node::Rest), 
                     },
                 };
 
-                match post.cond {
+                let micro_applied = match post.cond {
                     Some((interval, offset)) => Node::Condition {
                         interval,
                         offset,
                         true_branch: Box::new(true_branch),
-                        false_branch: Box::new(acc), // Falls back to unmodified branch
+                        false_branch: Box::new(acc.clone()), 
                     },
                     None => true_branch,
+                };
+
+                match post.m_cond {
+                    Some((interval, offset)) => Node::MacroCondition {
+                        interval,
+                        offset,
+                        is_gate: false,
+                        true_branch: Box::new(micro_applied),
+                        false_branch: Box::new(acc), 
+                    },
+                    None => micro_applied,
                 }
             })
         })
@@ -199,7 +265,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     #[derive(Clone)]
     enum Directive {
         Bpm(f64),
-        Quantize(usize),
+        Quantize(QuantizeMode),
         Scale(ScaleDef),
         Silence,
     }
@@ -224,9 +290,15 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let directive = choice((
         just("#BPM=").ignore_then(float_f64.clone()).map(Directive::Bpm),
         just("#QUANTIZE=").ignore_then(
-            text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid quantize: {}", e)))
-            })
+            choice((
+                just("auto").to(QuantizeMode::Auto),
+                just("AUTO").to(QuantizeMode::Auto),
+                text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                    s.parse::<usize>()
+                        .map_err(|e| Simple::custom(span, format!("Invalid quantize: {}", e)))
+                        .map(QuantizeMode::Fixed)
+                })
+            ))
         ).map(Directive::Quantize),
         just("#SCALE=").ignore_then(scale_def.clone()).map(Directive::Scale),
         just("#SILENCE").to(Directive::Silence),
@@ -254,7 +326,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     enum TrackModifier {
         Speed(f32),
         Scale(ScaleDef),
-        Seed(u64),
+        Seed(SeedDef),
     }
 
     let track_modifier = choice((
@@ -265,7 +337,13 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<u64>().map_err(|e| Simple::custom(span, format!("Invalid seed: {}", e)))
             })
-        ).map(TrackModifier::Seed),
+        ).then(
+            just("every").padded().ignore_then(
+                text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                    s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid interval: {}", e)))
+                })
+            ).or_not()
+        ).map(|(base, macro_interval)| TrackModifier::Seed(SeedDef { base, macro_interval })),
     ));
 
     let track = just('!')
