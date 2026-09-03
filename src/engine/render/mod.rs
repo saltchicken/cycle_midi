@@ -88,7 +88,7 @@ pub fn generate_next_cycle(
             StdRng::seed_from_u64(rand::random::<u64>())
         };
 
-        let ctx = RenderContext {
+        let mut ctx = RenderContext {
             channel: track.channel,
             start_ms: cycle_start_time_ms,
             duration_ms: master_duration_ms,
@@ -102,7 +102,8 @@ pub fn generate_next_cycle(
             octave_offset: track.octave_offset,
             alternator_stride: 1,
         };
-        traverse_ast(&track.root_node, ctx, &mut events, &mut rng);
+        
+        traverse_ast(&track.root_node, &mut ctx, &mut events, &mut rng);
     }
 
     events

@@ -17,7 +17,7 @@ pub fn flatten_notes(
             velocity,
             gate,
         } => vec![(pitch.clone(), *velocity, *gate)],
-        Node::CC { .. } => vec![], // CCs are ignored in Arp evaluation
+        Node::CC { .. } => vec![],
         Node::Chord(elements) | Node::Sequence(elements) => {
             let mut res = Vec::new();
             for n in elements {
@@ -153,10 +153,10 @@ pub fn flatten_notes(
 
 pub fn traverse_ast(
     node: &Node,
-    ctx: RenderContext,
+    ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
     rng: &mut StdRng,
-) -> Vec<usize> {
+) {
     match node {
         Node::Note {
             pitch,
@@ -175,9 +175,11 @@ pub fn traverse_ast(
                     duration_ms: actual_duration,
                 });
 
-                return vec![out_events.len() - 1];
+                ctx.active_chord_indices.clear();
+                ctx.active_chord_indices.push(out_events.len() - 1);
+            } else {
+                ctx.active_chord_indices.clear();
             }
-            vec![]
         }
         Node::CC { controller, value } => {
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
@@ -216,10 +218,10 @@ pub fn traverse_ast(
                     start_ms: ctx.start_ms,
                 });
             }
-            vec![]
+            ctx.active_chord_indices.clear();
         }
         Node::Rest => {
-            vec![]
+            ctx.active_chord_indices.clear();
         }
         Node::Hold => {
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
@@ -230,69 +232,103 @@ pub fn traverse_ast(
                         }
                     }
                 }
-                return ctx.active_chord_indices.clone();
+            } else {
+                ctx.active_chord_indices.clear();
             }
-            vec![]
         }
         Node::Chord(elements) => {
-            let mut indices = vec![];
+            let mut chord_indices = Vec::new();
+            let orig_indices = ctx.active_chord_indices.clone();
+            
             for el in elements {
-                indices.extend(traverse_ast(el, ctx.clone(), out_events, rng));
+                ctx.active_chord_indices = orig_indices.clone();
+                traverse_ast(el, ctx, out_events, rng);
+                chord_indices.extend_from_slice(&ctx.active_chord_indices);
             }
-            indices
+            ctx.active_chord_indices = chord_indices;
         }
         Node::Sequence(elements) => {
             if elements.is_empty() {
-                return vec![];
+                ctx.active_chord_indices.clear();
+                return;
             }
             let step_duration = ctx.duration_ms / elements.len() as f64;
 
-            let mut last_indices = ctx.active_chord_indices.clone();
+            let orig_start = ctx.start_ms;
+            let orig_duration = ctx.duration_ms;
+            let orig_win_start = ctx.window_start_ms;
+            let orig_win_end = ctx.window_end_ms;
 
             for (i, el) in elements.iter().enumerate() {
-                let mut step_ctx = ctx.clone();
-                step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
-                step_ctx.duration_ms = step_duration;
-                step_ctx.window_start_ms = step_ctx.window_start_ms.max(step_ctx.start_ms);
-                step_ctx.window_end_ms = step_ctx
-                    .window_end_ms
-                    .min(step_ctx.start_ms + step_duration);
+                ctx.start_ms = orig_start + (i as f64 * step_duration);
+                ctx.duration_ms = step_duration;
+                ctx.window_start_ms = orig_win_start.max(ctx.start_ms);
+                ctx.window_end_ms = orig_win_end.min(ctx.start_ms + step_duration);
 
-                step_ctx.active_chord_indices = last_indices;
-                last_indices = traverse_ast(el, step_ctx, out_events, rng);
+                traverse_ast(el, ctx, out_events, rng);
             }
-            last_indices
+
+            ctx.start_ms = orig_start;
+            ctx.duration_ms = orig_duration;
+            ctx.window_start_ms = orig_win_start;
+            ctx.window_end_ms = orig_win_end;
         }
         Node::Parallel(layers) => {
-            let mut all_indices = vec![];
+            let orig_indices = ctx.active_chord_indices.clone();
+            let mut all_indices = Vec::new();
+            
             for layer in layers {
-                all_indices.extend(traverse_ast(
-                    &Node::Sequence(layer.clone()),
-                    ctx.clone(),
-                    out_events,
-                    rng,
-                ));
+                ctx.active_chord_indices = orig_indices.clone();
+                
+                if layer.is_empty() {
+                    ctx.active_chord_indices.clear();
+                } else {
+                    let step_duration = ctx.duration_ms / layer.len() as f64;
+                    let orig_start = ctx.start_ms;
+                    let orig_duration = ctx.duration_ms;
+                    let orig_win_start = ctx.window_start_ms;
+                    let orig_win_end = ctx.window_end_ms;
+
+                    for (i, el) in layer.iter().enumerate() {
+                        ctx.start_ms = orig_start + (i as f64 * step_duration);
+                        ctx.duration_ms = step_duration;
+                        ctx.window_start_ms = orig_win_start.max(ctx.start_ms);
+                        ctx.window_end_ms = orig_win_end.min(ctx.start_ms + step_duration);
+
+                        traverse_ast(el, ctx, out_events, rng);
+                    }
+
+                    ctx.start_ms = orig_start;
+                    ctx.duration_ms = orig_duration;
+                    ctx.window_start_ms = orig_win_start;
+                    ctx.window_end_ms = orig_win_end;
+                }
+                
+                all_indices.extend_from_slice(&ctx.active_chord_indices);
             }
-            all_indices
+            ctx.active_chord_indices = all_indices;
         }
         Node::Alternator(elements) => {
             if elements.is_empty() {
-                return vec![];
+                ctx.active_chord_indices.clear();
+                return;
             }
 
             let index = (ctx.cycle_count / ctx.alternator_stride) % elements.len();
+            let orig_stride = ctx.alternator_stride;
+            ctx.alternator_stride = orig_stride * elements.len();
 
-            let mut step_ctx = ctx.clone();
-            step_ctx.alternator_stride = ctx.alternator_stride * elements.len();
-
-            traverse_ast(&elements[index], step_ctx, out_events, rng)
+            traverse_ast(&elements[index], ctx, out_events, rng);
+            
+            ctx.alternator_stride = orig_stride;
         }
         Node::RandomChoice(elements) => {
             if elements.is_empty() {
-                return vec![];
+                ctx.active_chord_indices.clear();
+                return;
             }
             let index = rng.random_range(0..elements.len());
-            traverse_ast(&elements[index], ctx, out_events, rng)
+            traverse_ast(&elements[index], ctx, out_events, rng);
         }
         Node::Condition {
             interval,
@@ -301,9 +337,9 @@ pub fn traverse_ast(
             false_branch,
         } => {
             if ctx.cycle_count % interval == *offset {
-                traverse_ast(true_branch, ctx, out_events, rng)
+                traverse_ast(true_branch, ctx, out_events, rng);
             } else {
-                traverse_ast(false_branch, ctx, out_events, rng)
+                traverse_ast(false_branch, ctx, out_events, rng);
             }
         }
         Node::MacroCondition {
@@ -318,44 +354,49 @@ pub fn traverse_ast(
             let is_active_macro = macro_cycle % interval == *offset;
 
             if is_active_macro && (!*is_gate || (ctx.cycle_count % m_len == 0)) {
-                traverse_ast(true_branch, ctx, out_events, rng)
+                traverse_ast(true_branch, ctx, out_events, rng);
             } else {
-                traverse_ast(false_branch, ctx, out_events, rng)
+                traverse_ast(false_branch, ctx, out_events, rng);
             }
         }
         Node::Probability(child, prob) => {
             if *prob < 100 && rng.random_range(0..100) >= *prob {
-                vec![]
+                ctx.active_chord_indices.clear();
             } else {
-                traverse_ast(child, ctx, out_events, rng)
+                traverse_ast(child, ctx, out_events, rng);
             }
         }
         Node::Euclidean(child, pulses, steps) => {
             if *steps == 0 || *pulses == 0 {
-                return vec![];
+                ctx.active_chord_indices.clear();
+                return;
             }
             let step_duration = ctx.duration_ms / *steps as f64;
-            let mut last_indices = ctx.active_chord_indices.clone();
+            let orig_start = ctx.start_ms;
+            let orig_duration = ctx.duration_ms;
+            let orig_win_start = ctx.window_start_ms;
+            let orig_win_end = ctx.window_end_ms;
 
             for i in 0..*steps {
                 let is_hit =
                     ((i as usize * *pulses as usize) % (*steps as usize)) < (*pulses as usize);
+                
                 if is_hit {
-                    let mut step_ctx = ctx.clone();
-                    step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
-                    step_ctx.duration_ms = step_duration;
-                    step_ctx.window_start_ms = step_ctx.window_start_ms.max(step_ctx.start_ms);
-                    step_ctx.window_end_ms = step_ctx
-                        .window_end_ms
-                        .min(step_ctx.start_ms + step_duration);
+                    ctx.start_ms = orig_start + (i as f64 * step_duration);
+                    ctx.duration_ms = step_duration;
+                    ctx.window_start_ms = orig_win_start.max(ctx.start_ms);
+                    ctx.window_end_ms = orig_win_end.min(ctx.start_ms + step_duration);
 
-                    step_ctx.active_chord_indices = last_indices;
-                    last_indices = traverse_ast(child, step_ctx, out_events, rng);
+                    traverse_ast(child, ctx, out_events, rng);
                 } else {
-                    last_indices = vec![];
+                    ctx.active_chord_indices.clear();
                 }
             }
-            last_indices
+
+            ctx.start_ms = orig_start;
+            ctx.duration_ms = orig_duration;
+            ctx.window_start_ms = orig_win_start;
+            ctx.window_end_ms = orig_win_end;
         }
         Node::SpeedModifier(child, multiplier) => {
             let m = *multiplier as f64;
@@ -364,20 +405,23 @@ pub fn traverse_ast(
             let chunk_start_ms = ctx.start_ms - phase_offset;
             let chunks_to_render = (ctx.duration_ms / local_duration).ceil() as usize + 2;
 
-            let mut last_indices = ctx.active_chord_indices.clone();
+            let orig_start = ctx.start_ms;
+            let orig_duration = ctx.duration_ms;
+            let orig_cycle_count = ctx.cycle_count;
 
             for i in 0..chunks_to_render {
-                let mut step_ctx = ctx.clone();
                 let absolute_chunk_start = chunk_start_ms + (i as f64 * local_duration);
+                
+                ctx.start_ms = absolute_chunk_start;
+                ctx.duration_ms = local_duration;
+                ctx.cycle_count = (absolute_chunk_start / local_duration).round() as usize;
 
-                step_ctx.start_ms = absolute_chunk_start;
-                step_ctx.duration_ms = local_duration;
-                step_ctx.cycle_count = (absolute_chunk_start / local_duration).round() as usize;
-
-                step_ctx.active_chord_indices = last_indices;
-                last_indices = traverse_ast(child, step_ctx, out_events, rng);
+                traverse_ast(child, ctx, out_events, rng);
             }
-            last_indices
+
+            ctx.start_ms = orig_start;
+            ctx.duration_ms = orig_duration;
+            ctx.cycle_count = orig_cycle_count;
         }
         Node::Arp(child, style) => {
             let raw_notes = flatten_notes(
@@ -387,8 +431,10 @@ pub fn traverse_ast(
                 ctx.alternator_stride,
                 rng,
             );
+            
             if raw_notes.is_empty() {
-                return vec![];
+                ctx.active_chord_indices.clear();
+                return;
             }
 
             let mut resolved: Vec<(u8, u8, u8)> = raw_notes
@@ -492,37 +538,45 @@ pub fn traverse_ast(
             }
 
             if pattern.is_empty() {
-                return vec![];
+                ctx.active_chord_indices.clear();
+                return;
             }
+            
             let step_duration = ctx.duration_ms / pattern.len() as f64;
-            let mut last_indices = ctx.active_chord_indices.clone();
+            let orig_start = ctx.start_ms;
+            let orig_duration = ctx.duration_ms;
+            let orig_win_start = ctx.window_start_ms;
+            let orig_win_end = ctx.window_end_ms;
 
             for (i, (pitch, vel, gate)) in pattern.into_iter().enumerate() {
-                let mut step_ctx = ctx.clone();
-                step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
-                step_ctx.duration_ms = step_duration;
-                step_ctx.window_start_ms = step_ctx.window_start_ms.max(step_ctx.start_ms);
-                step_ctx.window_end_ms = step_ctx
-                    .window_end_ms
-                    .min(step_ctx.start_ms + step_duration);
+                ctx.start_ms = orig_start + (i as f64 * step_duration);
+                ctx.duration_ms = step_duration;
+                ctx.window_start_ms = orig_win_start.max(ctx.start_ms);
+                ctx.window_end_ms = orig_win_end.min(ctx.start_ms + step_duration);
 
-                if step_ctx.start_ms >= step_ctx.window_start_ms - 0.1
-                    && step_ctx.start_ms < step_ctx.window_end_ms - 0.1
+                if ctx.start_ms >= ctx.window_start_ms - 0.1
+                    && ctx.start_ms < ctx.window_end_ms - 0.1
                 {
                     let actual_duration = step_duration * (gate as f64 / 100.0);
                     out_events.push(ScheduledEvent::Note {
                         channel: ctx.channel,
                         pitch,
                         velocity: vel,
-                        start_ms: step_ctx.start_ms,
+                        start_ms: ctx.start_ms,
                         duration_ms: actual_duration,
                     });
-                    last_indices = vec![out_events.len() - 1];
+                    
+                    ctx.active_chord_indices.clear();
+                    ctx.active_chord_indices.push(out_events.len() - 1);
                 } else {
-                    last_indices = vec![];
+                    ctx.active_chord_indices.clear();
                 }
             }
-            last_indices
+
+            ctx.start_ms = orig_start;
+            ctx.duration_ms = orig_duration;
+            ctx.window_start_ms = orig_win_start;
+            ctx.window_end_ms = orig_win_end;
         }
     }
 }
