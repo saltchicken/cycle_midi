@@ -19,13 +19,14 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<Pro
             .unwrap();
 
         println!(
-            "Listening for changes to {} in directory {}...",
-            file_path.display(),
-            watch_dir.display()
+            "Listening for changes to .mmn files in directory {}... (Starting with {})",
+            watch_dir.display(),
+            file_path.display()
         );
 
         let parser = mmn_parser();
 
+        // Initially load the default file (e.g., live.mmn)
         if let Ok(contents) = fs::read_to_string(&file_path) {
             if let Ok(initial_prog) = parser.parse(contents) {
                 let _ = tx.send(initial_prog);
@@ -35,10 +36,16 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<Pro
         for res in watch_rx {
             match res {
                 Ok(events) => {
-                    let is_target_file = events.iter().any(|e| e.path == file_path);
+                    // Find the most recently modified .mmn file in the event batch
+                    let saved_mmn_file = events
+                        .iter()
+                        .find(|e| e.path.extension().and_then(|ext| ext.to_str()) == Some("mmn"))
+                        .map(|e| &e.path);
 
-                    if is_target_file {
-                        if let Ok(contents) = fs::read_to_string(&file_path) {
+                    if let Some(active_file) = saved_mmn_file {
+                        println!("Detected save in: {}", active_file.display());
+                        
+                        if let Ok(contents) = fs::read_to_string(active_file) {
                             if contents.trim().is_empty() {
                                 let empty_prog = Program {
                                     bpm: None,
