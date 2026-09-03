@@ -131,11 +131,19 @@ Cycles through the contained elements one by one each time the master loop repea
   * *Cycle 2:* `E4 D4`
   * *Cycle 3:* `G4 D4`
 
+### Random Choice `[ | ]`
+Picks one of the pipe-separated choices at random per cycle evaluation, similar to TidalCycles.
+* `[C4 | E4 | G4]` 
+  * *Result:* Uniformly picks one pitch from `C4`, `E4`, or `G4` for the slot.
+* `[C4 E4 | G4 | .]` 
+  * *Result:* Choices can be individual notes, rests, or whole sub-sequences.
+* *Note: Random choice evaluation respects the track's `seed` settings, meaning patterns remain deterministic across cycles unless a `seed every X` modifier is specified.*
+
 ### Arpeggiator `arp()`
 Breaks down chords or groups of notes into sequential arpeggio patterns, inspired by TidalCycles.
-* `C4+E4+G4 arp(up)`
+* `C4+E4+G4 arp(up)` 
   * *Result:* Evaluates the chord into individual notes and plays them sequentially (C4, then E4, then G4) equally spaced within the time slot.
-* `[0 2 4] arp(updown)`
+* `[0 2 4] arp(updown)` 
   * *Result:* Takes the notes 0, 2, and 4 (relative to the active scale) and plays them up then down sequentially.
 
 **Supported Arp Styles:**
@@ -172,6 +180,8 @@ These evaluate against the overarching *Macro-Cycle*, allowing you to trigger va
 
 *Note: The `offset` parameter is optional for all conditionals. `if(4)` is automatically shorthand for `if(4, 0)`.*
 
+---
+
 ## 8. Rust Abstract Syntax Tree (AST) Mapping
 
 The notation is designed to be parsed via `chumsky` into the following structured Rust AST:
@@ -204,7 +214,13 @@ pub struct Track {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SeedDef {
     pub base: u64,
-    pub macro_interval: Option<usize>,
+    pub interval: Option<SeedInterval>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SeedInterval {
+    Micro(usize),
+    Macro(usize),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -228,6 +244,7 @@ pub enum Node {
     Parallel(Vec<Vec<Node>>),
     Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
+    RandomChoice(Vec<Node>),
     SpeedModifier(Box<Node>, f32),
     Arp(Box<Node>, ArpStyle),
     
@@ -243,6 +260,7 @@ pub enum Node {
     MacroCondition {
         interval: usize,
         offset: usize,
+        is_gate: bool,
         true_branch: Box<Node>,
         false_branch: Box<Node>,
     }
