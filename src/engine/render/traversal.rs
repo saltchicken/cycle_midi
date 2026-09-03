@@ -224,16 +224,12 @@ pub fn traverse_ast(
             ctx.active_chord_indices.clear();
         }
         Node::Hold => {
-            if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
-                for &idx in &ctx.active_chord_indices {
-                    if let Some(event) = out_events.get_mut(idx) {
-                        if let ScheduledEvent::Note { duration_ms, .. } = event {
-                            *duration_ms += ctx.duration_ms;
-                        }
+            for &idx in &ctx.active_chord_indices {
+                if let Some(event) = out_events.get_mut(idx) {
+                    if let ScheduledEvent::Note { duration_ms, .. } = event {
+                        *duration_ms += ctx.duration_ms;
                     }
                 }
-            } else {
-                ctx.active_chord_indices.clear();
             }
         }
         Node::Chord(elements) => {
