@@ -1,6 +1,6 @@
-pub mod primitives;
 pub mod directives;
-pub mod track;
 pub mod expr;
+pub mod primitives;
+pub mod track;
 
 pub use expr::mmn_parser;

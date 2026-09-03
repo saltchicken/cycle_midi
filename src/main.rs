@@ -5,8 +5,8 @@ mod render;
 mod scheduler;
 
 use ast::Program;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,7 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ctrlc::set_handler(move || {
         println!("\nReceived shutdown signal! Cleaning up MIDI notes...");
         r.store(false, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
     // 3. Setup AST Communication Channel
     let (tx, rx) = channel::<Program>();

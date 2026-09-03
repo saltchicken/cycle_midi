@@ -1,7 +1,9 @@
 use crate::ast::{Pitch, ScaleDef};
 
 pub fn lcm(a: usize, b: usize) -> usize {
-    if a == 0 || b == 0 { return 0; }
+    if a == 0 || b == 0 {
+        return 0;
+    }
     let mut x = a;
     let mut y = b;
     while y != 0 {
@@ -23,7 +25,10 @@ pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>, octave_offset: i32
                 let scale_len = scale.intervals.len() as i32;
                 let octave = val.div_euclid(scale_len);
                 let degree = val.rem_euclid(scale_len) as usize;
-                let note = scale.root_pitch as i32 + (octave * 12) + scale.intervals[degree] as i32 + shift;
+                let note = scale.root_pitch as i32
+                    + (octave * 12)
+                    + scale.intervals[degree] as i32
+                    + shift;
                 note.clamp(0, 127) as u8
             } else {
                 (val + shift).clamp(0, 127) as u8

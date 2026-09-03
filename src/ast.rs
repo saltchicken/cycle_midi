@@ -34,8 +34,15 @@ pub enum DynamicValue {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    Note { pitch: Pitch, velocity: u8, gate: u8 },
-    CC { controller: u8, value: DynamicValue },
+    Note {
+        pitch: Pitch,
+        velocity: u8,
+        gate: u8,
+    },
+    CC {
+        controller: u8,
+        value: DynamicValue,
+    },
     Chord(Vec<Node>),
     Rest,
     Hold,
@@ -56,7 +63,7 @@ pub enum Node {
     MacroCondition {
         interval: usize,
         offset: usize,
-        is_gate: bool, 
+        is_gate: bool,
         true_branch: Box<Node>,
         false_branch: Box<Node>,
     },
@@ -71,28 +78,35 @@ impl Node {
             }
             Node::Alternator(elements) => {
                 let children_lcm = elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()));
-                children_lcm * elements.len() 
+                children_lcm * elements.len()
             }
-            Node::Parallel(layers) => {
-                layers.iter().fold(1, |acc, l| {
-                    let layer_len = l.iter().fold(1, |a, n| lcm(a, n.cycle_length()));
-                    lcm(acc, layer_len)
-                })
+            Node::Parallel(layers) => layers.iter().fold(1, |acc, l| {
+                let layer_len = l.iter().fold(1, |a, n| lcm(a, n.cycle_length()));
+                lcm(acc, layer_len)
+            }),
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) => {
+                child.cycle_length()
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) => child.cycle_length(),
-            Node::Condition { interval, true_branch, false_branch, .. } => {
+            Node::Condition {
+                interval,
+                true_branch,
+                false_branch,
+                ..
+            } => {
                 let branches_lcm = lcm(true_branch.cycle_length(), false_branch.cycle_length());
                 lcm(*interval, branches_lcm)
             }
-            Node::MacroCondition { true_branch, false_branch, .. } => {
-                lcm(true_branch.cycle_length(), false_branch.cycle_length())
-            }
+            Node::MacroCondition {
+                true_branch,
+                false_branch,
+                ..
+            } => lcm(true_branch.cycle_length(), false_branch.cycle_length()),
             Node::SpeedModifier(child, speed) => {
                 let child_len = child.cycle_length();
-                
+
                 let mut num = speed.round() as usize;
                 let mut den = 1;
-                
+
                 for d in 1..=128 {
                     let n = *speed * (d as f32);
                     if (n - n.round()).abs() < 0.005 {
@@ -101,11 +115,11 @@ impl Node {
                         break;
                     }
                 }
-                
+
                 if num == 0 {
                     return child_len;
                 }
-                
+
                 lcm(num, child_len * den) / num
             }
         }
@@ -151,6 +165,8 @@ pub struct Program {
 
 impl Program {
     pub fn pattern_length_cycles(&self) -> usize {
-        self.tracks.iter().fold(1, |acc, track| lcm(acc, track.root_node.cycle_length()))
+        self.tracks
+            .iter()
+            .fold(1, |acc, track| lcm(acc, track.root_node.cycle_length()))
     }
 }

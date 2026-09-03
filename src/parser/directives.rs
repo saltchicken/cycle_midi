@@ -1,6 +1,6 @@
-use chumsky::prelude::*;
+use super::primitives::{float_f64, padding, pitch_val};
 use crate::ast::{QuantizeMode, ScaleDef};
-use super::primitives::{padding, float_f64, pitch_val};
+use chumsky::prelude::*;
 
 #[derive(Clone)]
 enum Directive {
@@ -28,33 +28,41 @@ pub fn scale_def() -> impl Parser<char, ScaleDef, Error = Simple<char>> + Clone 
     pitch_val()
         .then_ignore(just(' ').repeated().at_least(1))
         .then(scale_name())
-        .map(|(root, intervals)| ScaleDef { root_pitch: root, intervals })
+        .map(|(root, intervals)| ScaleDef {
+            root_pitch: root,
+            intervals,
+        })
 }
 
-pub fn global_directives() -> impl Parser<char, (Option<f64>, Option<QuantizeMode>, Option<ScaleDef>, bool), Error = Simple<char>> + Clone {
+pub fn global_directives()
+-> impl Parser<char, (Option<f64>, Option<QuantizeMode>, Option<ScaleDef>, bool), Error = Simple<char>>
++ Clone {
     let directive = choice((
         just("#BPM=").ignore_then(float_f64()).map(Directive::Bpm),
-        just("#QUANTIZE=").ignore_then(
-            choice((
+        just("#QUANTIZE=")
+            .ignore_then(choice((
                 just("auto").to(QuantizeMode::Auto),
                 just("AUTO").to(QuantizeMode::Auto),
                 text::int::<char, Simple<char>>(10).try_map(|s, span| {
                     s.parse::<usize>()
                         .map_err(|e| Simple::custom(span, format!("Invalid quantize: {}", e)))
                         .map(QuantizeMode::Fixed)
-                })
-            ))
-        ).map(Directive::Quantize),
-        just("#SCALE=").ignore_then(scale_def()).map(Directive::Scale),
+                }),
+            )))
+            .map(Directive::Quantize),
+        just("#SCALE=")
+            .ignore_then(scale_def())
+            .map(Directive::Scale),
         just("#SILENCE").to(Directive::Silence),
-    )).padded_by(padding());
+    ))
+    .padded_by(padding());
 
     directive.repeated().map(|dirs| {
         let mut bpm = None;
         let mut quantize = None;
         let mut scale = None;
         let mut global_silence = false;
-        
+
         for d in dirs {
             match d {
                 Directive::Bpm(v) => bpm = Some(v),
@@ -63,7 +71,7 @@ pub fn global_directives() -> impl Parser<char, (Option<f64>, Option<QuantizeMod
                 Directive::Silence => global_silence = true,
             }
         }
-        
+
         (bpm, quantize, scale, global_silence)
     })
 }

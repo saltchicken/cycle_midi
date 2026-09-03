@@ -1,76 +1,172 @@
-use crate::ast::{Node, Pitch, ArpStyle, DynamicValue};
+use super::math::resolve_pitch;
+use crate::ast::{ArpStyle, DynamicValue, Node, Pitch};
 use crate::render::{RenderContext, ScheduledEvent};
 use rand::RngExt;
 use rand::rngs::StdRng;
-use super::math::resolve_pitch;
 
-pub fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize, alternator_stride: usize, rng: &mut StdRng) -> Vec<(Pitch, u8, u8)> {
+pub fn flatten_notes(
+    node: &Node,
+    cycle_count: usize,
+    macro_cycle_length: usize,
+    alternator_stride: usize,
+    rng: &mut StdRng,
+) -> Vec<(Pitch, u8, u8)> {
     match node {
-        Node::Note { pitch, velocity, gate } => vec![(pitch.clone(), *velocity, *gate)],
+        Node::Note {
+            pitch,
+            velocity,
+            gate,
+        } => vec![(pitch.clone(), *velocity, *gate)],
         Node::CC { .. } => vec![], // CCs are ignored in Arp evaluation
         Node::Chord(elements) | Node::Sequence(elements) => {
             let mut res = Vec::new();
             for n in elements {
-                res.extend(flatten_notes(n, cycle_count, macro_cycle_length, alternator_stride, rng));
+                res.extend(flatten_notes(
+                    n,
+                    cycle_count,
+                    macro_cycle_length,
+                    alternator_stride,
+                    rng,
+                ));
             }
             res
         }
         Node::Alternator(elements) => {
-            if elements.is_empty() { return vec![]; }
+            if elements.is_empty() {
+                return vec![];
+            }
             let index = (cycle_count / alternator_stride) % elements.len();
-            flatten_notes(&elements[index], cycle_count, macro_cycle_length, alternator_stride * elements.len(), rng)
+            flatten_notes(
+                &elements[index],
+                cycle_count,
+                macro_cycle_length,
+                alternator_stride * elements.len(),
+                rng,
+            )
         }
         Node::RandomChoice(elements) => {
-            if elements.is_empty() { return vec![]; }
+            if elements.is_empty() {
+                return vec![];
+            }
             let index = rng.random_range(0..elements.len());
-            flatten_notes(&elements[index], cycle_count, macro_cycle_length, alternator_stride, rng)
+            flatten_notes(
+                &elements[index],
+                cycle_count,
+                macro_cycle_length,
+                alternator_stride,
+                rng,
+            )
         }
         Node::Parallel(layers) => {
             let mut res = Vec::new();
             for l in layers {
                 for n in l {
-                    res.extend(flatten_notes(n, cycle_count, macro_cycle_length, alternator_stride, rng));
+                    res.extend(flatten_notes(
+                        n,
+                        cycle_count,
+                        macro_cycle_length,
+                        alternator_stride,
+                        rng,
+                    ));
                 }
             }
             res
         }
-        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => flatten_notes(child, cycle_count, macro_cycle_length, alternator_stride, rng),
-        Node::Condition { interval, offset, true_branch, false_branch } => {
+        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => {
+            flatten_notes(
+                child,
+                cycle_count,
+                macro_cycle_length,
+                alternator_stride,
+                rng,
+            )
+        }
+        Node::Condition {
+            interval,
+            offset,
+            true_branch,
+            false_branch,
+        } => {
             if cycle_count % interval == *offset {
-                flatten_notes(true_branch, cycle_count, macro_cycle_length, alternator_stride, rng)
+                flatten_notes(
+                    true_branch,
+                    cycle_count,
+                    macro_cycle_length,
+                    alternator_stride,
+                    rng,
+                )
             } else {
-                flatten_notes(false_branch, cycle_count, macro_cycle_length, alternator_stride, rng)
+                flatten_notes(
+                    false_branch,
+                    cycle_count,
+                    macro_cycle_length,
+                    alternator_stride,
+                    rng,
+                )
             }
         }
-        Node::MacroCondition { interval, offset, is_gate, true_branch, false_branch } => {
+        Node::MacroCondition {
+            interval,
+            offset,
+            is_gate,
+            true_branch,
+            false_branch,
+        } => {
             let m_len = macro_cycle_length.max(1);
             let macro_cycle = cycle_count / m_len;
             let is_active_macro = macro_cycle % interval == *offset;
-            
+
             if is_active_macro && (!*is_gate || (cycle_count % m_len == 0)) {
-                flatten_notes(true_branch, cycle_count, macro_cycle_length, alternator_stride, rng)
+                flatten_notes(
+                    true_branch,
+                    cycle_count,
+                    macro_cycle_length,
+                    alternator_stride,
+                    rng,
+                )
             } else {
-                flatten_notes(false_branch, cycle_count, macro_cycle_length, alternator_stride, rng)
+                flatten_notes(
+                    false_branch,
+                    cycle_count,
+                    macro_cycle_length,
+                    alternator_stride,
+                    rng,
+                )
             }
         }
         Node::Probability(child, prob) => {
             if *prob < 100 && rng.random_range(0..100) >= *prob {
                 vec![]
             } else {
-                flatten_notes(child, cycle_count, macro_cycle_length, alternator_stride, rng)
+                flatten_notes(
+                    child,
+                    cycle_count,
+                    macro_cycle_length,
+                    alternator_stride,
+                    rng,
+                )
             }
         }
         Node::Rest | Node::Hold => vec![],
     }
 }
 
-pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<ScheduledEvent>, rng: &mut StdRng) -> Vec<usize> {
+pub fn traverse_ast(
+    node: &Node,
+    ctx: RenderContext,
+    out_events: &mut Vec<ScheduledEvent>,
+    rng: &mut StdRng,
+) -> Vec<usize> {
     match node {
-        Node::Note { pitch, velocity, gate } => {
+        Node::Note {
+            pitch,
+            velocity,
+            gate,
+        } => {
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
                 let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
                 let actual_duration = ctx.duration_ms * (*gate as f64 / 100.0);
-                
+
                 out_events.push(ScheduledEvent::Note {
                     channel: ctx.channel,
                     pitch: actual_pitch,
@@ -78,7 +174,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
                     start_ms: ctx.start_ms,
                     duration_ms: actual_duration,
                 });
-                
+
                 return vec![out_events.len() - 1];
             }
             vec![]
@@ -103,7 +199,11 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
                     DynamicValue::Tri(min, max, speed) => {
                         let lfo_duration = ctx.master_duration_ms / speed;
                         let phase = (ctx.start_ms % lfo_duration) / lfo_duration;
-                        let tri = if phase < 0.5 { phase * 2.0 } else { 2.0 - phase * 2.0 };
+                        let tri = if phase < 0.5 {
+                            phase * 2.0
+                        } else {
+                            2.0 - phase * 2.0
+                        };
                         let range = *max as f64 - *min as f64;
                         (*min as f64 + tri * range).clamp(0.0, 127.0) as u8
                     }
@@ -142,18 +242,22 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
             indices
         }
         Node::Sequence(elements) => {
-            if elements.is_empty() { return vec![]; }
+            if elements.is_empty() {
+                return vec![];
+            }
             let step_duration = ctx.duration_ms / elements.len() as f64;
-            
+
             let mut last_indices = ctx.active_chord_indices.clone();
-            
+
             for (i, el) in elements.iter().enumerate() {
                 let mut step_ctx = ctx.clone();
                 step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
                 step_ctx.duration_ms = step_duration;
                 step_ctx.window_start_ms = step_ctx.window_start_ms.max(step_ctx.start_ms);
-                step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
-                
+                step_ctx.window_end_ms = step_ctx
+                    .window_end_ms
+                    .min(step_ctx.start_ms + step_duration);
+
                 step_ctx.active_chord_indices = last_indices;
                 last_indices = traverse_ast(el, step_ctx, out_events, rng);
             }
@@ -162,37 +266,57 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
         Node::Parallel(layers) => {
             let mut all_indices = vec![];
             for layer in layers {
-                all_indices.extend(traverse_ast(&Node::Sequence(layer.clone()), ctx.clone(), out_events, rng));
+                all_indices.extend(traverse_ast(
+                    &Node::Sequence(layer.clone()),
+                    ctx.clone(),
+                    out_events,
+                    rng,
+                ));
             }
             all_indices
         }
         Node::Alternator(elements) => {
-            if elements.is_empty() { return vec![]; }
-            
+            if elements.is_empty() {
+                return vec![];
+            }
+
             let index = (ctx.cycle_count / ctx.alternator_stride) % elements.len();
-            
+
             let mut step_ctx = ctx.clone();
             step_ctx.alternator_stride = ctx.alternator_stride * elements.len();
-            
+
             traverse_ast(&elements[index], step_ctx, out_events, rng)
         }
         Node::RandomChoice(elements) => {
-            if elements.is_empty() { return vec![]; }
+            if elements.is_empty() {
+                return vec![];
+            }
             let index = rng.random_range(0..elements.len());
             traverse_ast(&elements[index], ctx, out_events, rng)
         }
-        Node::Condition { interval, offset, true_branch, false_branch } => {
+        Node::Condition {
+            interval,
+            offset,
+            true_branch,
+            false_branch,
+        } => {
             if ctx.cycle_count % interval == *offset {
                 traverse_ast(true_branch, ctx, out_events, rng)
             } else {
                 traverse_ast(false_branch, ctx, out_events, rng)
             }
         }
-        Node::MacroCondition { interval, offset, is_gate, true_branch, false_branch } => {
+        Node::MacroCondition {
+            interval,
+            offset,
+            is_gate,
+            true_branch,
+            false_branch,
+        } => {
             let m_len = ctx.macro_cycle_length.max(1);
             let macro_cycle = ctx.cycle_count / m_len;
             let is_active_macro = macro_cycle % interval == *offset;
-            
+
             if is_active_macro && (!*is_gate || (ctx.cycle_count % m_len == 0)) {
                 traverse_ast(true_branch, ctx, out_events, rng)
             } else {
@@ -207,23 +331,28 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
             }
         }
         Node::Euclidean(child, pulses, steps) => {
-            if *steps == 0 || *pulses == 0 { return vec![]; }
+            if *steps == 0 || *pulses == 0 {
+                return vec![];
+            }
             let step_duration = ctx.duration_ms / *steps as f64;
             let mut last_indices = ctx.active_chord_indices.clone();
-            
+
             for i in 0..*steps {
-                let is_hit = ((i as usize * *pulses as usize) % (*steps as usize)) < (*pulses as usize);
+                let is_hit =
+                    ((i as usize * *pulses as usize) % (*steps as usize)) < (*pulses as usize);
                 if is_hit {
                     let mut step_ctx = ctx.clone();
                     step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
                     step_ctx.duration_ms = step_duration;
                     step_ctx.window_start_ms = step_ctx.window_start_ms.max(step_ctx.start_ms);
-                    step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
-                    
+                    step_ctx.window_end_ms = step_ctx
+                        .window_end_ms
+                        .min(step_ctx.start_ms + step_duration);
+
                     step_ctx.active_chord_indices = last_indices;
                     last_indices = traverse_ast(child, step_ctx, out_events, rng);
                 } else {
-                    last_indices = vec![]; 
+                    last_indices = vec![];
                 }
             }
             last_indices
@@ -240,36 +369,56 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
             for i in 0..chunks_to_render {
                 let mut step_ctx = ctx.clone();
                 let absolute_chunk_start = chunk_start_ms + (i as f64 * local_duration);
-                
+
                 step_ctx.start_ms = absolute_chunk_start;
                 step_ctx.duration_ms = local_duration;
                 step_ctx.cycle_count = (absolute_chunk_start / local_duration).round() as usize;
-                
+
                 step_ctx.active_chord_indices = last_indices;
                 last_indices = traverse_ast(child, step_ctx, out_events, rng);
             }
             last_indices
         }
         Node::Arp(child, style) => {
-            let raw_notes = flatten_notes(child, ctx.cycle_count, ctx.macro_cycle_length, ctx.alternator_stride, rng);
-            if raw_notes.is_empty() { return vec![]; }
-            
-            let mut resolved: Vec<(u8, u8, u8)> = raw_notes.into_iter().map(|(pitch, vel, gate)| {
-                (resolve_pitch(&pitch, &ctx.scale, ctx.octave_offset), vel, gate)
-            }).collect();
-            
+            let raw_notes = flatten_notes(
+                child,
+                ctx.cycle_count,
+                ctx.macro_cycle_length,
+                ctx.alternator_stride,
+                rng,
+            );
+            if raw_notes.is_empty() {
+                return vec![];
+            }
+
+            let mut resolved: Vec<(u8, u8, u8)> = raw_notes
+                .into_iter()
+                .map(|(pitch, vel, gate)| {
+                    (
+                        resolve_pitch(&pitch, &ctx.scale, ctx.octave_offset),
+                        vel,
+                        gate,
+                    )
+                })
+                .collect();
+
             resolved.sort_by_key(|n| n.0);
-            
+
             let mut pattern = Vec::new();
             match style {
-                ArpStyle::Up => { pattern = resolved; }
-                ArpStyle::Down => { pattern = resolved; pattern.reverse(); }
+                ArpStyle::Up => {
+                    pattern = resolved;
+                }
+                ArpStyle::Down => {
+                    pattern = resolved;
+                    pattern.reverse();
+                }
                 ArpStyle::UpDown => {
                     pattern = resolved.clone();
                     let mut rev = resolved.clone();
                     rev.reverse();
                     if rev.len() > 2 {
-                        pattern.extend(rev[1..rev.len()-1].iter().cloned());
+                        pattern.extend(rev[1..rev.len() - 1].iter().cloned());
                     }
                 }
                 ArpStyle::DownUp => {
@@ -277,7 +426,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
                     pattern.reverse();
                     let up = resolved.clone();
                     if up.len() > 2 {
-                        pattern.extend(up[1..up.len()-1].iter().cloned());
+                        pattern.extend(up[1..up.len() - 1].iter().cloned());
                     }
                 }
                 ArpStyle::Converge => {
@@ -289,7 +438,9 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
                             pattern.push(resolved[right].clone());
                         }
                         left += 1;
-                        if right == 0 { break; }
+                        if right == 0 {
+                            break;
+                        }
                         right -= 1;
                     }
                 }
@@ -315,7 +466,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
                 ArpStyle::PinkyUp => {
                     if resolved.len() > 1 {
                         let pinky = resolved.last().unwrap().clone();
-                        for i in 0..resolved.len()-1 {
+                        for i in 0..resolved.len() - 1 {
                             pattern.push(resolved[i].clone());
                             pattern.push(pinky.clone());
                         }
@@ -326,7 +477,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
                 ArpStyle::PinkyUpDown => {
                     if resolved.len() > 1 {
                         let pinky = resolved.last().unwrap().clone();
-                        for i in 0..resolved.len()-1 {
+                        for i in 0..resolved.len() - 1 {
                             pattern.push(resolved[i].clone());
                             pattern.push(pinky.clone());
                         }
@@ -340,7 +491,9 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
                 }
             }
 
-            if pattern.is_empty() { return vec![]; }
+            if pattern.is_empty() {
+                return vec![];
+            }
             let step_duration = ctx.duration_ms / pattern.len() as f64;
             let mut last_indices = ctx.active_chord_indices.clone();
 
@@ -349,9 +502,13 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
                 step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
                 step_ctx.duration_ms = step_duration;
                 step_ctx.window_start_ms = step_ctx.window_start_ms.max(step_ctx.start_ms);
-                step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
+                step_ctx.window_end_ms = step_ctx
+                    .window_end_ms
+                    .min(step_ctx.start_ms + step_duration);
 
-                if step_ctx.start_ms >= step_ctx.window_start_ms - 0.1 && step_ctx.start_ms < step_ctx.window_end_ms - 0.1 {
+                if step_ctx.start_ms >= step_ctx.window_start_ms - 0.1
+                    && step_ctx.start_ms < step_ctx.window_end_ms - 0.1
+                {
                     let actual_duration = step_duration * (gate as f64 / 100.0);
                     out_events.push(ScheduledEvent::Note {
                         channel: ctx.channel,

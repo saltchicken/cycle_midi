@@ -5,7 +5,9 @@ use std::thread;
 use std::time::Duration;
 use thread_priority::*;
 
-pub fn setup_midi(target_port: &Option<String>) -> Result<Producer<Vec<u8>>, Box<dyn std::error::Error>> {
+pub fn setup_midi(
+    target_port: &Option<String>,
+) -> Result<Producer<Vec<u8>>, Box<dyn std::error::Error>> {
     let mut midi_out = MidiOutput::new("Cycle MIDI Scheduler")?;
 
     let mut conn_out = 'setup: {
@@ -26,7 +28,7 @@ pub fn setup_midi(target_port: &Option<String>) -> Result<Producer<Vec<u8>>, Box
                 match midi_out.connect(&p, "Cycle MIDI Out") {
                     Ok(conn) => {
                         println!("Successfully connected to designated MIDI port!");
-                        break 'setup conn; 
+                        break 'setup conn;
                     }
                     Err(e) => {
                         eprintln!("Failed to connect to MIDI port: {}", e);
@@ -45,13 +47,13 @@ pub fn setup_midi(target_port: &Option<String>) -> Result<Producer<Vec<u8>>, Box
     };
 
     let (midi_tx, mut midi_rx) = RingBuffer::<Vec<u8>>::new(4096);
-    
+
     thread::spawn(move || {
         let thread_id = thread_native_id();
         let _ = set_thread_priority_and_policy(
             thread_id,
             ThreadPriority::Max,
-            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo)
+            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo),
         );
 
         let mut shutdown = false;
@@ -65,7 +67,7 @@ pub fn setup_midi(target_port: &Option<String>) -> Result<Producer<Vec<u8>>, Box
             }
 
             while let Ok(msg) = midi_rx.pop() {
-                if msg.is_empty() { 
+                if msg.is_empty() {
                     shutdown = true;
                     break;
                 }

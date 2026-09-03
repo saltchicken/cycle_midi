@@ -20,7 +20,7 @@ pub enum ScheduledEvent {
         controller: u8,
         value: u8,
         start_ms: f64,
-    }
+    },
 }
 
 impl ScheduledEvent {
@@ -49,9 +49,9 @@ pub struct RenderContext {
 }
 
 pub fn generate_next_cycle(
-    program: &Program, 
-    bpm: f64, 
-    cycle_start_time_ms: f64, 
+    program: &Program,
+    bpm: f64,
+    cycle_start_time_ms: f64,
     cycle_count: usize,
     macro_cycle_length: usize,
 ) -> Vec<ScheduledEvent> {
@@ -59,13 +59,15 @@ pub fn generate_next_cycle(
         return Vec::new();
     }
 
-    let master_duration_ms = (60_000.0 / bpm) * 4.0; 
+    let master_duration_ms = (60_000.0 / bpm) * 4.0;
     let mut events = Vec::new();
     let macro_cycle_count = cycle_count / macro_cycle_length.max(1);
 
     for track in &program.tracks {
-        if track.is_muted { continue; }
-        
+        if track.is_muted {
+            continue;
+        }
+
         let active_scale = if track.channel == 9 {
             track.scale.clone()
         } else {
@@ -95,13 +97,13 @@ pub fn generate_next_cycle(
             cycle_count,
             macro_cycle_length,
             master_duration_ms,
-            scale: active_scale, 
+            scale: active_scale,
             active_chord_indices: vec![],
             octave_offset: track.octave_offset,
             alternator_stride: 1,
         };
         traverse_ast(&track.root_node, ctx, &mut events, &mut rng);
     }
-    
+
     events
 }

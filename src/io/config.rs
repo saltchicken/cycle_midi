@@ -38,8 +38,12 @@ pub fn initialize_config() -> (AppConfig, PathBuf, PathBuf) {
             "# cycle_midi configuration\n# Specify the absolute path or use ~/ for your home directory\nmmn_directory = \"{}\"\n# Optional: Specify a default MIDI output port name to connect to\n# midi_port = \"Midi Through Port-0\"\n",
             default_workspace.display()
         );
-        fs::write(&config_path, default_config_content).expect("Failed to write default config.toml");
-        println!("Created default configuration file at: {}", config_path.display());
+        fs::write(&config_path, default_config_content)
+            .expect("Failed to write default config.toml");
+        println!(
+            "Created default configuration file at: {}",
+            config_path.display()
+        );
     }
 
     let config_str = fs::read_to_string(&config_path).expect("Failed to read config.toml");
@@ -52,9 +56,13 @@ pub fn initialize_config() -> (AppConfig, PathBuf, PathBuf) {
     }
 
     let file_path = mmn_dir.join("live.mmn");
-    
+
     if !file_path.exists() {
-        fs::write(&file_path, "#BPM=120\n#SCALE=C4 minor\nT1: 0 2 3 4 . 7 _\nT2(G3 minor_pentatonic): {-7 | 0}").expect("Failed to create initial file");
+        fs::write(
+            &file_path,
+            "#BPM=120\n#SCALE=C4 minor\nT1: 0 2 3 4 . 7 _\nT2(G3 minor_pentatonic): {-7 | 0}",
+        )
+        .expect("Failed to create initial file");
     }
 
     (config, mmn_dir, file_path)
