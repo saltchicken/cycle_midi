@@ -1,6 +1,6 @@
 use super::math::resolve_pitch;
 use crate::ast::{ArpStyle, DynamicValue, Node, Pitch};
-use crate::render::{RenderContext, ScheduledEvent};
+use super::{RenderContext, ScheduledEvent};
 use rand::RngExt;
 use rand::rngs::StdRng;
 

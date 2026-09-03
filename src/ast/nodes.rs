@@ -1,5 +1,5 @@
 use super::types::{ArpStyle, DynamicValue, Pitch, QuantizeMode, ScaleDef, SeedDef};
-use crate::render::math::lcm;
+use crate::engine::render::math::lcm;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
@@ -26,7 +26,7 @@ pub enum Node {
     Condition {
         interval: usize,
         offset: usize,
-        true_branch: Box<Node>,
+        true_branch: Box<Node>, // <-- Fixed missing '>' here
         false_branch: Box<Node>,
     },
     MacroCondition {

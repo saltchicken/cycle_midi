@@ -1,8 +1,7 @@
 mod ast;
+mod engine;
 mod io;
 mod parser;
-mod render;
-mod scheduler;
 
 use ast::Program;
 use std::sync::Arc;
@@ -32,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let midi_tx = io::midi::setup_midi(&app_config.midi_port)?;
 
     // 6. Run the Main Real-Time Scheduler
-    scheduler::run_scheduler(rx, midi_tx, running);
+    engine::scheduler::run_scheduler(rx, midi_tx, running);
 
     println!("Graceful shutdown complete.");
     Ok(())
