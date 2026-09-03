@@ -1,5 +1,5 @@
 use chumsky::prelude::*;
-use crate::ast::{Node, Pitch, Program, ScaleDef, SeedDef, Track, ArpStyle, QuantizeMode};
+use crate::ast::{Node, Pitch, Program, ScaleDef, SeedDef, SeedInterval, Track, ArpStyle, QuantizeMode};
 
 pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let int_u8 = text::int::<char, Simple<char>>(10)
@@ -119,7 +119,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             m_cond: Option<(usize, usize)>,
         }
 
-        // Attachments
         let condition_clause = just("if(")
             .ignore_then(int_u8.clone())
             .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
@@ -132,7 +131,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then_ignore(just(')'))
             .map(|(interval, offset)| (interval as usize, offset.unwrap_or(0) as usize));
 
-        // Standalone Filters
         let only_mod = just("only(")
             .ignore_then(int_u8.clone())
             .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
@@ -157,7 +155,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then_ignore(just(')'))
             .map(|(interval, offset)| PostfixOp::MacroIf(interval as usize, offset.unwrap_or(0) as usize));
 
-        // Math/Algos
         let euclidean = just('(')
             .ignore_then(int_u8.clone())
             .then_ignore(just(','))
@@ -185,7 +182,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then_ignore(just(')').padded())
             .map(PostfixOp::Arp);
 
-        // Include if_mod and m_if_mod so they can be parsed without needing a speed/arp operator first
         let postfix_op = choice((
             euclidean, speed_mul, speed_div, arp_mod, only_mod, m_only_mod, if_mod, m_if_mod
         )).padded();
@@ -212,7 +208,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     PostfixOp::MacroOnly(interval, offset) => Node::MacroCondition {
                         interval,
                         offset,
-                        is_gate: true, // Restricts to turnaround cycle
+                        is_gate: true, 
                         true_branch: Box::new(acc.clone()),
                         false_branch: Box::new(Node::Rest), 
                     },
@@ -225,7 +221,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     PostfixOp::MacroIf(interval, offset) => Node::MacroCondition {
                         interval,
                         offset,
-                        is_gate: false, // Applies for the full duration of the macro block
+                        is_gate: false,
                         true_branch: Box::new(acc.clone()),
                         false_branch: Box::new(Node::Rest), 
                     },
@@ -333,17 +329,30 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         just("fast").padded().ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(v as f32)),
         just("slow").padded().ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(1.0 / (v as f32))),
         just("scale").padded().ignore_then(scale_def).map(TrackModifier::Scale),
+        
         just("seed").padded().ignore_then(
             text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<u64>().map_err(|e| Simple::custom(span, format!("Invalid seed: {}", e)))
             })
         ).then(
-            just("every").padded().ignore_then(
+            choice((
+                just("m_every").to(true),
+                just("every").to(false),
+            )).padded().then(
                 text::int::<char, Simple<char>>(10).try_map(|s, span| {
                     s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid interval: {}", e)))
                 })
             ).or_not()
-        ).map(|(base, macro_interval)| TrackModifier::Seed(SeedDef { base, macro_interval })),
+        ).map(|(base, interval_data)| {
+            let interval = interval_data.map(|(is_macro, val)| {
+                if is_macro {
+                    SeedInterval::Macro(val)
+                } else {
+                    SeedInterval::Micro(val)
+                }
+            });
+            TrackModifier::Seed(SeedDef { base, interval })
+        }),
     ));
 
     let track = just('!')

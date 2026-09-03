@@ -56,7 +56,7 @@ pub enum Node {
     MacroCondition {
         interval: usize,
         offset: usize,
-        is_gate: bool, // <-- NEW: Distinguishes between m_only (true) and m_if (false)
+        is_gate: bool, 
         true_branch: Box<Node>,
         false_branch: Box<Node>,
     },
@@ -119,9 +119,15 @@ pub struct ScaleDef {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum SeedInterval {
+    Micro(usize),
+    Macro(usize),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct SeedDef {
     pub base: u64,
-    pub macro_interval: Option<usize>,
+    pub interval: Option<SeedInterval>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
