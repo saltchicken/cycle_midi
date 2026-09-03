@@ -346,13 +346,23 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         Speed(f32),
         Scale(ScaleDef),
         Seed(SeedDef),
+        Octave(i32),
     }
 
     let track_modifier = choice((
         just("fast").padded_by(padding.clone()).ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(v as f32)),
         just("slow").padded_by(padding.clone()).ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(1.0 / (v as f32))),
         just("scale").padded_by(padding.clone()).ignore_then(scale_def).map(TrackModifier::Scale),
-        
+        just("up").padded_by(padding.clone()).ignore_then(
+            text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<i32>().map_err(|e| Simple::custom(span, format!("Invalid octave: {}", e)))
+            }).or_not()
+        ).map(|v| TrackModifier::Octave(v.unwrap_or(1))),
+        just("down").padded_by(padding.clone()).ignore_then(
+            text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<i32>().map_err(|e| Simple::custom(span, format!("Invalid octave: {}", e)))
+            }).or_not()
+        ).map(|v| TrackModifier::Octave(-v.unwrap_or(1))),
         just("seed").padded_by(padding.clone()).ignore_then(
             text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<u64>().map_err(|e| Simple::custom(span, format!("Invalid seed: {}", e)))
@@ -394,12 +404,14 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             let mut track_scale = None;
             let mut track_speed = None;
             let mut track_seed = None;
+            let mut track_octave = 0;
 
             for m in modifiers {
                 match m {
                     TrackModifier::Speed(s) => track_speed = Some(s),
                     TrackModifier::Scale(s) => track_scale = Some(s),
                     TrackModifier::Seed(s) => track_seed = Some(s),
+                    TrackModifier::Octave(o) => track_octave += o,
                 }
             }
 
@@ -412,6 +424,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 is_muted,
                 scale: track_scale,
                 seed: track_seed,
+                octave_offset: track_octave,
                 root_node,
             }
         })

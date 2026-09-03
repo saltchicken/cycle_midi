@@ -46,11 +46,13 @@ Sequences are routed to specific MIDI channels using track declarations `TX:`, w
 * `T10: 36 [38 38] 42 .` 
   * *Result:* Plays on MIDI Channel 10. **Note: Because Channel 10 is traditionally used for standard MIDI Drum Kits, `T10` will automatically ignore the global `#SCALE` directive so your drum mappings don't get transposed!**
 
-**Per-Track Modifiers (`scale`, `fast`, `slow`, `seed`)**
-You can designate an entire track to play faster or slower, lock it to a specific scale, or assign a random seed. Modifiers can be placed in any order before the colon.
+**Per-Track Modifiers (`scale`, `fast`, `slow`, `seed`, `up`, `down`)**
+You can designate an entire track to play faster or slower, lock it to a specific scale, shift its pitch, or assign a random seed. Modifiers can be placed in any order before the colon.
 * `T1 fast 2: C4 D4` (Plays the sequence twice as fast, completing two full loops per cycle)
 * `T2 slow 2: C3 . E3 .` (Plays the sequence at half speed, taking two cycles to complete one loop)
 * `T3 scale G3 minor_pentatonic: 0 2 3 4` (Track 3 plays numeric notes in G minor pentatonic)
+* `T4 up: C4 D4` (Shifts the entire track up by one octave)
+* `T5 down 2: C4 D4` (Shifts the entire track down by two octaves)
 * `T4 seed 42: [C4 E4]?50` (Locks the probability generator to a specific seed so it repeats identically across cycles)
 * `T4 seed 42 every 4: [C4]?50` (Locks the seed, but increments it every 4 *Micro-Cycles* (single bars) to generate a new variation).
 * `T4 seed 42 m_every 4: [C4]?50` (Locks the seed, but increments it every 4 *Macro-Cycles* (full pattern loops) to generate a new variation on the turnaround).

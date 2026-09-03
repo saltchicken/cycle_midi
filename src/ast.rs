@@ -137,6 +137,7 @@ pub struct Track {
     pub is_muted: bool,
     pub scale: Option<ScaleDef>,
     pub seed: Option<SeedDef>,
+    pub octave_offset: i32,
     pub root_node: Node,
 }
 
@@ -175,4 +176,5 @@ pub struct RenderContext {
     pub macro_cycle_length: usize,
     pub scale: Option<ScaleDef>,
     pub active_chord_indices: Vec<usize>,
+    pub octave_offset: i32,
 }

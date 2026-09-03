@@ -2,19 +2,20 @@ use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledNote, ArpStyle, S
 use rand::{RngExt, SeedableRng};
 use rand::rngs::StdRng;
 
-pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>) -> u8 {
+pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>, octave_offset: i32) -> u8 {
+    let shift = octave_offset * 12;
     match pitch {
-        Pitch::Absolute(p) => *p,
+        Pitch::Absolute(p) => (*p as i32 + shift).clamp(0, 127) as u8,
         Pitch::Numeric(val) => {
             let val = *val;
             if let Some(scale) = scale {
                 let scale_len = scale.intervals.len() as i32;
                 let octave = val.div_euclid(scale_len);
                 let degree = val.rem_euclid(scale_len) as usize;
-                let note = scale.root_pitch as i32 + (octave * 12) + scale.intervals[degree] as i32;
+                let note = scale.root_pitch as i32 + (octave * 12) + scale.intervals[degree] as i32 + shift;
                 note.clamp(0, 127) as u8
             } else {
-                val.clamp(0, 127) as u8
+                (val + shift).clamp(0, 127) as u8
             }
         }
     }
@@ -60,7 +61,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             }
 
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
-                let actual_pitch = resolve_pitch(pitch, &ctx.scale);
+                let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
                 let actual_duration = ctx.duration_ms * (*gate as f64 / 100.0);
                 
                 out_notes.push(ScheduledNote {
@@ -198,7 +199,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             if raw_notes.is_empty() { return vec![]; }
             
             let mut resolved: Vec<(u8, u8, u8, u8)> = raw_notes.into_iter().map(|(pitch, vel, gate, prob)| {
-                (resolve_pitch(&pitch, &ctx.scale), vel, gate, prob)
+                (resolve_pitch(&pitch, &ctx.scale, ctx.octave_offset), vel, gate, prob)
             }).collect();
             
             resolved.sort_by_key(|n| n.0);
@@ -366,6 +367,7 @@ pub fn generate_next_cycle(
             macro_cycle_length,
             scale: active_scale, 
             active_chord_indices: vec![],
+            octave_offset: track.octave_offset,
         };
         traverse_ast(&track.root_node, ctx, &mut notes, &mut rng);
     }
