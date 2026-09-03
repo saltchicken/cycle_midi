@@ -127,7 +127,7 @@ pub fn run_scheduler(
 
                 let target_q_cycles = match q_mode {
                     ast::QuantizeMode::Fixed(n) => n,
-                    ast::QuantizeMode::Auto => staged.pattern_length_cycles(),
+                    ast::QuantizeMode::Auto => current_program.pattern_length_cycles(),
                 };
 
                 let position_in_phrase = cycle_count % target_q_cycles;
