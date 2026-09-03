@@ -17,10 +17,9 @@ T1 slow 4: {
 // T2: Sparkling Generative Arps
 // Plays twice as fast as the master cycle.
 // Uses an alternator < > to change the base notes each cycle, 
-// arpeggiates them in a 'diverge' (inside-out) pattern, and applies 
-// a 70% probability to each note to keep it sparse and unpredictable.
+// arpeggiates them in a 'diverge' (inside-out) pattern.
 T2 fast 2 up 1: 
-    <[0 2 4 6] [2 4 6 8] [-1 1 3 5]> arp(diverge) %20?70
+    <[0 2 4 6] [2 4 6 8] [-1 1 3 5]> arp(diverge)
 
 // T3: Deep Sub Bass Drone
 // Just hits the root note and holds it, occasionally dropping an octave.
