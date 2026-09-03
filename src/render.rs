@@ -1,4 +1,4 @@
-use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledEvent, ArpStyle, ScaleDef, SeedInterval};
+use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledEvent, ArpStyle, ScaleDef, SeedInterval, DynamicValue};
 use rand::{RngExt, SeedableRng};
 use rand::rngs::StdRng;
 
@@ -103,10 +103,34 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
             }
 
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
+                let actual_value = match value {
+                    DynamicValue::Static(v) => *v,
+                    DynamicValue::Sine(min, max, speed) => {
+                        let lfo_duration = ctx.master_duration_ms / speed;
+                        let phase = (ctx.start_ms % lfo_duration) / lfo_duration;
+                        let normalized = (phase * std::f64::consts::TAU).sin() * 0.5 + 0.5;
+                        let range = *max as f64 - *min as f64;
+                        (*min as f64 + normalized * range).clamp(0.0, 127.0) as u8
+                    }
+                    DynamicValue::Saw(min, max, speed) => {
+                        let lfo_duration = ctx.master_duration_ms / speed;
+                        let phase = (ctx.start_ms % lfo_duration) / lfo_duration;
+                        let range = *max as f64 - *min as f64;
+                        (*min as f64 + phase * range).clamp(0.0, 127.0) as u8
+                    }
+                    DynamicValue::Tri(min, max, speed) => {
+                        let lfo_duration = ctx.master_duration_ms / speed;
+                        let phase = (ctx.start_ms % lfo_duration) / lfo_duration;
+                        let tri = if phase < 0.5 { phase * 2.0 } else { 2.0 - phase * 2.0 };
+                        let range = *max as f64 - *min as f64;
+                        (*min as f64 + tri * range).clamp(0.0, 127.0) as u8
+                    }
+                };
+
                 out_events.push(ScheduledEvent::CC {
                     channel: ctx.channel,
                     controller: *controller,
-                    value: *value,
+                    value: actual_value,
                     start_ms: ctx.start_ms,
                 });
             }
@@ -408,6 +432,7 @@ pub fn generate_next_cycle(
             window_end_ms: cycle_start_time_ms + master_duration_ms,
             cycle_count,
             macro_cycle_length,
+            master_duration_ms,
             scale: active_scale, 
             active_chord_indices: vec![],
             octave_offset: track.octave_offset,

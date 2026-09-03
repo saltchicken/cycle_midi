@@ -36,9 +36,17 @@ pub fn lcm(a: usize, b: usize) -> usize {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum DynamicValue {
+    Static(u8),
+    Sine(u8, u8, f64),
+    Saw(u8, u8, f64),
+    Tri(u8, u8, f64),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Note { pitch: Pitch, velocity: u8, gate: u8, prob: u8 },
-    CC { controller: u8, value: u8, prob: u8 },
+    CC { controller: u8, value: DynamicValue, prob: u8 },
     Chord(Vec<Node>),
     Rest,
     Hold,
@@ -192,6 +200,7 @@ pub struct RenderContext {
     pub window_end_ms: f64,
     pub cycle_count: usize,
     pub macro_cycle_length: usize,
+    pub master_duration_ms: f64,
     pub scale: Option<ScaleDef>,
     pub active_chord_indices: Vec<usize>,
     pub octave_offset: i32,

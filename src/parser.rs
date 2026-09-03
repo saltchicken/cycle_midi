@@ -1,5 +1,5 @@
 use chumsky::prelude::*;
-use crate::ast::{Node, Pitch, Program, ScaleDef, SeedDef, SeedInterval, Track, ArpStyle, QuantizeMode};
+use crate::ast::{Node, Pitch, Program, ScaleDef, SeedDef, SeedInterval, Track, ArpStyle, QuantizeMode, DynamicValue};
 
 pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     // Custom padding that ignores both standard whitespace and `//` comments
@@ -62,13 +62,41 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let gate = just('%').ignore_then(int_u8.clone());
         let prob = just('?').ignore_then(int_u8.clone());
 
+        let lfo_args = just('(').padded_by(padding.clone())
+            .ignore_then(int_u8.clone()) // min
+            .then_ignore(just(',').padded_by(padding.clone()))
+            .then(int_u8.clone()) // max
+            .then(
+                just(',').padded_by(padding.clone())
+                .ignore_then(float.clone().map(|f| f as f64)) // speed
+                .or_not()
+            )
+            .then_ignore(just(')').padded_by(padding.clone()))
+            .or_not();
+
+        let dyn_val = choice((
+            just("sine").ignore_then(lfo_args.clone()).map(|args| {
+                let ((min, max), spd) = args.unwrap_or(((0, 127), None));
+                DynamicValue::Sine(min, max, spd.unwrap_or(1.0))
+            }),
+            just("saw").ignore_then(lfo_args.clone()).map(|args| {
+                let ((min, max), spd) = args.unwrap_or(((0, 127), None));
+                DynamicValue::Saw(min, max, spd.unwrap_or(1.0))
+            }),
+            just("tri").ignore_then(lfo_args.clone()).map(|args| {
+                let ((min, max), spd) = args.unwrap_or(((0, 127), None));
+                DynamicValue::Tri(min, max, spd.unwrap_or(1.0))
+            }),
+            int_u8.clone().map(DynamicValue::Static)
+        ));
+
         let cc = just("cc").or(just("CC"))
             .ignore_then(int_u8.clone())
-            .then(velocity.clone().or_not())
+            .then(just('@').ignore_then(dyn_val).or_not())
             .then(prob.clone().or_not())
             .map(|((controller, v), pr)| Node::CC {
                 controller,
-                value: v.unwrap_or(127),
+                value: v.unwrap_or(DynamicValue::Static(127)),
                 prob: pr.unwrap_or(100),
             });
 
