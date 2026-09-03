@@ -45,6 +45,7 @@ pub enum Node {
     Parallel(Vec<Vec<Node>>),
     Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
+    RandomChoice(Vec<Node>), // <-- Added RandomChoice
     SpeedModifier(Box<Node>, f32),
     Arp(Box<Node>, ArpStyle),
     Condition {
@@ -66,7 +67,7 @@ impl Node {
     pub fn cycle_length(&self) -> usize {
         match self {
             Node::Note { .. } | Node::Rest | Node::Hold => 1,
-            Node::Chord(elements) | Node::Sequence(elements) => {
+            Node::Chord(elements) | Node::Sequence(elements) | Node::RandomChoice(elements) => {
                 elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()))
             }
             Node::Alternator(elements) => {

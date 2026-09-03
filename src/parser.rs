@@ -1,4 +1,3 @@
-// src/parser.rs
 use chumsky::prelude::*;
 use crate::ast::{Node, Pitch, Program, ScaleDef, SeedDef, SeedInterval, Track, ArpStyle, QuantizeMode};
 
@@ -84,11 +83,27 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 }
             });
 
+        // Sequences can now be separated by `|` to denote RandomChoices!
         let seq_group = expr.clone()
             .padded_by(padding.clone())
             .repeated()
+            .separated_by(just('|').padded_by(padding.clone()))
             .delimited_by(just('['), just(']'))
-            .map(Node::Sequence);
+            .map(|choices| {
+                if choices.len() == 1 {
+                    Node::Sequence(choices.into_iter().next().unwrap())
+                } else {
+                    Node::RandomChoice(
+                        choices.into_iter().map(|seq| {
+                            if seq.len() == 1 {
+                                seq.into_iter().next().unwrap()
+                            } else {
+                                Node::Sequence(seq)
+                            }
+                        }).collect()
+                    )
+                }
+            });
 
         let alt_group = expr.clone()
             .padded_by(padding.clone())

@@ -1,10 +1,7 @@
 ? for a whole segment.
-Add comments
 Fix this if(4,3) issue
 
 Octave down/up
-
-Implement the choices between. Random Choice [a|b|c]
 
 
 Best way to visualize cycles going by

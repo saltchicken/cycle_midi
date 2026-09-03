@@ -23,7 +23,7 @@ pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>) -> u8 {
 fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize) -> Vec<(Pitch, u8, u8, u8)> {
     match node {
         Node::Note { pitch, velocity, gate, prob } => vec![(pitch.clone(), *velocity, *gate, *prob)],
-        Node::Chord(elements) | Node::Sequence(elements) | Node::Alternator(elements) => {
+        Node::Chord(elements) | Node::Sequence(elements) | Node::Alternator(elements) | Node::RandomChoice(elements) => {
             elements.iter().flat_map(|n| flatten_notes(n, cycle_count, macro_cycle_length)).collect()
         }
         Node::Parallel(layers) => layers.iter().flat_map(|l| l.iter().flat_map(|n| flatten_notes(n, cycle_count, macro_cycle_length))).collect(),
@@ -124,6 +124,11 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
         Node::Alternator(elements) => {
             if elements.is_empty() { return vec![]; }
             let index = ctx.cycle_count % elements.len();
+            traverse_ast(&elements[index], ctx, out_notes, rng)
+        }
+        Node::RandomChoice(elements) => {
+            if elements.is_empty() { return vec![]; }
+            let index = rng.random_range(0..elements.len());
             traverse_ast(&elements[index], ctx, out_notes, rng)
         }
         Node::Condition { interval, offset, true_branch, false_branch } => {
