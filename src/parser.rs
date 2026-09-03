@@ -60,7 +60,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
         let velocity = just('@').ignore_then(int_u8.clone());
         let gate = just('%').ignore_then(int_u8.clone());
-        let prob = just('?').ignore_then(int_u8.clone());
 
         let lfo_args = just('(').padded_by(padding.clone())
             .ignore_then(int_u8.clone()) // min
@@ -93,11 +92,9 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let cc = just("cc").or(just("CC"))
             .ignore_then(int_u8.clone())
             .then(just('@').ignore_then(dyn_val).or_not())
-            .then(prob.clone().or_not())
-            .map(|((controller, v), pr)| Node::CC {
+            .map(|(controller, v)| Node::CC {
                 controller,
                 value: v.unwrap_or(DynamicValue::Static(127)),
-                prob: pr.unwrap_or(100),
             });
 
         let chord_or_note = pitch
@@ -105,13 +102,11 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .at_least(1)
             .then(velocity.clone().or_not())
             .then(gate.or_not())
-            .then(prob.clone().or_not())
-            .map(|(((pitches, v), g), pr)| {
+            .map(|((pitches, v), g)| {
                 let notes: Vec<Node> = pitches.into_iter().map(|p| Node::Note {
                     pitch: p,
                     velocity: v.unwrap_or(100),
                     gate: g.unwrap_or(100),
-                    prob: pr.unwrap_or(100),
                 }).collect();
                 
                 if notes.len() == 1 {
@@ -172,6 +167,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             MacroOnly(usize, usize),
             If(usize, usize),
             MacroIf(usize, usize),
+            Prob(u8),
         }
 
         struct Postfix {
@@ -242,9 +238,11 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .ignore_then(arp_style)
             .then_ignore(just(')').padded_by(padding.clone()))
             .map(PostfixOp::Arp);
+            
+        let prob_mod = just('?').ignore_then(int_u8.clone()).map(PostfixOp::Prob);
 
         let postfix_op = choice((
-            euclidean, speed_mul, speed_div, arp_mod, only_mod, m_only_mod, if_mod, m_if_mod
+            euclidean, speed_mul, speed_div, arp_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod
         )).padded_by(padding.clone());
 
         let postfix = postfix_op
@@ -286,6 +284,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                         true_branch: Box::new(acc.clone()),
                         false_branch: Box::new(Node::Rest), 
                     },
+                    PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p),
                 };
 
                 let micro_applied = match post.cond {

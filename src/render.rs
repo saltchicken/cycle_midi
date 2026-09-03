@@ -21,9 +21,9 @@ pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>, octave_offset: i32
     }
 }
 
-fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize, alternator_stride: usize, rng: &mut StdRng) -> Vec<(Pitch, u8, u8, u8)> {
+fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize, alternator_stride: usize, rng: &mut StdRng) -> Vec<(Pitch, u8, u8)> {
     match node {
-        Node::Note { pitch, velocity, gate, prob } => vec![(pitch.clone(), *velocity, *gate, *prob)],
+        Node::Note { pitch, velocity, gate } => vec![(pitch.clone(), *velocity, *gate)],
         Node::CC { .. } => vec![], // CCs are ignored in Arp evaluation
         Node::Chord(elements) | Node::Sequence(elements) => {
             let mut res = Vec::new();
@@ -70,17 +70,20 @@ fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize, alt
                 flatten_notes(false_branch, cycle_count, macro_cycle_length, alternator_stride, rng)
             }
         }
+        Node::Probability(child, prob) => {
+            if *prob < 100 && rng.random_range(0..100) >= *prob {
+                vec![]
+            } else {
+                flatten_notes(child, cycle_count, macro_cycle_length, alternator_stride, rng)
+            }
+        }
         Node::Rest | Node::Hold => vec![],
     }
 }
 
 pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<ScheduledEvent>, rng: &mut StdRng) -> Vec<usize> {
     match node {
-        Node::Note { pitch, velocity, gate, prob } => {
-            if *prob < 100 && rng.random_range(0..100) >= *prob {
-                return vec![]; 
-            }
-
+        Node::Note { pitch, velocity, gate } => {
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
                 let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
                 let actual_duration = ctx.duration_ms * (*gate as f64 / 100.0);
@@ -97,11 +100,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
             }
             vec![]
         }
-        Node::CC { controller, value, prob } => {
-            if *prob < 100 && rng.random_range(0..100) >= *prob {
-                return vec![]; 
-            }
-
+        Node::CC { controller, value } => {
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
                 let actual_value = match value {
                     DynamicValue::Static(v) => *v,
@@ -217,6 +216,13 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
                 traverse_ast(false_branch, ctx, out_events, rng)
             }
         }
+        Node::Probability(child, prob) => {
+            if *prob < 100 && rng.random_range(0..100) >= *prob {
+                vec![]
+            } else {
+                traverse_ast(child, ctx, out_events, rng)
+            }
+        }
         Node::Euclidean(child, pulses, steps) => {
             if *steps == 0 || *pulses == 0 { return vec![]; }
             let step_duration = ctx.duration_ms / *steps as f64;
@@ -265,8 +271,8 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
             let raw_notes = flatten_notes(child, ctx.cycle_count, ctx.macro_cycle_length, ctx.alternator_stride, rng);
             if raw_notes.is_empty() { return vec![]; }
             
-            let mut resolved: Vec<(u8, u8, u8, u8)> = raw_notes.into_iter().map(|(pitch, vel, gate, prob)| {
-                (resolve_pitch(&pitch, &ctx.scale, ctx.octave_offset), vel, gate, prob)
+            let mut resolved: Vec<(u8, u8, u8)> = raw_notes.into_iter().map(|(pitch, vel, gate)| {
+                (resolve_pitch(&pitch, &ctx.scale, ctx.octave_offset), vel, gate)
             }).collect();
             
             resolved.sort_by_key(|n| n.0);
@@ -355,12 +361,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
             let step_duration = ctx.duration_ms / pattern.len() as f64;
             let mut last_indices = ctx.active_chord_indices.clone();
 
-            for (i, (pitch, vel, gate, prob)) in pattern.into_iter().enumerate() {
-                if prob < 100 && rng.random_range(0..100) >= prob {
-                    last_indices = vec![];
-                    continue;
-                }
-                
+            for (i, (pitch, vel, gate)) in pattern.into_iter().enumerate() {
                 let mut step_ctx = ctx.clone();
                 step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
                 step_ctx.duration_ms = step_duration;
@@ -436,7 +437,7 @@ pub fn generate_next_cycle(
             scale: active_scale, 
             active_chord_indices: vec![],
             octave_offset: track.octave_offset,
-            alternator_stride: 1, // <-- Init at root
+            alternator_stride: 1,
         };
         traverse_ast(&track.root_node, ctx, &mut events, &mut rng);
     }

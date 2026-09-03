@@ -45,8 +45,8 @@ pub enum DynamicValue {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    Note { pitch: Pitch, velocity: u8, gate: u8, prob: u8 },
-    CC { controller: u8, value: DynamicValue, prob: u8 },
+    Note { pitch: Pitch, velocity: u8, gate: u8 },
+    CC { controller: u8, value: DynamicValue },
     Chord(Vec<Node>),
     Rest,
     Hold,
@@ -57,6 +57,7 @@ pub enum Node {
     RandomChoice(Vec<Node>),
     SpeedModifier(Box<Node>, f32),
     Arp(Box<Node>, ArpStyle),
+    Probability(Box<Node>, u8),
     Condition {
         interval: usize,
         offset: usize,
@@ -89,7 +90,7 @@ impl Node {
                     lcm(acc, layer_len)
                 })
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) => child.cycle_length(),
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) => child.cycle_length(),
             Node::Condition { interval, true_branch, false_branch, .. } => {
                 let branches_lcm = lcm(true_branch.cycle_length(), false_branch.cycle_length());
                 lcm(*interval, branches_lcm)
