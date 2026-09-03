@@ -187,20 +187,32 @@ pub fn traverse_ast(
                     DynamicValue::Static(v) => *v,
                     DynamicValue::Sine(min, max, speed) => {
                         let lfo_duration = ctx.master_duration_ms / speed;
-                        let phase = (ctx.start_ms % lfo_duration) / lfo_duration;
+                        let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
+                        let offset = ctx.start_ms - ctx.cycle_start_ms;
+                        let virtual_time = theoretical_cycle_start + offset;
+                        
+                        let phase = (virtual_time % lfo_duration) / lfo_duration;
                         let normalized = (phase * std::f64::consts::TAU).sin() * 0.5 + 0.5;
                         let range = *max as f64 - *min as f64;
                         (*min as f64 + normalized * range).clamp(0.0, 127.0) as u8
                     }
                     DynamicValue::Saw(min, max, speed) => {
                         let lfo_duration = ctx.master_duration_ms / speed;
-                        let phase = (ctx.start_ms % lfo_duration) / lfo_duration;
+                        let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
+                        let offset = ctx.start_ms - ctx.cycle_start_ms;
+                        let virtual_time = theoretical_cycle_start + offset;
+
+                        let phase = (virtual_time % lfo_duration) / lfo_duration;
                         let range = *max as f64 - *min as f64;
                         (*min as f64 + phase * range).clamp(0.0, 127.0) as u8
                     }
                     DynamicValue::Tri(min, max, speed) => {
                         let lfo_duration = ctx.master_duration_ms / speed;
-                        let phase = (ctx.start_ms % lfo_duration) / lfo_duration;
+                        let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
+                        let offset = ctx.start_ms - ctx.cycle_start_ms;
+                        let virtual_time = theoretical_cycle_start + offset;
+
+                        let phase = (virtual_time % lfo_duration) / lfo_duration;
                         let tri = if phase < 0.5 {
                             phase * 2.0
                         } else {
@@ -397,7 +409,14 @@ pub fn traverse_ast(
         Node::SpeedModifier(child, multiplier) => {
             let m = *multiplier as f64;
             let local_duration = ctx.duration_ms / m;
-            let phase_offset = ctx.start_ms.rem_euclid(local_duration);
+            
+            // Reconstruct a theoretical time grid immune to BPM changes
+            let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
+            let offset_in_cycle = ctx.start_ms - ctx.cycle_start_ms;
+            let virtual_start_ms = theoretical_cycle_start + offset_in_cycle;
+
+            // Add a tiny epsilon to prevent floating point modulo rounding errors
+            let phase_offset = (virtual_start_ms + 1e-9).rem_euclid(local_duration);
             let chunk_start_ms = ctx.start_ms - phase_offset;
             let chunks_to_render = (ctx.duration_ms / local_duration).ceil() as usize + 2;
 
@@ -410,7 +429,9 @@ pub fn traverse_ast(
                 
                 ctx.start_ms = absolute_chunk_start;
                 ctx.duration_ms = local_duration;
-                ctx.cycle_count = (absolute_chunk_start / local_duration).round() as usize;
+                
+                let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * local_duration);
+                ctx.cycle_count = (virtual_chunk_start / ctx.master_duration_ms).floor().max(0.0) as usize;
 
                 traverse_ast(child, ctx, out_events, rng);
             }
