@@ -14,6 +14,9 @@ The MIDI Mini-Notation (MMN) is a domain-specific language designed for live cod
 
 An MMN file consists of optional global directives followed by track declarations.
 
+### Comments
+Standard C-style line comments (`//`) are fully supported anywhere in the file. They can be placed on their own line or at the end of a line, and the parser will gracefully ignore them alongside normal whitespace.
+
 ### Global Directives
 Directives control the overall playback state of the sequencer. They are evaluated at the top of the file before any tracks.
 * `#BPM=120` or `#BPM=128.5`: Sets the master tempo. If omitted during a live-coding session, the engine simply maintains the last known BPM.

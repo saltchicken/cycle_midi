@@ -1,0 +1,17 @@
+? for a whole segment.
+Add comments
+Fix this if(4,3) issue
+
+Octave down/up
+
+Implement the choices between. Random Choice [a|b|c]
+
+
+Best way to visualize cycles going by
+
+
+
+Make this work
+T10 fast 4:
+  < <36 [38 38] 36 [38 42@80]> <36> >
+

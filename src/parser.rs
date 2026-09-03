@@ -1,7 +1,12 @@
+// src/parser.rs
 use chumsky::prelude::*;
 use crate::ast::{Node, Pitch, Program, ScaleDef, SeedDef, SeedInterval, Track, ArpStyle, QuantizeMode};
 
 pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
+    // Custom padding that ignores both standard whitespace and `//` comments
+    let comment = just("//").ignore_then(filter(|c: &char| *c != '\n').repeated()).ignored();
+    let padding = comment.padded().repeated().padded().ignored();
+
     let int_u8 = text::int::<char, Simple<char>>(10)
         .try_map(|s: String, span| {
             s.parse::<u8>().map_err(|e| Simple::custom(span, format!("Invalid u8: {}", e)))
@@ -37,7 +42,10 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             ((oct + 1) * 12 + base).clamp(0, 127) as u8
         });
 
-    let expr = recursive(|expr| {
+    let pad_expr = padding.clone();
+    let expr = recursive(move |expr| {
+        let padding = pad_expr.clone();
+
         let rest = just('.').to(Node::Rest);
         let hold = just('_').to(Node::Hold);
 
@@ -56,7 +64,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let prob = just('?').ignore_then(int_u8.clone());
 
         let chord_or_note = pitch
-            .separated_by(just('+'))
+            .separated_by(just('+').padded_by(padding.clone()))
             .at_least(1)
             .then(velocity.or_not())
             .then(gate.or_not())
@@ -77,23 +85,23 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             });
 
         let seq_group = expr.clone()
-            .padded()
+            .padded_by(padding.clone())
             .repeated()
             .delimited_by(just('['), just(']'))
             .map(Node::Sequence);
 
         let alt_group = expr.clone()
-            .padded()
+            .padded_by(padding.clone())
             .repeated()
             .delimited_by(just('<'), just('>'))
             .map(Node::Alternator);
 
         let parallel_layer = expr.clone()
-            .padded()
+            .padded_by(padding.clone())
             .repeated();
 
         let parallel_group = parallel_layer
-            .separated_by(just('|'))
+            .separated_by(just('|').padded_by(padding.clone()))
             .delimited_by(just('{'), just('}'))
             .map(Node::Parallel);
 
@@ -121,37 +129,37 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
         let condition_clause = just("if(")
             .ignore_then(int_u8.clone())
-            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then(just(',').padded_by(padding.clone()).ignore_then(int_u8.clone()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| (interval as usize, offset.unwrap_or(0) as usize));
 
         let m_condition_clause = just("m_if(")
             .ignore_then(int_u8.clone())
-            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then(just(',').padded_by(padding.clone()).ignore_then(int_u8.clone()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| (interval as usize, offset.unwrap_or(0) as usize));
 
         let only_mod = just("only(")
             .ignore_then(int_u8.clone())
-            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then(just(',').padded_by(padding.clone()).ignore_then(int_u8.clone()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| PostfixOp::Only(interval as usize, offset.unwrap_or(0) as usize));
 
         let m_only_mod = just("m_only(")
             .ignore_then(int_u8.clone())
-            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then(just(',').padded_by(padding.clone()).ignore_then(int_u8.clone()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| PostfixOp::MacroOnly(interval as usize, offset.unwrap_or(0) as usize));
 
         let if_mod = just("if(")
             .ignore_then(int_u8.clone())
-            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then(just(',').padded_by(padding.clone()).ignore_then(int_u8.clone()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| PostfixOp::If(interval as usize, offset.unwrap_or(0) as usize));
 
         let m_if_mod = just("m_if(")
             .ignore_then(int_u8.clone())
-            .then(just(',').padded().ignore_then(int_u8.clone()).or_not())
+            .then(just(',').padded_by(padding.clone()).ignore_then(int_u8.clone()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| PostfixOp::MacroIf(interval as usize, offset.unwrap_or(0) as usize));
 
@@ -177,18 +185,18 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         ));
 
         let arp_mod = just("arp")
-            .ignore_then(just('(').padded())
+            .ignore_then(just('(').padded_by(padding.clone()))
             .ignore_then(arp_style)
-            .then_ignore(just(')').padded())
+            .then_ignore(just(')').padded_by(padding.clone()))
             .map(PostfixOp::Arp);
 
         let postfix_op = choice((
             euclidean, speed_mul, speed_div, arp_mod, only_mod, m_only_mod, if_mod, m_if_mod
-        )).padded();
+        )).padded_by(padding.clone());
 
         let postfix = postfix_op
-            .then(condition_clause.padded().or_not())
-            .then(m_condition_clause.padded().or_not())
+            .then(condition_clause.padded_by(padding.clone()).or_not())
+            .then(m_condition_clause.padded_by(padding.clone()).or_not())
             .map(|((op, cond), m_cond)| Postfix { op, cond, m_cond });
 
         atom.then(postfix.repeated()).map(|(base, postfixes)| {
@@ -298,7 +306,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         ).map(Directive::Quantize),
         just("#SCALE=").ignore_then(scale_def.clone()).map(Directive::Scale),
         just("#SILENCE").to(Directive::Silence),
-    )).padded();
+    )).padded_by(padding.clone());
 
     let directives = directive.repeated().map(|dirs| {
         let mut bpm = None;
@@ -326,11 +334,11 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     }
 
     let track_modifier = choice((
-        just("fast").padded().ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(v as f32)),
-        just("slow").padded().ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(1.0 / (v as f32))),
-        just("scale").padded().ignore_then(scale_def).map(TrackModifier::Scale),
+        just("fast").padded_by(padding.clone()).ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(v as f32)),
+        just("slow").padded_by(padding.clone()).ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(1.0 / (v as f32))),
+        just("scale").padded_by(padding.clone()).ignore_then(scale_def).map(TrackModifier::Scale),
         
-        just("seed").padded().ignore_then(
+        just("seed").padded_by(padding.clone()).ignore_then(
             text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<u64>().map_err(|e| Simple::custom(span, format!("Invalid seed: {}", e)))
             })
@@ -338,7 +346,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             choice((
                 just("m_every").to(true),
                 just("every").to(false),
-            )).padded().then(
+            )).padded_by(padding.clone()).then(
                 text::int::<char, Simple<char>>(10).try_map(|s, span| {
                     s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid interval: {}", e)))
                 })
@@ -364,8 +372,8 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         }))
         .then(track_modifier.repeated()) 
         .then_ignore(just(':'))
-        .padded()
-        .then(expr.padded().repeated().map(Node::Sequence))
+        .padded_by(padding.clone())
+        .then(expr.padded_by(padding.clone()).repeated().map(Node::Sequence))
         .map(|(((is_muted, ch), modifiers), mut root_node)| {
             
             let mut track_scale = None;
@@ -391,7 +399,8 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 seed: track_seed,
                 root_node,
             }
-        });
+        })
+        .padded_by(padding.clone());
 
     directives
         .then(track.repeated())
@@ -402,5 +411,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             global_silence, 
             tracks 
         })
+        .padded_by(padding.clone())
         .then_ignore(end())
 }
