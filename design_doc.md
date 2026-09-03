@@ -71,6 +71,13 @@ Notes can be written using standard musical notation or raw MIDI integers.
 * `C4`, `D#3`, `Bb2` (Note names)
 * `60`, `62`, `127` (MIDI integer values)
 
+### MIDI CC Messages (`cc`)
+Control Change messages can be sequenced rhythmically just like notes. Use the syntax `ccX@Y` where `X` is the controller number and `Y` is the value (0-127). The `@` value modifier is optional and defaults to 127.
+* `cc74@127` (Sets controller 74 to max value)
+* `[cc74@0 cc74@64 cc74@127 .]` (Sequences the parameter over a cycle)
+* `{ C4 E4 G4 | cc1@127 }` (Fires a Mod Wheel CC message in parallel with a chord)
+* `cc74?50` (50% probability to send CC 74 with value 127)
+
 ### Rests (`.`)
 A dot represents a rest. It occupies one fraction of the current time slot, creating clean visual negative space.
 * `C4 . D4 E4` (Cycle divided by 4: Note, Rest, Note, Note)
@@ -103,11 +110,11 @@ Links notes together so they fire at the exact same millisecond.
 ## 5. Inline MIDI Modifiers
 Modifiers are applied directly to notes, chords, or groups using postfix operators.
 
-* **Velocity `@`**: Values from 0 to 127. 
+* **Velocity / Value `@`**: Values from 0 to 127. Controls note velocity or CC value.
   * `C4@100` (C4 with 100 velocity)
 * **Gate / Length `%`**: Percentage of the step size to hold the note before sending the `Note Off` message. Default is 100%.
   * `C4%50` (C4 played staccato; Note Off fires exactly halfway through its time slot)
-* **Probability `?`**: Percentage chance (0-100) the note will fire on a given cycle.
+* **Probability `?`**: Percentage chance (0-100) the event will fire on a given cycle.
   * `[C4 E4]?75` (Both notes have a 75% chance of playing)
 * **Stacking Modifiers**: Modifiers can be chained.
   * `C4+E4@80%20?50` (Chord, 80 velocity, 20% gate duration, 50% chance to play)
@@ -239,6 +246,7 @@ pub enum ArpStyle {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Note { pitch: Pitch, velocity: u8, gate: u8, prob: u8 },
+    CC { controller: u8, value: u8, prob: u8 },
     Chord(Vec<Node>),
     Rest,
     Hold,
@@ -262,7 +270,7 @@ pub enum Node {
     MacroCondition {
         interval: usize,
         offset: usize,
-        is_gate: bool,
+        is_gate: bool, 
         true_branch: Box<Node>,
         false_branch: Box<Node>,
     }

@@ -38,6 +38,7 @@ pub fn lcm(a: usize, b: usize) -> usize {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Note { pitch: Pitch, velocity: u8, gate: u8, prob: u8 },
+    CC { controller: u8, value: u8, prob: u8 },
     Chord(Vec<Node>),
     Rest,
     Hold,
@@ -45,7 +46,7 @@ pub enum Node {
     Parallel(Vec<Vec<Node>>),
     Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
-    RandomChoice(Vec<Node>), // <-- Added RandomChoice
+    RandomChoice(Vec<Node>),
     SpeedModifier(Box<Node>, f32),
     Arp(Box<Node>, ArpStyle),
     Condition {
@@ -66,7 +67,7 @@ pub enum Node {
 impl Node {
     pub fn cycle_length(&self) -> usize {
         match self {
-            Node::Note { .. } | Node::Rest | Node::Hold => 1,
+            Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold => 1,
             Node::Chord(elements) | Node::Sequence(elements) | Node::RandomChoice(elements) => {
                 elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()))
             }
@@ -157,12 +158,29 @@ impl Program {
 }
 
 #[derive(Debug, Clone)]
-pub struct ScheduledNote {
-    pub channel: u8,
-    pub pitch: u8,
-    pub velocity: u8,
-    pub start_ms: f64,
-    pub duration_ms: f64,
+pub enum ScheduledEvent {
+    Note {
+        channel: u8,
+        pitch: u8,
+        velocity: u8,
+        start_ms: f64,
+        duration_ms: f64,
+    },
+    CC {
+        channel: u8,
+        controller: u8,
+        value: u8,
+        start_ms: f64,
+    }
+}
+
+impl ScheduledEvent {
+    pub fn start_ms(&self) -> f64 {
+        match self {
+            Self::Note { start_ms, .. } => *start_ms,
+            Self::CC { start_ms, .. } => *start_ms,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

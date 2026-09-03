@@ -62,12 +62,22 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let gate = just('%').ignore_then(int_u8.clone());
         let prob = just('?').ignore_then(int_u8.clone());
 
+        let cc = just("cc").or(just("CC"))
+            .ignore_then(int_u8.clone())
+            .then(velocity.clone().or_not())
+            .then(prob.clone().or_not())
+            .map(|((controller, v), pr)| Node::CC {
+                controller,
+                value: v.unwrap_or(127),
+                prob: pr.unwrap_or(100),
+            });
+
         let chord_or_note = pitch
             .separated_by(just('+').padded_by(padding.clone()))
             .at_least(1)
-            .then(velocity.or_not())
+            .then(velocity.clone().or_not())
             .then(gate.or_not())
-            .then(prob.or_not())
+            .then(prob.clone().or_not())
             .map(|(((pitches, v), g), pr)| {
                 let notes: Vec<Node> = pitches.into_iter().map(|p| Node::Note {
                     pitch: p,
@@ -121,7 +131,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .map(Node::Parallel);
 
         let atom = choice((
-            rest, hold, seq_group, alt_group, parallel_group, chord_or_note,
+            rest, hold, seq_group, alt_group, parallel_group, cc, chord_or_note,
         ));
 
         #[derive(Clone)]

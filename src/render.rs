@@ -1,4 +1,4 @@
-use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledNote, ArpStyle, ScaleDef, SeedInterval};
+use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledEvent, ArpStyle, ScaleDef, SeedInterval};
 use rand::{RngExt, SeedableRng};
 use rand::rngs::StdRng;
 
@@ -24,6 +24,7 @@ pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>, octave_offset: i32
 fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize, alternator_stride: usize, rng: &mut StdRng) -> Vec<(Pitch, u8, u8, u8)> {
     match node {
         Node::Note { pitch, velocity, gate, prob } => vec![(pitch.clone(), *velocity, *gate, *prob)],
+        Node::CC { .. } => vec![], // CCs are ignored in Arp evaluation
         Node::Chord(elements) | Node::Sequence(elements) => {
             let mut res = Vec::new();
             for n in elements {
@@ -73,7 +74,7 @@ fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize, alt
     }
 }
 
-pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>, rng: &mut StdRng) -> Vec<usize> {
+pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<ScheduledEvent>, rng: &mut StdRng) -> Vec<usize> {
     match node {
         Node::Note { pitch, velocity, gate, prob } => {
             if *prob < 100 && rng.random_range(0..100) >= *prob {
@@ -84,7 +85,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                 let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
                 let actual_duration = ctx.duration_ms * (*gate as f64 / 100.0);
                 
-                out_notes.push(ScheduledNote {
+                out_events.push(ScheduledEvent::Note {
                     channel: ctx.channel,
                     pitch: actual_pitch,
                     velocity: *velocity,
@@ -92,7 +93,22 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                     duration_ms: actual_duration,
                 });
                 
-                return vec![out_notes.len() - 1];
+                return vec![out_events.len() - 1];
+            }
+            vec![]
+        }
+        Node::CC { controller, value, prob } => {
+            if *prob < 100 && rng.random_range(0..100) >= *prob {
+                return vec![]; 
+            }
+
+            if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
+                out_events.push(ScheduledEvent::CC {
+                    channel: ctx.channel,
+                    controller: *controller,
+                    value: *value,
+                    start_ms: ctx.start_ms,
+                });
             }
             vec![]
         }
@@ -102,8 +118,10 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
         Node::Hold => {
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
                 for &idx in &ctx.active_chord_indices {
-                    if let Some(note) = out_notes.get_mut(idx) {
-                        note.duration_ms += ctx.duration_ms;
+                    if let Some(event) = out_events.get_mut(idx) {
+                        if let ScheduledEvent::Note { duration_ms, .. } = event {
+                            *duration_ms += ctx.duration_ms;
+                        }
                     }
                 }
                 return ctx.active_chord_indices.clone();
@@ -113,7 +131,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
         Node::Chord(elements) => {
             let mut indices = vec![];
             for el in elements {
-                indices.extend(traverse_ast(el, ctx.clone(), out_notes, rng));
+                indices.extend(traverse_ast(el, ctx.clone(), out_events, rng));
             }
             indices
         }
@@ -131,14 +149,14 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                 step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
                 
                 step_ctx.active_chord_indices = last_indices;
-                last_indices = traverse_ast(el, step_ctx, out_notes, rng);
+                last_indices = traverse_ast(el, step_ctx, out_events, rng);
             }
             last_indices
         }
         Node::Parallel(layers) => {
             let mut all_indices = vec![];
             for layer in layers {
-                all_indices.extend(traverse_ast(&Node::Sequence(layer.clone()), ctx.clone(), out_notes, rng));
+                all_indices.extend(traverse_ast(&Node::Sequence(layer.clone()), ctx.clone(), out_events, rng));
             }
             all_indices
         }
@@ -150,18 +168,18 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             let mut step_ctx = ctx.clone();
             step_ctx.alternator_stride = ctx.alternator_stride * elements.len();
             
-            traverse_ast(&elements[index], step_ctx, out_notes, rng)
+            traverse_ast(&elements[index], step_ctx, out_events, rng)
         }
         Node::RandomChoice(elements) => {
             if elements.is_empty() { return vec![]; }
             let index = rng.random_range(0..elements.len());
-            traverse_ast(&elements[index], ctx, out_notes, rng)
+            traverse_ast(&elements[index], ctx, out_events, rng)
         }
         Node::Condition { interval, offset, true_branch, false_branch } => {
             if ctx.cycle_count % interval == *offset {
-                traverse_ast(true_branch, ctx, out_notes, rng)
+                traverse_ast(true_branch, ctx, out_events, rng)
             } else {
-                traverse_ast(false_branch, ctx, out_notes, rng)
+                traverse_ast(false_branch, ctx, out_events, rng)
             }
         }
         Node::MacroCondition { interval, offset, is_gate, true_branch, false_branch } => {
@@ -170,9 +188,9 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             let is_active_macro = macro_cycle % interval == *offset;
             
             if is_active_macro && (!*is_gate || (ctx.cycle_count % m_len == 0)) {
-                traverse_ast(true_branch, ctx, out_notes, rng)
+                traverse_ast(true_branch, ctx, out_events, rng)
             } else {
-                traverse_ast(false_branch, ctx, out_notes, rng)
+                traverse_ast(false_branch, ctx, out_events, rng)
             }
         }
         Node::Euclidean(child, pulses, steps) => {
@@ -190,7 +208,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                     step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
                     
                     step_ctx.active_chord_indices = last_indices;
-                    last_indices = traverse_ast(child, step_ctx, out_notes, rng);
+                    last_indices = traverse_ast(child, step_ctx, out_events, rng);
                 } else {
                     last_indices = vec![]; 
                 }
@@ -215,7 +233,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                 step_ctx.cycle_count = (absolute_chunk_start / local_duration).round() as usize;
                 
                 step_ctx.active_chord_indices = last_indices;
-                last_indices = traverse_ast(child, step_ctx, out_notes, rng);
+                last_indices = traverse_ast(child, step_ctx, out_events, rng);
             }
             last_indices
         }
@@ -327,14 +345,14 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
 
                 if step_ctx.start_ms >= step_ctx.window_start_ms - 0.1 && step_ctx.start_ms < step_ctx.window_end_ms - 0.1 {
                     let actual_duration = step_duration * (gate as f64 / 100.0);
-                    out_notes.push(ScheduledNote {
+                    out_events.push(ScheduledEvent::Note {
                         channel: ctx.channel,
                         pitch,
                         velocity: vel,
                         start_ms: step_ctx.start_ms,
                         duration_ms: actual_duration,
                     });
-                    last_indices = vec![out_notes.len() - 1];
+                    last_indices = vec![out_events.len() - 1];
                 } else {
                     last_indices = vec![];
                 }
@@ -350,13 +368,13 @@ pub fn generate_next_cycle(
     cycle_start_time_ms: f64, 
     cycle_count: usize,
     macro_cycle_length: usize,
-) -> Vec<ScheduledNote> {
+) -> Vec<ScheduledEvent> {
     if program.global_silence {
         return Vec::new();
     }
 
     let master_duration_ms = (60_000.0 / bpm) * 4.0; 
-    let mut notes = Vec::new();
+    let mut events = Vec::new();
     let macro_cycle_count = cycle_count / macro_cycle_length.max(1);
 
     for track in &program.tracks {
@@ -395,8 +413,8 @@ pub fn generate_next_cycle(
             octave_offset: track.octave_offset,
             alternator_stride: 1, // <-- Init at root
         };
-        traverse_ast(&track.root_node, ctx, &mut notes, &mut rng);
+        traverse_ast(&track.root_node, ctx, &mut events, &mut rng);
     }
     
-    notes
+    events
 }

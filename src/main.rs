@@ -2,7 +2,7 @@ mod ast;
 mod parser;
 mod render;
 
-use ast::{Program, ScheduledNote};
+use ast::{Program, ScheduledEvent};
 use parser::mmn_parser;
 use render::generate_next_cycle;
 
@@ -255,7 +255,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_time = Instant::now();
     let mut next_cycle_start_ms = 0.0;
     
-    let mut upcoming_notes: Vec<ScheduledNote> = Vec::new();
+    let mut upcoming_events: Vec<ScheduledEvent> = Vec::new();
     let mut active_notes: Vec<(f64, u8, u8)> = Vec::new();
 
     println!("Starting Scheduler Loop...");
@@ -313,7 +313,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let pattern_len = current_program.pattern_length_cycles();
 
-            let mut new_notes = generate_next_cycle(
+            let mut new_events = generate_next_cycle(
                 &current_program,
                 bpm,
                 next_cycle_start_ms,
@@ -321,8 +321,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pattern_len,
             );
             
-            new_notes.sort_by(|a, b| b.start_ms.partial_cmp(&a.start_ms).unwrap());
-            upcoming_notes = new_notes;
+            new_events.sort_by(|a, b| b.start_ms().partial_cmp(&a.start_ms()).unwrap());
+            upcoming_events = new_events;
             
             next_cycle_start_ms += cycle_duration_ms;
             cycle_count += 1;
@@ -337,22 +337,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
-        while let Some(next_note) = upcoming_notes.last() {
-            if elapsed_ms >= next_note.start_ms {
-                let note = upcoming_notes.pop().unwrap();
+        while let Some(next_event) = upcoming_events.last() {
+            if elapsed_ms >= next_event.start_ms() {
+                let event = upcoming_events.pop().unwrap();
 
-                // VOICE STEALING: Prevent overlapping/stuck notes
-                active_notes.retain(|&(_off_time, channel, pitch)| {
-                    if channel == note.channel && pitch == note.pitch {
-                        send_midi!(vec![0x80 | channel, pitch, 0]);
-                        false 
-                    } else {
-                        true
+                match event {
+                    ScheduledEvent::Note { channel, pitch, velocity, start_ms, duration_ms } => {
+                        // VOICE STEALING: Prevent overlapping/stuck notes
+                        active_notes.retain(|&(_off_time, c, p)| {
+                            if c == channel && p == pitch {
+                                send_midi!(vec![0x80 | c, p, 0]);
+                                false 
+                            } else {
+                                true
+                            }
+                        });
+
+                        send_midi!(vec![0x90 | channel, pitch, velocity]);
+                        active_notes.push((start_ms + duration_ms, channel, pitch));
                     }
-                });
-
-                send_midi!(vec![0x90 | note.channel, note.pitch, note.velocity]);
-                active_notes.push((note.start_ms + note.duration_ms, note.channel, note.pitch));
+                    ScheduledEvent::CC { channel, controller, value, .. } => {
+                        send_midi!(vec![0xB0 | channel, controller, value]);
+                    }
+                }
             } else {
                 break;
             }
@@ -361,9 +368,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let now_ms = start_time.elapsed().as_secs_f64() * 1000.0;
         let mut next_event_ms = next_cycle_start_ms;
         
-        if let Some(note) = upcoming_notes.last() {
-            if note.start_ms < next_event_ms {
-                next_event_ms = note.start_ms;
+        if let Some(event) = upcoming_events.last() {
+            if event.start_ms() < next_event_ms {
+                next_event_ms = event.start_ms();
             }
         }
         
