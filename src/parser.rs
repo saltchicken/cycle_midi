@@ -254,12 +254,18 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     enum TrackModifier {
         Speed(f32),
         Scale(ScaleDef),
+        Seed(u64),
     }
 
     let track_modifier = choice((
         just("fast").padded().ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(v as f32)),
         just("slow").padded().ignore_then(float_f64.clone()).map(|v| TrackModifier::Speed(1.0 / (v as f32))),
         just("scale").padded().ignore_then(scale_def).map(TrackModifier::Scale),
+        just("seed").padded().ignore_then(
+            text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<u64>().map_err(|e| Simple::custom(span, format!("Invalid seed: {}", e)))
+            })
+        ).map(TrackModifier::Seed),
     ));
 
     let track = just('!')
@@ -277,11 +283,13 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             
             let mut track_scale = None;
             let mut track_speed = None;
+            let mut track_seed = None;
 
             for m in modifiers {
                 match m {
                     TrackModifier::Speed(s) => track_speed = Some(s),
                     TrackModifier::Scale(s) => track_scale = Some(s),
+                    TrackModifier::Seed(s) => track_seed = Some(s),
                 }
             }
 
@@ -293,6 +301,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 channel: ch.saturating_sub(1).min(15), 
                 is_muted,
                 scale: track_scale,
+                seed: track_seed,
                 root_node,
             }
         });

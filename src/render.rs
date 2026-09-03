@@ -1,4 +1,6 @@
 use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledNote, ArpStyle, ScaleDef};
+use rand::{RngExt, SeedableRng};
+use rand::rngs::StdRng;
 
 pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>) -> u8 {
     match pitch {
@@ -37,11 +39,11 @@ fn flatten_notes(node: &Node, cycle_count: usize) -> Vec<(Pitch, u8, u8, u8)> {
     }
 }
 
-pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>) -> Vec<usize> {
+pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>, rng: &mut StdRng) -> Vec<usize> {
     match node {
         Node::Note { pitch, velocity, gate, prob } => {
             if *prob < 100 {
-                if rand::random_range(0..100) >= *prob {
+                if rng.random_range(0..100) >= *prob {
                     return vec![]; 
                 }
             }
@@ -79,7 +81,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
         Node::Chord(elements) => {
             let mut indices = vec![];
             for el in elements {
-                indices.extend(traverse_ast(el, ctx.clone(), out_notes));
+                indices.extend(traverse_ast(el, ctx.clone(), out_notes, rng));
             }
             indices
         }
@@ -97,27 +99,27 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                 step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
                 
                 step_ctx.active_chord_indices = last_indices;
-                last_indices = traverse_ast(el, step_ctx, out_notes);
+                last_indices = traverse_ast(el, step_ctx, out_notes, rng);
             }
             last_indices
         }
         Node::Parallel(layers) => {
             let mut all_indices = vec![];
             for layer in layers {
-                all_indices.extend(traverse_ast(&Node::Sequence(layer.clone()), ctx.clone(), out_notes));
+                all_indices.extend(traverse_ast(&Node::Sequence(layer.clone()), ctx.clone(), out_notes, rng));
             }
             all_indices
         }
         Node::Alternator(elements) => {
             if elements.is_empty() { return vec![]; }
             let index = ctx.cycle_count % elements.len();
-            traverse_ast(&elements[index], ctx, out_notes)
+            traverse_ast(&elements[index], ctx, out_notes, rng)
         }
         Node::Condition { interval, offset, true_branch, false_branch } => {
             if ctx.cycle_count % interval == *offset {
-                traverse_ast(true_branch, ctx, out_notes)
+                traverse_ast(true_branch, ctx, out_notes, rng)
             } else {
-                traverse_ast(false_branch, ctx, out_notes)
+                traverse_ast(false_branch, ctx, out_notes, rng)
             }
         }
         Node::Euclidean(child, pulses, steps) => {
@@ -135,7 +137,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                     step_ctx.window_end_ms = step_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
                     
                     step_ctx.active_chord_indices = last_indices;
-                    last_indices = traverse_ast(child, step_ctx, out_notes);
+                    last_indices = traverse_ast(child, step_ctx, out_notes, rng);
                 } else {
                     last_indices = vec![]; 
                 }
@@ -160,7 +162,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
                 step_ctx.cycle_count = (absolute_chunk_start / local_duration).round() as usize;
                 
                 step_ctx.active_chord_indices = last_indices;
-                last_indices = traverse_ast(child, step_ctx, out_notes);
+                last_indices = traverse_ast(child, step_ctx, out_notes, rng);
             }
             last_indices
         }
@@ -259,7 +261,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             let mut last_indices = ctx.active_chord_indices.clone();
 
             for (i, (pitch, vel, gate, prob)) in pattern.into_iter().enumerate() {
-                if prob < 100 && rand::random_range(0..100) >= prob {
+                if prob < 100 && rng.random_range(0..100) >= prob {
                     last_indices = vec![];
                     continue;
                 }
@@ -311,6 +313,13 @@ pub fn generate_next_cycle(
             track.scale.clone().or(program.scale.clone())
         };
 
+        // Reset the RNG per cycle using the track's seed so randomness stays identical
+        let mut rng = if let Some(seed) = track.seed {
+            StdRng::seed_from_u64(seed)
+        } else {
+            StdRng::seed_from_u64(rand::random::<u64>())
+        };
+
         let ctx = RenderContext {
             channel: track.channel,
             start_ms: cycle_start_time_ms,
@@ -321,7 +330,7 @@ pub fn generate_next_cycle(
             scale: active_scale, 
             active_chord_indices: vec![],
         };
-        traverse_ast(&track.root_node, ctx, &mut notes);
+        traverse_ast(&track.root_node, ctx, &mut notes, &mut rng);
     }
     
     notes

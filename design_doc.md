@@ -42,12 +42,12 @@ Sequences are routed to specific MIDI channels using track declarations `TX:`, w
 * `T10: 36 [38 38] 42 .` 
   * *Result:* Plays on MIDI Channel 10. **Note: Because Channel 10 is traditionally used for standard MIDI Drum Kits, `T10` will automatically ignore the global `#SCALE` directive so your drum mappings don't get transposed!**
 
-**Per-Track Modifiers (`scale`, `fast`, `slow`)**
-You can designate an entire track to play faster or slower, or lock it to a specific scale. Modifiers can be placed in any order before the colon.
+**Per-Track Modifiers (`scale`, `fast`, `slow`, `seed`)**
+You can designate an entire track to play faster or slower, lock it to a specific scale, or assign a random seed. Modifiers can be placed in any order before the colon.
 * `T1 fast 2: C4 D4` (Plays the sequence twice as fast, completing two full loops per cycle)
 * `T2 slow 2: C3 . E3 .` (Plays the sequence at half speed, taking two cycles to complete one loop)
 * `T3 scale G3 minor_pentatonic: 0 2 3 4` (Track 3 plays numeric notes in G minor pentatonic)
-* `T4 fast 2 scale D2 dorian: 0 1 2 3` (Track 4 is double speed and plays in D Dorian)
+* `T4 seed 42: [C4 E4]?50` (Locks the probability generator to a specific seed so it repeats identically across cycles)
 * `T5 scale D2 dorian fast 2: 0 1 2 3` (Functionally identical to the line above)
 
 **Track Muting (`!`)**
@@ -193,6 +193,8 @@ pub struct Track {
     pub is_muted: bool,
     /// Track specific scale definition
     pub scale: Option<ScaleDef>,
+    /// Optional rng seed for locking probabilities
+    pub seed: Option<u64>,
     /// The parsed musical sequence for this track
     pub root_node: Node,
 }

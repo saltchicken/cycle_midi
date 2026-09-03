@@ -47,6 +47,7 @@ pub struct Track {
     pub channel: u8,
     pub is_muted: bool,
     pub scale: Option<ScaleDef>,
+    pub seed: Option<u64>,
     pub root_node: Node,
 }
 
