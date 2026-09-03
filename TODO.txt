@@ -1,4 +1,3 @@
-? for a whole segment.
 Fix this if(4,3) issue
 
 
