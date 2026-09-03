@@ -21,19 +21,41 @@ pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>, octave_offset: i32
     }
 }
 
-fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize) -> Vec<(Pitch, u8, u8, u8)> {
+fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize, alternator_stride: usize, rng: &mut StdRng) -> Vec<(Pitch, u8, u8, u8)> {
     match node {
         Node::Note { pitch, velocity, gate, prob } => vec![(pitch.clone(), *velocity, *gate, *prob)],
-        Node::Chord(elements) | Node::Sequence(elements) | Node::Alternator(elements) | Node::RandomChoice(elements) => {
-            elements.iter().flat_map(|n| flatten_notes(n, cycle_count, macro_cycle_length)).collect()
+        Node::Chord(elements) | Node::Sequence(elements) => {
+            let mut res = Vec::new();
+            for n in elements {
+                res.extend(flatten_notes(n, cycle_count, macro_cycle_length, alternator_stride, rng));
+            }
+            res
         }
-        Node::Parallel(layers) => layers.iter().flat_map(|l| l.iter().flat_map(|n| flatten_notes(n, cycle_count, macro_cycle_length))).collect(),
-        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => flatten_notes(child, cycle_count, macro_cycle_length),
+        Node::Alternator(elements) => {
+            if elements.is_empty() { return vec![]; }
+            let index = (cycle_count / alternator_stride) % elements.len();
+            flatten_notes(&elements[index], cycle_count, macro_cycle_length, alternator_stride * elements.len(), rng)
+        }
+        Node::RandomChoice(elements) => {
+            if elements.is_empty() { return vec![]; }
+            let index = rng.random_range(0..elements.len());
+            flatten_notes(&elements[index], cycle_count, macro_cycle_length, alternator_stride, rng)
+        }
+        Node::Parallel(layers) => {
+            let mut res = Vec::new();
+            for l in layers {
+                for n in l {
+                    res.extend(flatten_notes(n, cycle_count, macro_cycle_length, alternator_stride, rng));
+                }
+            }
+            res
+        }
+        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => flatten_notes(child, cycle_count, macro_cycle_length, alternator_stride, rng),
         Node::Condition { interval, offset, true_branch, false_branch } => {
             if cycle_count % interval == *offset {
-                flatten_notes(true_branch, cycle_count, macro_cycle_length)
+                flatten_notes(true_branch, cycle_count, macro_cycle_length, alternator_stride, rng)
             } else {
-                flatten_notes(false_branch, cycle_count, macro_cycle_length)
+                flatten_notes(false_branch, cycle_count, macro_cycle_length, alternator_stride, rng)
             }
         }
         Node::MacroCondition { interval, offset, is_gate, true_branch, false_branch } => {
@@ -42,9 +64,9 @@ fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize) -> 
             let is_active_macro = macro_cycle % interval == *offset;
             
             if is_active_macro && (!*is_gate || (cycle_count % m_len == 0)) {
-                flatten_notes(true_branch, cycle_count, macro_cycle_length)
+                flatten_notes(true_branch, cycle_count, macro_cycle_length, alternator_stride, rng)
             } else {
-                flatten_notes(false_branch, cycle_count, macro_cycle_length)
+                flatten_notes(false_branch, cycle_count, macro_cycle_length, alternator_stride, rng)
             }
         }
         Node::Rest | Node::Hold => vec![],
@@ -54,10 +76,8 @@ fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize) -> 
 pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<ScheduledNote>, rng: &mut StdRng) -> Vec<usize> {
     match node {
         Node::Note { pitch, velocity, gate, prob } => {
-            if *prob < 100 {
-                if rng.random_range(0..100) >= *prob {
-                    return vec![]; 
-                }
+            if *prob < 100 && rng.random_range(0..100) >= *prob {
+                return vec![]; 
             }
 
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
@@ -124,8 +144,13 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
         }
         Node::Alternator(elements) => {
             if elements.is_empty() { return vec![]; }
-            let index = ctx.cycle_count % elements.len();
-            traverse_ast(&elements[index], ctx, out_notes, rng)
+            
+            let index = (ctx.cycle_count / ctx.alternator_stride) % elements.len();
+            
+            let mut step_ctx = ctx.clone();
+            step_ctx.alternator_stride = ctx.alternator_stride * elements.len();
+            
+            traverse_ast(&elements[index], step_ctx, out_notes, rng)
         }
         Node::RandomChoice(elements) => {
             if elements.is_empty() { return vec![]; }
@@ -195,7 +220,7 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_notes: &mut Vec<Schedul
             last_indices
         }
         Node::Arp(child, style) => {
-            let raw_notes = flatten_notes(child, ctx.cycle_count, ctx.macro_cycle_length);
+            let raw_notes = flatten_notes(child, ctx.cycle_count, ctx.macro_cycle_length, ctx.alternator_stride, rng);
             if raw_notes.is_empty() { return vec![]; }
             
             let mut resolved: Vec<(u8, u8, u8, u8)> = raw_notes.into_iter().map(|(pitch, vel, gate, prob)| {
@@ -368,6 +393,7 @@ pub fn generate_next_cycle(
             scale: active_scale, 
             active_chord_indices: vec![],
             octave_offset: track.octave_offset,
+            alternator_stride: 1, // <-- Init at root
         };
         traverse_ast(&track.root_node, ctx, &mut notes, &mut rng);
     }

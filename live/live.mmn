@@ -2,8 +2,8 @@
 #SCALE=D3 dorian
 #QUANTIZE=AUTO
 
-T1 down slow 2:
-  4 2 3 2
+//!T1 down slow 2:
+ // 4 2 3 2
 
 //!T2 slow 4:
 //  0+2+4%40 . 2+4+6%40 . 3+5+7%40 _
@@ -11,5 +11,5 @@ T1 down slow 2:
 //!T2 slow 2:
 //  0+2+4 arp(up) 2+4+6 arp(down) 3+5+7 arp(updown) 0+4+7 arp(updown)
 
-//T10 slow 1:
-//  [36 [38 38] 36 [38 42@80]] m_if(2) [36*4] m_if(4)
+T10 fast 4:
+  < <36 36*2> <38 38*2> >

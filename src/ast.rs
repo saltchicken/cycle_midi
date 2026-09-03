@@ -177,4 +177,5 @@ pub struct RenderContext {
     pub scale: Option<ScaleDef>,
     pub active_chord_indices: Vec<usize>,
     pub octave_offset: i32,
+    pub alternator_stride: usize,
 }
