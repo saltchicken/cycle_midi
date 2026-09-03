@@ -8,10 +8,23 @@ use std::thread;
 use std::time::{Duration, Instant};
 use thread_priority::*;
 
+// MIDI Status Byte Constants
+const MIDI_NOTE_OFF: u8 = 0x80;
+const MIDI_NOTE_ON: u8 = 0x90;
+const MIDI_CC: u8 = 0xB0;
+const MIDI_CLOCK: u8 = 0xF8;
+const MIDI_START: u8 = 0xFA;
+const MIDI_STOP: u8 = 0xFC;
+const MIDI_ALL_NOTES_OFF: u8 = 123;
+
 macro_rules! send_midi {
     ($tx:expr, $msg:expr) => {
-        while $tx.push($msg).is_err() {
+        // Added a basic spin limit to prevent hard-locking the real-time thread 
+        // if the ring buffer fills up and the OS stalls the MIDI consumer.
+        let mut attempts = 0;
+        while $tx.push($msg).is_err() && attempts < 10_000 {
             std::hint::spin_loop();
+            attempts += 1;
         }
     };
 }
@@ -37,6 +50,8 @@ pub fn run_scheduler(
 
     let mut bpm = 120.0;
     let mut cycle_duration_ms = (60_000.0 / bpm) * 4.0;
+    // MIDI Clock is defined as 24 Pulses Per Quarter Note (PPQN)
+    let mut clock_interval_ms = 60_000.0 / (bpm * 24.0);
 
     let mut current_program = Program {
         bpm: None,
@@ -58,6 +73,7 @@ pub fn run_scheduler(
         if let Some(new_bpm) = current_program.bpm {
             bpm = new_bpm;
             cycle_duration_ms = (60_000.0 / bpm) * 4.0;
+            clock_interval_ms = 60_000.0 / (bpm * 24.0);
         }
 
         let initial_macro_len = current_program.pattern_length_cycles();
@@ -69,11 +85,15 @@ pub fn run_scheduler(
 
     let start_time = Instant::now();
     let mut next_cycle_start_ms = 0.0;
+    let mut next_clock_ms = 0.0;
 
     let mut upcoming_events: Vec<ScheduledEvent> = Vec::new();
     let mut active_notes: Vec<(f64, u8, u8)> = Vec::new();
 
     println!("Starting Scheduler Loop...");
+    
+    // Send MIDI Start message to sync external sequencers/drum machines
+    send_midi!(midi_tx, vec![MIDI_START]);
 
     loop {
         if !running.load(Ordering::SeqCst) {
@@ -81,6 +101,12 @@ pub fn run_scheduler(
         }
 
         let elapsed_ms = start_time.elapsed().as_secs_f64() * 1000.0;
+
+        // Process MIDI Timing Clock (24 pulses per quarter note)
+        while elapsed_ms >= next_clock_ms {
+            send_midi!(midi_tx, vec![MIDI_CLOCK]);
+            next_clock_ms += clock_interval_ms;
+        }
 
         match rx.try_recv() {
             Ok(new_prog) => {
@@ -120,6 +146,7 @@ pub fn run_scheduler(
                         if (new_bpm - bpm).abs() > f64::EPSILON {
                             bpm = new_bpm;
                             cycle_duration_ms = (60_000.0 / bpm) * 4.0;
+                            clock_interval_ms = 60_000.0 / (bpm * 24.0);
                             println!("BPM updated to: {}", bpm);
                         }
                     }
@@ -151,7 +178,7 @@ pub fn run_scheduler(
 
         active_notes.retain(|&(off_time, channel, pitch)| {
             if elapsed_ms >= off_time {
-                send_midi!(midi_tx, vec![0x80 | channel, pitch, 0]);
+                send_midi!(midi_tx, vec![MIDI_NOTE_OFF | channel, pitch, 0]);
                 false
             } else {
                 true
@@ -173,14 +200,14 @@ pub fn run_scheduler(
                         // VOICE STEALING: Prevent overlapping/stuck notes
                         active_notes.retain(|&(_off_time, c, p)| {
                             if c == channel && p == pitch {
-                                send_midi!(midi_tx, vec![0x80 | c, p, 0]);
+                                send_midi!(midi_tx, vec![MIDI_NOTE_OFF | c, p, 0]);
                                 false
                             } else {
                                 true
                             }
                         });
 
-                        send_midi!(midi_tx, vec![0x90 | channel, pitch, velocity]);
+                        send_midi!(midi_tx, vec![MIDI_NOTE_ON | channel, pitch, velocity]);
                         active_notes.push((start_ms + duration_ms, channel, pitch));
                     }
                     ScheduledEvent::CC {
@@ -189,7 +216,7 @@ pub fn run_scheduler(
                         value,
                         ..
                     } => {
-                        send_midi!(midi_tx, vec![0xB0 | channel, controller, value]);
+                        send_midi!(midi_tx, vec![MIDI_CC | channel, controller, value]);
                     }
                 }
             } else {
@@ -198,21 +225,26 @@ pub fn run_scheduler(
         }
 
         let now_ms = start_time.elapsed().as_secs_f64() * 1000.0;
-        let mut next_event_ms = next_cycle_start_ms;
+        let mut next_wakeup_ms = next_cycle_start_ms;
 
         if let Some(event) = upcoming_events.last() {
-            if event.start_ms() < next_event_ms {
-                next_event_ms = event.start_ms();
+            if event.start_ms() < next_wakeup_ms {
+                next_wakeup_ms = event.start_ms();
             }
         }
 
         for &(off_time, _, _) in &active_notes {
-            if off_time < next_event_ms {
-                next_event_ms = off_time;
+            if off_time < next_wakeup_ms {
+                next_wakeup_ms = off_time;
             }
         }
+        
+        // Ensure the thread wakes up in time to fire the next clock pulse
+        if next_clock_ms < next_wakeup_ms {
+            next_wakeup_ms = next_clock_ms;
+        }
 
-        let wait_ms = next_event_ms - now_ms;
+        let wait_ms = next_wakeup_ms - now_ms;
 
         if wait_ms > 3.0 {
             thread::sleep(Duration::from_millis(2));
@@ -226,12 +258,15 @@ pub fn run_scheduler(
     println!("Stopping playback and clearing active notes...");
 
     for &(_, channel, pitch) in &active_notes {
-        send_midi!(midi_tx, vec![0x80 | channel, pitch, 0]);
+        send_midi!(midi_tx, vec![MIDI_NOTE_OFF | channel, pitch, 0]);
     }
 
     for ch in 0..16 {
-        send_midi!(midi_tx, vec![0xB0 | ch, 123, 0]);
+        send_midi!(midi_tx, vec![MIDI_CC | ch, MIDI_ALL_NOTES_OFF, 0]);
     }
+
+    // Send MIDI Stop message to sync external gear
+    send_midi!(midi_tx, vec![MIDI_STOP]);
 
     send_midi!(midi_tx, vec![]);
     thread::sleep(Duration::from_millis(50));
