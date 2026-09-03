@@ -1,27 +1,9 @@
-use crate::ast::{Node, Pitch, Program, RenderContext, ScheduledEvent, ArpStyle, ScaleDef, SeedInterval, DynamicValue};
-use rand::{RngExt, SeedableRng};
+use crate::ast::{Node, Pitch, RenderContext, ScheduledEvent, ArpStyle, DynamicValue};
+use rand::RngExt;
 use rand::rngs::StdRng;
+use super::math::resolve_pitch;
 
-pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>, octave_offset: i32) -> u8 {
-    let shift = octave_offset * 12;
-    match pitch {
-        Pitch::Absolute(p) => (*p as i32 + shift).clamp(0, 127) as u8,
-        Pitch::Numeric(val) => {
-            let val = *val;
-            if let Some(scale) = scale {
-                let scale_len = scale.intervals.len() as i32;
-                let octave = val.div_euclid(scale_len);
-                let degree = val.rem_euclid(scale_len) as usize;
-                let note = scale.root_pitch as i32 + (octave * 12) + scale.intervals[degree] as i32 + shift;
-                note.clamp(0, 127) as u8
-            } else {
-                (val + shift).clamp(0, 127) as u8
-            }
-        }
-    }
-}
-
-fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize, alternator_stride: usize, rng: &mut StdRng) -> Vec<(Pitch, u8, u8)> {
+pub fn flatten_notes(node: &Node, cycle_count: usize, macro_cycle_length: usize, alternator_stride: usize, rng: &mut StdRng) -> Vec<(Pitch, u8, u8)> {
     match node {
         Node::Note { pitch, velocity, gate } => vec![(pitch.clone(), *velocity, *gate)],
         Node::CC { .. } => vec![], // CCs are ignored in Arp evaluation
@@ -385,62 +367,4 @@ pub fn traverse_ast(node: &Node, ctx: RenderContext, out_events: &mut Vec<Schedu
             last_indices
         }
     }
-}
-
-pub fn generate_next_cycle(
-    program: &Program, 
-    bpm: f64, 
-    cycle_start_time_ms: f64, 
-    cycle_count: usize,
-    macro_cycle_length: usize,
-) -> Vec<ScheduledEvent> {
-    if program.global_silence {
-        return Vec::new();
-    }
-
-    let master_duration_ms = (60_000.0 / bpm) * 4.0; 
-    let mut events = Vec::new();
-    let macro_cycle_count = cycle_count / macro_cycle_length.max(1);
-
-    for track in &program.tracks {
-        if track.is_muted { continue; }
-        
-        let active_scale = if track.channel == 9 {
-            track.scale.clone()
-        } else {
-            track.scale.clone().or(program.scale.clone())
-        };
-
-        let mut rng = if let Some(seed_def) = &track.seed {
-            let mut final_seed = seed_def.base;
-            if let Some(interval) = &seed_def.interval {
-                let seed_bump = match interval {
-                    SeedInterval::Macro(m) => (macro_cycle_count / *m) as u64,
-                    SeedInterval::Micro(m) => (cycle_count / *m) as u64,
-                };
-                final_seed = final_seed.wrapping_add(seed_bump);
-            }
-            StdRng::seed_from_u64(final_seed)
-        } else {
-            StdRng::seed_from_u64(rand::random::<u64>())
-        };
-
-        let ctx = RenderContext {
-            channel: track.channel,
-            start_ms: cycle_start_time_ms,
-            duration_ms: master_duration_ms,
-            window_start_ms: cycle_start_time_ms,
-            window_end_ms: cycle_start_time_ms + master_duration_ms,
-            cycle_count,
-            macro_cycle_length,
-            master_duration_ms,
-            scale: active_scale, 
-            active_chord_indices: vec![],
-            octave_offset: track.octave_offset,
-            alternator_stride: 1,
-        };
-        traverse_ast(&track.root_node, ctx, &mut events, &mut rng);
-    }
-    
-    events
 }
