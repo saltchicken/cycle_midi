@@ -7,6 +7,14 @@ pub fn padding() -> impl Parser<char, (), Error = Simple<char>> + Clone {
     comment.padded().repeated().padded().ignored()
 }
 
+pub fn kw(s: &'static str) -> impl Parser<char, &'static str, Error = Simple<char>> + Clone {
+    just(s).padded_by(padding())
+}
+
+pub fn pad_char(c: char) -> impl Parser<char, char, Error = Simple<char>> + Clone {
+    just(c).padded_by(padding())
+}
+
 pub fn int_u8() -> impl Parser<char, u8, Error = Simple<char>> + Clone {
     text::int::<char, Simple<char>>(10).try_map(|s: String, span| {
         s.parse::<u8>()

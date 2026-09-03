@@ -4,6 +4,14 @@ use super::{RenderContext, ScheduledEvent};
 use rand::RngExt;
 use rand::rngs::StdRng;
 
+fn calculate_lfo_phase(ctx: &RenderContext, speed: f64) -> f64 {
+    let lfo_duration = ctx.master_duration_ms / speed;
+    let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
+    let offset = ctx.start_ms - ctx.cycle_start_ms;
+    let virtual_time = theoretical_cycle_start + offset;
+    (virtual_time % lfo_duration) / lfo_duration
+}
+
 pub fn flatten_notes(
     node: &Node,
     cycle_count: usize,
@@ -87,23 +95,8 @@ pub fn flatten_notes(
             true_branch,
             false_branch,
         } => {
-            if cycle_count % interval == *offset {
-                flatten_notes(
-                    true_branch,
-                    cycle_count,
-                    macro_cycle_length,
-                    alternator_stride,
-                    rng,
-                )
-            } else {
-                flatten_notes(
-                    false_branch,
-                    cycle_count,
-                    macro_cycle_length,
-                    alternator_stride,
-                    rng,
-                )
-            }
+            let target = if cycle_count % interval == *offset { true_branch } else { false_branch };
+            flatten_notes(target, cycle_count, macro_cycle_length, alternator_stride, rng)
         }
         Node::MacroCondition {
             interval,
@@ -116,23 +109,9 @@ pub fn flatten_notes(
             let macro_cycle = cycle_count / m_len;
             let is_active_macro = macro_cycle % interval == *offset;
 
-            if is_active_macro && (!*is_gate || (cycle_count % m_len == 0)) {
-                flatten_notes(
-                    true_branch,
-                    cycle_count,
-                    macro_cycle_length,
-                    alternator_stride,
-                    rng,
-                )
-            } else {
-                flatten_notes(
-                    false_branch,
-                    cycle_count,
-                    macro_cycle_length,
-                    alternator_stride,
-                    rng,
-                )
-            }
+            let condition = is_active_macro && (!*is_gate || (cycle_count % m_len == 0));
+            let target = if condition { true_branch } else { false_branch };
+            flatten_notes(target, cycle_count, macro_cycle_length, alternator_stride, rng)
         }
         Node::Probability(child, prob) => {
             if *prob < 100 && rng.random_range(0..100) >= *prob {
@@ -186,33 +165,18 @@ pub fn traverse_ast(
                 let actual_value = match value {
                     DynamicValue::Static(v) => *v,
                     DynamicValue::Sine(min, max, speed) => {
-                        let lfo_duration = ctx.master_duration_ms / speed;
-                        let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
-                        let offset = ctx.start_ms - ctx.cycle_start_ms;
-                        let virtual_time = theoretical_cycle_start + offset;
-                        
-                        let phase = (virtual_time % lfo_duration) / lfo_duration;
+                        let phase = calculate_lfo_phase(ctx, *speed);
                         let normalized = (phase * std::f64::consts::TAU).sin() * 0.5 + 0.5;
                         let range = *max as f64 - *min as f64;
                         (*min as f64 + normalized * range).clamp(0.0, 127.0) as u8
                     }
                     DynamicValue::Saw(min, max, speed) => {
-                        let lfo_duration = ctx.master_duration_ms / speed;
-                        let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
-                        let offset = ctx.start_ms - ctx.cycle_start_ms;
-                        let virtual_time = theoretical_cycle_start + offset;
-
-                        let phase = (virtual_time % lfo_duration) / lfo_duration;
+                        let phase = calculate_lfo_phase(ctx, *speed);
                         let range = *max as f64 - *min as f64;
                         (*min as f64 + phase * range).clamp(0.0, 127.0) as u8
                     }
                     DynamicValue::Tri(min, max, speed) => {
-                        let lfo_duration = ctx.master_duration_ms / speed;
-                        let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
-                        let offset = ctx.start_ms - ctx.cycle_start_ms;
-                        let virtual_time = theoretical_cycle_start + offset;
-
-                        let phase = (virtual_time % lfo_duration) / lfo_duration;
+                        let phase = calculate_lfo_phase(ctx, *speed);
                         let tri = if phase < 0.5 {
                             phase * 2.0
                         } else {
@@ -262,57 +226,41 @@ pub fn traverse_ast(
             }
             let step_duration = ctx.duration_ms / elements.len() as f64;
 
-            let orig_start = ctx.start_ms;
-            let orig_duration = ctx.duration_ms;
-            let orig_win_start = ctx.window_start_ms;
-            let orig_win_end = ctx.window_end_ms;
-
             for (i, el) in elements.iter().enumerate() {
-                ctx.start_ms = orig_start + (i as f64 * step_duration);
-                ctx.duration_ms = step_duration;
-                ctx.window_start_ms = orig_win_start.max(ctx.start_ms);
-                ctx.window_end_ms = orig_win_end.min(ctx.start_ms + step_duration);
+                let mut sub_ctx = ctx.clone();
+                sub_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
+                sub_ctx.duration_ms = step_duration;
+                sub_ctx.window_start_ms = ctx.window_start_ms.max(sub_ctx.start_ms);
+                sub_ctx.window_end_ms = ctx.window_end_ms.min(sub_ctx.start_ms + step_duration);
 
-                traverse_ast(el, ctx, out_events, rng);
+                traverse_ast(el, &mut sub_ctx, out_events, rng);
+                ctx.active_chord_indices = sub_ctx.active_chord_indices;
             }
-
-            ctx.start_ms = orig_start;
-            ctx.duration_ms = orig_duration;
-            ctx.window_start_ms = orig_win_start;
-            ctx.window_end_ms = orig_win_end;
         }
         Node::Parallel(layers) => {
             let orig_indices = ctx.active_chord_indices.clone();
             let mut all_indices = Vec::new();
             
             for layer in layers {
-                ctx.active_chord_indices = orig_indices.clone();
+                let mut sub_ctx = ctx.clone();
+                sub_ctx.active_chord_indices = orig_indices.clone();
                 
                 if layer.is_empty() {
-                    ctx.active_chord_indices.clear();
+                    sub_ctx.active_chord_indices.clear();
                 } else {
-                    let step_duration = ctx.duration_ms / layer.len() as f64;
-                    let orig_start = ctx.start_ms;
-                    let orig_duration = ctx.duration_ms;
-                    let orig_win_start = ctx.window_start_ms;
-                    let orig_win_end = ctx.window_end_ms;
-
+                    let step_duration = sub_ctx.duration_ms / layer.len() as f64;
                     for (i, el) in layer.iter().enumerate() {
-                        ctx.start_ms = orig_start + (i as f64 * step_duration);
-                        ctx.duration_ms = step_duration;
-                        ctx.window_start_ms = orig_win_start.max(ctx.start_ms);
-                        ctx.window_end_ms = orig_win_end.min(ctx.start_ms + step_duration);
+                        let mut step_ctx = sub_ctx.clone();
+                        step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
+                        step_ctx.duration_ms = step_duration;
+                        step_ctx.window_start_ms = ctx.window_start_ms.max(step_ctx.start_ms);
+                        step_ctx.window_end_ms = ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
 
-                        traverse_ast(el, ctx, out_events, rng);
+                        traverse_ast(el, &mut step_ctx, out_events, rng);
+                        sub_ctx.active_chord_indices = step_ctx.active_chord_indices;
                     }
-
-                    ctx.start_ms = orig_start;
-                    ctx.duration_ms = orig_duration;
-                    ctx.window_start_ms = orig_win_start;
-                    ctx.window_end_ms = orig_win_end;
                 }
-                
-                all_indices.extend_from_slice(&ctx.active_chord_indices);
+                all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
             }
             ctx.active_chord_indices = all_indices;
         }
@@ -323,12 +271,11 @@ pub fn traverse_ast(
             }
 
             let index = (ctx.cycle_count / ctx.alternator_stride) % elements.len();
-            let orig_stride = ctx.alternator_stride;
-            ctx.alternator_stride = orig_stride * elements.len();
+            let mut sub_ctx = ctx.clone();
+            sub_ctx.alternator_stride *= elements.len();
 
-            traverse_ast(&elements[index], ctx, out_events, rng);
-            
-            ctx.alternator_stride = orig_stride;
+            traverse_ast(&elements[index], &mut sub_ctx, out_events, rng);
+            ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
         Node::RandomChoice(elements) => {
             if elements.is_empty() {
@@ -344,11 +291,8 @@ pub fn traverse_ast(
             true_branch,
             false_branch,
         } => {
-            if ctx.cycle_count % interval == *offset {
-                traverse_ast(true_branch, ctx, out_events, rng);
-            } else {
-                traverse_ast(false_branch, ctx, out_events, rng);
-            }
+            let target = if ctx.cycle_count % interval == *offset { true_branch } else { false_branch };
+            traverse_ast(target, ctx, out_events, rng);
         }
         Node::MacroCondition {
             interval,
@@ -361,11 +305,9 @@ pub fn traverse_ast(
             let macro_cycle = ctx.cycle_count / m_len;
             let is_active_macro = macro_cycle % interval == *offset;
 
-            if is_active_macro && (!*is_gate || (ctx.cycle_count % m_len == 0)) {
-                traverse_ast(true_branch, ctx, out_events, rng);
-            } else {
-                traverse_ast(false_branch, ctx, out_events, rng);
-            }
+            let condition = is_active_macro && (!*is_gate || (ctx.cycle_count % m_len == 0));
+            let target = if condition { true_branch } else { false_branch };
+            traverse_ast(target, ctx, out_events, rng);
         }
         Node::Probability(child, prob) => {
             if *prob < 100 && rng.random_range(0..100) >= *prob {
@@ -380,31 +322,24 @@ pub fn traverse_ast(
                 return;
             }
             let step_duration = ctx.duration_ms / *steps as f64;
-            let orig_start = ctx.start_ms;
-            let orig_duration = ctx.duration_ms;
-            let orig_win_start = ctx.window_start_ms;
-            let orig_win_end = ctx.window_end_ms;
 
             for i in 0..*steps {
                 let is_hit =
                     ((i as usize * *pulses as usize) % (*steps as usize)) < (*pulses as usize);
                 
                 if is_hit {
-                    ctx.start_ms = orig_start + (i as f64 * step_duration);
-                    ctx.duration_ms = step_duration;
-                    ctx.window_start_ms = orig_win_start.max(ctx.start_ms);
-                    ctx.window_end_ms = orig_win_end.min(ctx.start_ms + step_duration);
+                    let mut sub_ctx = ctx.clone();
+                    sub_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
+                    sub_ctx.duration_ms = step_duration;
+                    sub_ctx.window_start_ms = ctx.window_start_ms.max(sub_ctx.start_ms);
+                    sub_ctx.window_end_ms = ctx.window_end_ms.min(sub_ctx.start_ms + step_duration);
 
-                    traverse_ast(child, ctx, out_events, rng);
+                    traverse_ast(child, &mut sub_ctx, out_events, rng);
+                    ctx.active_chord_indices = sub_ctx.active_chord_indices;
                 } else {
                     ctx.active_chord_indices.clear();
                 }
             }
-
-            ctx.start_ms = orig_start;
-            ctx.duration_ms = orig_duration;
-            ctx.window_start_ms = orig_win_start;
-            ctx.window_end_ms = orig_win_end;
         }
         Node::SpeedModifier(child, multiplier) => {
             let m = *multiplier as f64;
@@ -420,25 +355,18 @@ pub fn traverse_ast(
             let chunk_start_ms = ctx.start_ms - phase_offset;
             let chunks_to_render = (ctx.duration_ms / local_duration).ceil() as usize + 2;
 
-            let orig_start = ctx.start_ms;
-            let orig_duration = ctx.duration_ms;
-            let orig_cycle_count = ctx.cycle_count;
-
             for i in 0..chunks_to_render {
                 let absolute_chunk_start = chunk_start_ms + (i as f64 * local_duration);
-                
-                ctx.start_ms = absolute_chunk_start;
-                ctx.duration_ms = local_duration;
+                let mut sub_ctx = ctx.clone();
+                sub_ctx.start_ms = absolute_chunk_start;
+                sub_ctx.duration_ms = local_duration;
                 
                 let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * local_duration);
-                ctx.cycle_count = (virtual_chunk_start / ctx.master_duration_ms).floor().max(0.0) as usize;
+                sub_ctx.cycle_count = (virtual_chunk_start / ctx.master_duration_ms).floor().max(0.0) as usize;
 
-                traverse_ast(child, ctx, out_events, rng);
+                traverse_ast(child, &mut sub_ctx, out_events, rng);
+                ctx.active_chord_indices = sub_ctx.active_chord_indices;
             }
-
-            ctx.start_ms = orig_start;
-            ctx.duration_ms = orig_duration;
-            ctx.cycle_count = orig_cycle_count;
         }
         Node::Arp(child, style) => {
             let raw_notes = flatten_notes(
@@ -560,26 +488,23 @@ pub fn traverse_ast(
             }
             
             let step_duration = ctx.duration_ms / pattern.len() as f64;
-            let orig_start = ctx.start_ms;
-            let orig_duration = ctx.duration_ms;
-            let orig_win_start = ctx.window_start_ms;
-            let orig_win_end = ctx.window_end_ms;
 
             for (i, (pitch, vel, gate)) in pattern.into_iter().enumerate() {
-                ctx.start_ms = orig_start + (i as f64 * step_duration);
-                ctx.duration_ms = step_duration;
-                ctx.window_start_ms = orig_win_start.max(ctx.start_ms);
-                ctx.window_end_ms = orig_win_end.min(ctx.start_ms + step_duration);
+                let mut sub_ctx = ctx.clone();
+                sub_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
+                sub_ctx.duration_ms = step_duration;
+                sub_ctx.window_start_ms = ctx.window_start_ms.max(sub_ctx.start_ms);
+                sub_ctx.window_end_ms = ctx.window_end_ms.min(sub_ctx.start_ms + step_duration);
 
-                if ctx.start_ms >= ctx.window_start_ms - 0.1
-                    && ctx.start_ms < ctx.window_end_ms - 0.1
+                if sub_ctx.start_ms >= sub_ctx.window_start_ms - 0.1
+                    && sub_ctx.start_ms < sub_ctx.window_end_ms - 0.1
                 {
                     let actual_duration = step_duration * (gate as f64 / 100.0);
                     out_events.push(ScheduledEvent::Note {
-                        channel: ctx.channel,
+                        channel: sub_ctx.channel,
                         pitch,
                         velocity: vel,
-                        start_ms: ctx.start_ms,
+                        start_ms: sub_ctx.start_ms,
                         duration_ms: actual_duration,
                     });
                     
@@ -589,11 +514,6 @@ pub fn traverse_ast(
                     ctx.active_chord_indices.clear();
                 }
             }
-
-            ctx.start_ms = orig_start;
-            ctx.duration_ms = orig_duration;
-            ctx.window_start_ms = orig_win_start;
-            ctx.window_end_ms = orig_win_end;
         }
     }
 }

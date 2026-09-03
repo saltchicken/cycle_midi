@@ -1,5 +1,5 @@
 use super::directives::global_directives;
-use super::primitives::{float_f32, float_f64, int_i32, int_u8, padding, pitch_val};
+use super::primitives::{float_f32, float_f64, int_i32, int_u8, padding, pitch_val, kw, pad_char};
 use super::track::track_parser;
 use crate::ast::{ArpStyle, DynamicValue, Node, Pitch, Program};
 use chumsky::prelude::*;
@@ -24,30 +24,28 @@ struct Postfix {
 }
 
 fn dynamic_value() -> impl Parser<char, DynamicValue, Error = Simple<char>> + Clone {
-    let lfo_args = just('(')
-        .padded_by(padding())
+    let lfo_args = pad_char('(')
         .ignore_then(int_u8()) // min
-        .then_ignore(just(',').padded_by(padding()))
+        .then_ignore(pad_char(','))
         .then(int_u8()) // max
         .then(
-            just(',')
-                .padded_by(padding())
+            pad_char(',')
                 .ignore_then(float_f64()) // speed
                 .or_not(),
         )
-        .then_ignore(just(')').padded_by(padding()))
+        .then_ignore(pad_char(')'))
         .or_not();
 
     choice((
-        just("sine").ignore_then(lfo_args.clone()).map(|args| {
+        kw("sine").ignore_then(lfo_args.clone()).map(|args| {
             let ((min, max), spd) = args.unwrap_or(((0, 127), None));
             DynamicValue::Sine(min, max, spd.unwrap_or(1.0))
         }),
-        just("saw").ignore_then(lfo_args.clone()).map(|args| {
+        kw("saw").ignore_then(lfo_args.clone()).map(|args| {
             let ((min, max), spd) = args.unwrap_or(((0, 127), None));
             DynamicValue::Saw(min, max, spd.unwrap_or(1.0))
         }),
-        just("tri").ignore_then(lfo_args.clone()).map(|args| {
+        kw("tri").ignore_then(lfo_args.clone()).map(|args| {
             let ((min, max), spd) = args.unwrap_or(((0, 127), None));
             DynamicValue::Tri(min, max, spd.unwrap_or(1.0))
         }),
@@ -75,7 +73,7 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
     let gate = just('%').ignore_then(int_u8());
 
     pitch
-        .separated_by(just('+').padded_by(padding()))
+        .separated_by(pad_char('+'))
         .at_least(1)
         .then(velocity.or_not())
         .then(gate.or_not())
@@ -101,8 +99,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
     let condition_clause = just("if(")
         .ignore_then(int_u8())
         .then(
-            just(',')
-                .padded_by(padding())
+            pad_char(',')
                 .ignore_then(int_u8())
                 .or_not(),
         )
@@ -112,8 +109,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
     let m_condition_clause = just("m_if(")
         .ignore_then(int_u8())
         .then(
-            just(',')
-                .padded_by(padding())
+            pad_char(',')
                 .ignore_then(int_u8())
                 .or_not(),
         )
@@ -123,8 +119,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
     let only_mod = just("only(")
         .ignore_then(int_u8())
         .then(
-            just(',')
-                .padded_by(padding())
+            pad_char(',')
                 .ignore_then(int_u8())
                 .or_not(),
         )
@@ -134,8 +129,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
     let m_only_mod = just("m_only(")
         .ignore_then(int_u8())
         .then(
-            just(',')
-                .padded_by(padding())
+            pad_char(',')
                 .ignore_then(int_u8())
                 .or_not(),
         )
@@ -147,8 +141,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
     let if_mod = just("if(")
         .ignore_then(int_u8())
         .then(
-            just(',')
-                .padded_by(padding())
+            pad_char(',')
                 .ignore_then(int_u8())
                 .or_not(),
         )
@@ -158,8 +151,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
     let m_if_mod = just("m_if(")
         .ignore_then(int_u8())
         .then(
-            just(',')
-                .padded_by(padding())
+            pad_char(',')
                 .ignore_then(int_u8())
                 .or_not(),
         )
@@ -190,9 +182,9 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
     ));
 
     let arp_mod = just("arp")
-        .ignore_then(just('(').padded_by(padding()))
+        .ignore_then(pad_char('('))
         .ignore_then(arp_style)
-        .then_ignore(just(')').padded_by(padding()))
+        .then_ignore(pad_char(')'))
         .map(PostfixOp::Arp);
 
     let prob_mod = just('?').ignore_then(int_u8()).map(PostfixOp::Prob);
@@ -218,7 +210,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .clone()
             .padded_by(pad_expr.clone())
             .repeated()
-            .separated_by(just('|').padded_by(pad_expr.clone()))
+            .separated_by(pad_char('|'))
             .delimited_by(just('['), just(']'))
             .map(|choices| {
                 if choices.len() == 1 {
@@ -249,7 +241,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let parallel_layer = expr.clone().padded_by(pad_expr.clone()).repeated();
 
         let parallel_group = parallel_layer
-            .separated_by(just('|').padded_by(pad_expr.clone()))
+            .separated_by(pad_char('|'))
             .delimited_by(just('{'), just('}'))
             .map(Node::Parallel);
 

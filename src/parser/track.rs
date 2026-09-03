@@ -1,5 +1,5 @@
 use super::directives::scale_def;
-use super::primitives::{float_f64, padding};
+use super::primitives::{float_f64, padding, kw};
 use crate::ast::{Node, ScaleDef, SeedDef, SeedInterval, Track};
 use chumsky::prelude::*;
 
@@ -13,20 +13,16 @@ enum TrackModifier {
 
 fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + Clone {
     choice((
-        just("fast")
-            .padded_by(padding())
+        kw("fast")
             .ignore_then(float_f64())
             .map(|v| TrackModifier::Speed(v as f32)),
-        just("slow")
-            .padded_by(padding())
+        kw("slow")
             .ignore_then(float_f64())
             .map(|v| TrackModifier::Speed(1.0 / (v as f32))),
-        just("scale")
-            .padded_by(padding())
+        kw("scale")
             .ignore_then(scale_def())
             .map(TrackModifier::Scale),
-        just("up")
-            .padded_by(padding())
+        kw("up")
             .ignore_then(
                 text::int::<char, Simple<char>>(10)
                     .try_map(|s, span| {
@@ -36,8 +32,7 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
                     .or_not(),
             )
             .map(|v| TrackModifier::Octave(v.unwrap_or(1))),
-        just("down")
-            .padded_by(padding())
+        kw("down")
             .ignore_then(
                 text::int::<char, Simple<char>>(10)
                     .try_map(|s, span| {
@@ -47,15 +42,13 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
                     .or_not(),
             )
             .map(|v| TrackModifier::Octave(-v.unwrap_or(1))),
-        just("seed")
-            .padded_by(padding())
+        kw("seed")
             .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<u64>()
                     .map_err(|e| Simple::custom(span, format!("Invalid seed: {}", e)))
             }))
             .then(
-                choice((just("m_every").to(true), just("every").to(false)))
-                    .padded_by(padding())
+                choice((kw("m_every").to(true), kw("every").to(false)))
                     .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
                         s.parse::<usize>()
                             .map_err(|e| Simple::custom(span, format!("Invalid interval: {}", e)))
