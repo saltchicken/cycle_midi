@@ -1,0 +1,36 @@
+#BPM=115
+#SCALE=C4 minor
+
+// --- 1. DEFINE ALL SECTIONS FIRST ---
+
+// Lead aliases
+$intro = 0+2+4
+$verse = [ 0 2 4 5 ]
+$chorus = [ 0 5 4 7 ]
+$bridge = [ 4 5 2 7 ]
+
+// Drum aliases mapped to the same structure
+$drums_intro = . 
+$drums_verse = { 36 . 36 . , . 36 . 36 } 
+$drums_chorus = { 36 36 36 36 , . 42 . 42 } 
+
+
+// --- 2. SEQUENCE THE TRACKS ---
+
+// T1: Lead / Chords
+T1: seqPLoop {
+    (0, 4):   $intro  | // Plays from cycle 0 to 4 
+    (4, 12):  $verse  | // Plays from cycle 4 to 12 
+    (12, 20): $chorus | // Plays from cycle 12 to 20
+    (20, 24): $bridge | // Plays from cycle 20 to 24
+    (24, 32): $chorus   // Plays from cycle 24 to 32
+}
+
+// T10: Drums (Standard MIDI Drum Channel)
+T10: seqPLoop {
+    (0, 4):   $drums_intro |
+    (4, 12):  $drums_verse |
+    (12, 20): $drums_chorus |
+    (20, 24): $drums_verse |
+    (24, 32): $drums_chorus
+}

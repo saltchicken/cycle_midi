@@ -1,0 +1,121 @@
+// --- CYCLE MIDI: CHRONO'S AWAKENING ---
+// Style: 16-bit JRPG Epic Adventure
+#BPM=40
+#SCALE=E3 dorian
+#QUANTIZE=AUTO
+
+// ==========================================
+// ALIASES: DRUMS (T10)
+// ==========================================
+$KICK_V = [36 . . 36]
+$KICK_C = [36 . 36 .]
+$SNARE  = [. 38 . 38]
+$HATS   = [42 42 42 42]*2
+$HATS_POLY = { 42 42 . , 46 . } // Polymetric hats for an evolving, slightly off-kilter groove
+$TOMS   = [. . 43 41]
+
+$DRUM_INTRO  = { $KICK_V | $HATS }
+$DRUM_VERSE  = { $KICK_V | $SNARE | $HATS_POLY }
+$DRUM_CHORUS = { $KICK_C | $SNARE | $HATS | [49?20 . . .] } // 20% chance of crash on the downbeat
+$DRUM_FILL   = { $KICK_V | $SNARE | $TOMS }
+$DRUM_BRIDGE = { $KICK_C | $TOMS | $HATS_POLY }
+
+
+// ==========================================
+// ALIASES: BASS (T1)
+// ==========================================
+// 8-step sequences for a driving 8th-note JRPG feel
+$BASS_I = [0 . . 0 0 . 0 .]
+$BASS_V_1 = [0 . . 0 0 . 0 .]
+$BASS_V_2 = [-2 . . -2 -2 . -2 .]
+$BASS_V_3 = [3 . . 3 3 . 3 .]
+$BASS_V_4 = [2 . . 2 2 . 2 .]
+$BASS_V = < $BASS_V_1 $BASS_V_2 $BASS_V_1 $BASS_V_4 > // 4-bar progression
+
+$BASS_C_1 = [4 4 4 4 4 4 4 4]
+$BASS_C_2 = [2 2 2 2 2 2 2 2]
+$BASS_C_3 = [0 0 0 0 0 0 0 0]
+$BASS_C_4 = [-2 -2 -2 -2 -2 -2 -2 -2]
+$BASS_C = < $BASS_C_1 $BASS_C_2 $BASS_C_3 $BASS_C_4 >
+
+$BASS_B = { 0 4 . , -2 2 } // 3 vs 2 polymeter for time-distortion tension
+
+
+// ==========================================
+// ALIASES: ARPEGGIATOR (T2)
+// ==========================================
+$ARP_I = [0 2 4 6] arp(up)*2
+$ARP_V = < [0 2 4] [-2 0 2] > arp(updown)*2
+$ARP_C = < [4 6 8] [2 4 6] [0 2 4] [-2 0 2] > arp(diverge)*2
+$ARP_B = { 0 2 4 6 , -2 0 2 } // 4 vs 3 polymetric arp
+
+
+// ==========================================
+// ALIASES: LEAD MELODY (T3)
+// ==========================================
+// Using 16 steps per cycle for high resolution (16th notes), allowing for JRPG-style syncopation
+$MELODY_V_A = [0 _ _ _ _ _ 2 _ 4 _ _ _ 2 _ _ _]
+$MELODY_V_B = [0 _ _ _ _ _ -2 _ -4 _ _ _ _ _ _ _]
+$MELODY_V_C = [0 _ _ _ _ _ 2 _ 4 _ 6 _ 7 _ _ _]
+$MELODY_V = < $MELODY_V_A $MELODY_V_B $MELODY_V_A $MELODY_V_C > 
+
+$MELODY_C_A = [7 _ _ _ 6 _ _ _ 4 _ _ _ 2 _ 4 _]
+$MELODY_C_B = [7 _ _ _ 8 _ _ _ 9 _ _ _ _ _ _ _]
+$MELODY_C_C = [7 _ _ _ 6 _ _ _ 4 _ _ _ 2 _ 0 _]
+$MELODY_C_D = [-2 _ _ _ 0 _ _ _ 2 _ _ _ _ _ _ _]
+$MELODY_C = < $MELODY_C_A $MELODY_C_B $MELODY_C_C $MELODY_C_D >
+
+// Fast climbing run for the tense bridge section
+$MELODY_B = [0 2 4 6 7 9] arp(up)*2
+
+
+// ==========================================
+// ARRANGEMENT (64 Cycles)
+// ==========================================
+
+// T1: Syncopated Bassline
+T1: seqPLoop {
+    (0,  16): $BASS_I |
+    (16, 32): $BASS_V |
+    (32, 48): $BASS_C |
+    (48, 64): $BASS_B
+}
+
+// T2: Magical Harp/Synth Arp
+// Shifted slightly right (~> 0.02) to give it a lazy, humanized feel behind the beat
+T2 up 1: seqPLoop {
+    (0,  16): $ARP_I ~> 0.02 |
+    (16, 32): $ARP_V ~> 0.02 |
+    (32, 48): $ARP_C ~> 0.02 |
+    (48, 64): $ARP_B ~> 0.02
+}
+
+// T3: Emotional Lead Synth/Flute
+T3 up 2: seqPLoop {
+    (0,  16): . |                // Rests during intro
+    (16, 32): $MELODY_V |        // Verse melody
+    (32, 48): $MELODY_C |        // Soaring chorus melody
+    (48, 64): $MELODY_B          // Bridge climb
+}
+
+// T4: Lush String Pads
+// Uses "slow 4" so each cycle here spans 4 standard bars. 
+// 16 slow cycles perfectly maps to the 64 standard cycle arrangement.
+T4 up 1 slow 4: seqPLoop {
+    (0, 4):   < [0+2+4] [-2+0+2] > | 
+    (4, 8):   < [0+2+4] [-2+0+2] [0+2+4] [3+5+7] > | 
+    (8, 12):  < [4+6+8] [2+4+6] [0+2+4] [-2+0+2] > | 
+    (12, 16): [0+4+7] // Holds a tense suspended chord through the whole bridge
+}
+
+// T10: Drums / Percussion
+T10: seqPLoop {
+    (0,  15): $DRUM_INTRO |
+    (15, 16): $DRUM_FILL  |
+    (16, 31): $DRUM_VERSE |
+    (31, 32): $DRUM_FILL  |
+    (32, 47): $DRUM_CHORUS|
+    (47, 48): $DRUM_FILL  |
+    (48, 63): $DRUM_BRIDGE|
+    (63, 64): $DRUM_FILL
+}
