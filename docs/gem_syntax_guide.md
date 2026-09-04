@@ -12,7 +12,9 @@ Every `.mmn` file should start with global directives, followed by optional alia
     *   *Example:* `#SCALE=D3 dorian`
 *   `#QUANTIZE=<AUTO|int>`: Defines when a pattern loop resets. `AUTO` syncs to the lowest common multiple of all track cycle lengths.
 *   **Aliases (Structural Variables):** Define reusable blocks at the top level using `$NAME = <expression>`. Reference them in tracks with `$NAME`. Highly useful for building song arrangements.
-    *   *Example:* `$KICK = [36 . . .]`
+    *   **CRITICAL SYNTAX RULE:** The `<expression>` must be a **SINGLE root block/node**. You cannot place multiple groups side-by-side.
+    *   *WRONG:* `$MELODY = [0 2] [4 5]` (Parser crashes: multiple root nodes)
+    *   *RIGHT:* `$MELODY = [0 2 4 5]` (Combined) OR `$MELODY = [ [0 2] [4 5] ]` (Nested inside a single sequence)
 
 ## 2. Track Definitions & Modifiers
 Tracks are defined by `T<channel> [modifiers]: <expression>`.
@@ -43,6 +45,7 @@ Tracks are defined by `T<channel> [modifiers]: <expression>`.
 ## 4. Grouping, Arrangement & Control Flow
 *   **Sequences `[ ... ]`**: Plays items sequentially. 
     *   `[0 2 4 .]` plays four sequential steps.
+    *   *Note on concatenation:* Never put brackets side-by-side without an outer container. To combine sequences, merge their contents (`[0 1 2 3]`) or wrap them in an outer sequence (`[ [0 1] [2 3] ]`).
 *   **Random Choice `[ ... | ... ]`**: The `|` operator inside brackets creates a random choice between the blocks.
     *   `[ 0 2 | 4 6 ]` randomly plays either the sequence `0 2` OR `4 6`.
 *   **Alternators `< ... >`**: Iterates through elements one by one on each cycle.
@@ -95,7 +98,7 @@ $BASS_MAIN = [0 0 2 0] arp(up)$BASS_ALT  = [4 2 -1 0] arp(updown)
 // T1: Evolving Bassline
 // Uses a subtle phase shift (~>) to delay the bassline slightly for a laid-back groove.
 T1 fast 2: seqPLoop {
-    (0, 4): $BASS_MAIN ~> 0.05 \vert{}     (4, 8):$BASS_ALT ~> 0.05
+    (0, 4): $BASS_MAIN ~> 0.05 \vert{} (4, 8):$BASS_ALT ~> 0.05
 }
 
 // T2: Generative Arp
@@ -107,7 +110,7 @@ T2 up 2 fast 4 seed 404 m_every 4: seqPLoop {
 
 // T10: Arranged Drum Machine
 T10: seqPLoop {
-    (0, 4): $DRUMS_A \vert{}     (4, 8):$DRUMS_B
+    (0, 4): $DRUMS_A \vert{} (4, 8):$DRUMS_B
 }
 
 // T3: Intro Crash
