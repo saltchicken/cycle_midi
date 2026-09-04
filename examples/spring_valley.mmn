@@ -1,0 +1,59 @@
+// --- CYCLE MIDI: SPRING VALLEY ---
+#BPM=108
+#SCALE=G3 major
+#QUANTIZE=AUTO
+
+// --- ALIASES (Building Blocks) ---
+
+// Light, acoustic-style percussion
+$KICK = [36 . . .]
+$RIM = [. 37 . .]
+$SHAKER = 42(5,8)
+$WOODBLOCK = 76(2,8) ~> 0.125 // Syncopated for a bouncy, rustic feel
+
+$DRUMS_A = { $KICK | $SHAKER }
+$DRUMS_B = { $KICK | $RIM | $SHAKER | $WOODBLOCK }
+
+// Bouncy acoustic guitar/banjo arpeggios (I, IV, and V chords)
+$ARP_I = [0 2 4 7]
+$ARP_IV = [3 5 7 10]
+$ARP_V = [4 6 8 11]
+
+// Warm, alternating root/fifth bassline
+$BASS_I = [0 . -3 .]
+$BASS_IV = [3 . 0 .]
+$BASS_V = [4 . 0 .]
+
+// Playful, airy melody motifs (flute/synth) - FIXED SYNTAX
+$MELODY_1 = [7 . 4 2 0 . . .]
+$MELODY_2 = [9 . 7 5 4 . . .]
+$MELODY_3 = [7 4 2 0 2 4 2 .]
+
+// --- ARRANGEMENT ---
+
+// T1: Acoustic Plucks (Guitar/Banjo)
+// Fast arpeggios playing a cheerful chord progression.
+T1 fast 2: seqPLoop {
+    (0, 4): < $ARP_I $ARP_IV $ARP_I $ARP_V > arp(updown) |
+    (4, 8): < $ARP_I $ARP_IV $ARP_I $ARP_V > arp(converge)
+}
+
+// T2: Lead Melody (Flute / Whistle)
+// Rests for the first 4 cycles to build the acoustic atmosphere, then enters.
+T2 up 1: seqPLoop {
+    (0, 4): . |
+    (4, 8): < $MELODY_1 $MELODY_2 $MELODY_1 $MELODY_3 >
+}
+
+// T3: Upright Bass / Warm Synth Bass
+// Down an octave, holding down a steady, bouncy rhythm.
+T3 down 1: seqPLoop {
+    (0, 8): < $BASS_I $BASS_IV $BASS_I $BASS_V >
+}
+
+// T10: Light Percussion
+// Evolves from just kick and shaker to introducing rims and syncopated woodblocks.
+T10: seqPLoop {
+    (0, 4): $DRUMS_A |
+    (4, 8): $DRUMS_B
+}
