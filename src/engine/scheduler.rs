@@ -122,6 +122,8 @@ pub fn run_scheduler(
         }
 
         if elapsed_ms >= next_cycle_start_ms {
+            let mut transition_progress: Option<f64> = None;
+
             if let Some(staged) = &staged_program {
                 let q_mode = staged.quantize.clone().unwrap_or(current_quantize.clone());
 
@@ -142,6 +144,11 @@ pub fn run_scheduler(
                         current_quantize, calculated_len
                     );
 
+                    // THE DROP: Reset Expression/Volume to max on the new phrase!
+                    for ch in 0..16 {
+                        send_midi!(midi_tx, vec![MIDI_CC | ch, 11, 127]);
+                    }
+
                     if let Some(new_bpm) = current_program.bpm {
                         if (new_bpm - bpm).abs() > f64::EPSILON {
                             bpm = new_bpm;
@@ -152,9 +159,20 @@ pub fn run_scheduler(
                     }
                 } else {
                     let cycles_left = target_q_cycles - position_in_phrase;
+                    
+                    // Calculate progress from 1.0 -> 0.0
+                    let prog = cycles_left as f64 / target_q_cycles as f64;
+                    transition_progress = Some(prog);
+
+                    // THE BUILD-UP: Gradually drop MIDI Expression (CC 11) for all channels
+                    let sweep_val = (prog * 127.0) as u8;
+                    for ch in 0..16 {
+                        send_midi!(midi_tx, vec![MIDI_CC | ch, 11, sweep_val]);
+                    }
+
                     println!(
-                        "Swapping in {} cycles... (Waiting for full phrase length of {})",
-                        cycles_left, target_q_cycles
+                        "Transitioning... {} cycles left (Fade: {})",
+                        cycles_left, sweep_val
                     );
                 }
             }
@@ -167,6 +185,7 @@ pub fn run_scheduler(
                 next_cycle_start_ms,
                 cycle_count,
                 pattern_len,
+                transition_progress, // PASS PROGRESS TO RENDERER FOR "DISSOLVE"
             );
 
             new_events.sort_by(|a, b| b.start_ms().partial_cmp(&a.start_ms()).unwrap());

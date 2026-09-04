@@ -146,16 +146,31 @@ pub fn traverse_ast(
                 let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
                 let actual_duration = ctx.duration_ms * (*gate as f64 / 100.0);
 
-                out_events.push(ScheduledEvent::Note {
-                    channel: ctx.channel,
-                    pitch: actual_pitch,
-                    velocity: *velocity,
-                    start_ms: ctx.start_ms,
-                    duration_ms: actual_duration,
-                });
+                let mut final_vel = *velocity;
+                let mut play_note = true;
 
-                ctx.active_chord_indices.clear();
-                ctx.active_chord_indices.push(out_events.len() - 1);
+                // TRANSITION DISSOLVE EFFECT
+                if let Some(fade) = ctx.transition_fade {
+                    final_vel = (final_vel as f64 * fade) as u8;
+                    if rng.random_range(0.0..1.0) > (fade + 0.2) {
+                        play_note = false;
+                    }
+                }
+
+                if play_note && final_vel > 0 {
+                    out_events.push(ScheduledEvent::Note {
+                        channel: ctx.channel,
+                        pitch: actual_pitch,
+                        velocity: final_vel,
+                        start_ms: ctx.start_ms,
+                        duration_ms: actual_duration,
+                    });
+
+                    ctx.active_chord_indices.clear();
+                    ctx.active_chord_indices.push(out_events.len() - 1);
+                } else {
+                    ctx.active_chord_indices.clear();
+                }
             } else {
                 ctx.active_chord_indices.clear();
             }
@@ -500,16 +515,32 @@ pub fn traverse_ast(
                     && sub_ctx.start_ms < sub_ctx.window_end_ms - 0.1
                 {
                     let actual_duration = step_duration * (gate as f64 / 100.0);
-                    out_events.push(ScheduledEvent::Note {
-                        channel: sub_ctx.channel,
-                        pitch,
-                        velocity: vel,
-                        start_ms: sub_ctx.start_ms,
-                        duration_ms: actual_duration,
-                    });
                     
-                    ctx.active_chord_indices.clear();
-                    ctx.active_chord_indices.push(out_events.len() - 1);
+                    let mut final_vel = vel;
+                    let mut play_note = true;
+
+                    // TRANSITION DISSOLVE EFFECT ON ARPS
+                    if let Some(fade) = sub_ctx.transition_fade {
+                        final_vel = (final_vel as f64 * fade) as u8;
+                        if rng.random_range(0.0..1.0) > (fade + 0.2) {
+                            play_note = false;
+                        }
+                    }
+
+                    if play_note && final_vel > 0 {
+                        out_events.push(ScheduledEvent::Note {
+                            channel: sub_ctx.channel,
+                            pitch,
+                            velocity: final_vel,
+                            start_ms: sub_ctx.start_ms,
+                            duration_ms: actual_duration,
+                        });
+                        
+                        ctx.active_chord_indices.clear();
+                        ctx.active_chord_indices.push(out_events.len() - 1);
+                    } else {
+                        ctx.active_chord_indices.clear();
+                    }
                 } else {
                     ctx.active_chord_indices.clear();
                 }
