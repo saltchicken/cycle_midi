@@ -1,0 +1,45 @@
+// --- CYCLE MIDI: QUIRKY TOWN VIBES ---
+#BPM=105
+#SCALE=G3 major
+#QUANTIZE=AUTO
+
+// --- ALIASES (Building Blocks) ---
+$KICK = [36 . . .]
+$HAT = [. 42 . 42]
+$PERC = { $KICK | $HAT } // Simple acoustic percussion 
+
+// Warm, bouncy bassline
+$BASS_A = [0 . 4 . | 5 . 4 .]
+$BASS_B = [0 . 4 . | 2 . -1 .]
+
+// Light, strummed chords 
+$CHORDS = [. 0+2+4 . 0+2+4 | . 5+7+9 . 4+6+8]
+
+// Playful, folk-style melodies
+$MELODY_SPRING = [0 2 4 7] arp(updown)
+$MELODY_SUMMER = [7 4 2 0] arp(converge)
+
+// --- ARRANGEMENT ---
+
+// T10: Light, relaxed rhythm section
+T10: seqPLoop {
+    (0, 8): $PERC
+}
+
+// T1: Steady acoustic bass
+T1 down 1: seqPLoop {
+    (0, 4): $BASS_A |
+    (4, 8): $BASS_B
+}
+
+// T2: Syncopated chord strums, delayed slightly for a relaxed groove
+T2: seqPLoop {
+    (0, 8): $CHORDS ~> 0.125
+}
+
+// T3: Flute/Banjo melody layer
+// Uses a faster step rate and random probability for a generative, organic feel
+T3 up 1 fast 2 seed 12 m_every 4: seqPLoop {
+    (0, 4): < $MELODY_SPRING $MELODY_SUMMER > ?85 |
+    (4, 8): $MELODY_SUMMER arp(diverge)
+}
