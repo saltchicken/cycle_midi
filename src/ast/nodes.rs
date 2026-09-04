@@ -17,6 +17,7 @@ pub enum Node {
     Hold,
     Sequence(Vec<Node>),
     Parallel(Vec<Vec<Node>>),
+    Polymeter(Vec<Vec<Node>>),
     Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
     RandomChoice(Vec<Node>),
@@ -53,6 +54,21 @@ impl Node {
                 let layer_len = l.iter().fold(1, |a, n| lcm(a, n.cycle_length()));
                 lcm(acc, layer_len)
             }),
+            Node::Polymeter(layers) => {
+                if layers.is_empty() {
+                    return 1;
+                }
+                // Base pulse is derived from the first layer
+                let l0 = layers[0].len().max(1);
+                layers.iter().fold(1, |acc, layer| {
+                    let li = layer.len().max(1);
+                    let layer_child_lcm = layer.iter().fold(1, |a, n| lcm(a, n.cycle_length()));
+                    
+                    // How many macro-cycles (of length L0) it takes for this layer to perfectly sync back to beat 1
+                    let sync_macro_cycles = lcm(l0, li * layer_child_lcm) / l0;
+                    lcm(acc, sync_macro_cycles)
+                })
+            }
             Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) => {
                 child.cycle_length()
             }

@@ -241,9 +241,15 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let parallel_layer = expr.clone().padded_by(pad_expr.clone()).repeated();
 
         let parallel_group = parallel_layer
+            .clone()
             .separated_by(pad_char('|'))
             .delimited_by(just('{'), just('}'))
             .map(Node::Parallel);
+
+        let polymeter_group = parallel_layer
+            .separated_by(pad_char(','))
+            .delimited_by(just('{'), just('}'))
+            .map(Node::Polymeter);
 
         let atom = choice((
             rest,
@@ -251,6 +257,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             seq_group,
             alt_group,
             parallel_group,
+            polymeter_group,
             cc_parser(),
             chord_or_note(),
         ));

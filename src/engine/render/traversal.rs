@@ -80,6 +80,21 @@ pub fn flatten_notes(
             }
             res
         }
+        Node::Polymeter(layers) => {
+            let mut res = Vec::new();
+            for l in layers {
+                for n in l {
+                    res.extend(flatten_notes(
+                        n,
+                        cycle_count,
+                        macro_cycle_length,
+                        alternator_stride,
+                        rng,
+                    ));
+                }
+            }
+            res
+        }
         Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => {
             flatten_notes(
                 child,
@@ -273,6 +288,64 @@ pub fn traverse_ast(
 
                         traverse_ast(el, &mut step_ctx, out_events, rng);
                         sub_ctx.active_chord_indices = step_ctx.active_chord_indices;
+                    }
+                }
+                all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
+            }
+            ctx.active_chord_indices = all_indices;
+        }
+        Node::Polymeter(layers) => {
+            let orig_indices = ctx.active_chord_indices.clone();
+            let mut all_indices = Vec::new();
+            
+            if layers.is_empty() {
+                ctx.active_chord_indices.clear();
+                return;
+            }
+
+            let l0 = layers[0].len().max(1) as f64;
+
+            for layer in layers {
+                let mut sub_ctx = ctx.clone();
+                sub_ctx.active_chord_indices = orig_indices.clone();
+
+                if layer.is_empty() {
+                    sub_ctx.active_chord_indices.clear();
+                } else {
+                    let li = layer.len() as f64;
+                    // Calculate relative speed difference to maintain a constant step duration
+                    let speed = l0 / li;
+                    let local_duration = sub_ctx.duration_ms / speed;
+                    
+                    let theoretical_cycle_start = sub_ctx.cycle_count as f64 * sub_ctx.master_duration_ms;
+                    let offset_in_cycle = sub_ctx.start_ms - sub_ctx.cycle_start_ms;
+                    let virtual_start_ms = theoretical_cycle_start + offset_in_cycle;
+
+                    let phase_offset = (virtual_start_ms + 1e-9).rem_euclid(local_duration);
+                    let chunk_start_ms = sub_ctx.start_ms - phase_offset;
+                    let chunks_to_render = (sub_ctx.duration_ms / local_duration).ceil() as usize + 2;
+
+                    for i in 0..chunks_to_render {
+                        let absolute_chunk_start = chunk_start_ms + (i as f64 * local_duration);
+                        let mut chunk_ctx = sub_ctx.clone();
+                        chunk_ctx.start_ms = absolute_chunk_start;
+                        chunk_ctx.duration_ms = local_duration;
+                        
+                        let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * local_duration);
+                        chunk_ctx.cycle_count = (virtual_chunk_start / chunk_ctx.master_duration_ms).floor().max(0.0) as usize;
+
+                        let step_duration = local_duration / li;
+                        for (step_idx, el) in layer.iter().enumerate() {
+                            let mut step_ctx = chunk_ctx.clone();
+                            step_ctx.start_ms = chunk_ctx.start_ms + (step_idx as f64 * step_duration);
+                            step_ctx.duration_ms = step_duration;
+                            step_ctx.window_start_ms = sub_ctx.window_start_ms.max(step_ctx.start_ms);
+                            step_ctx.window_end_ms = sub_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
+
+                            traverse_ast(el, &mut step_ctx, out_events, rng);
+                            chunk_ctx.active_chord_indices = step_ctx.active_chord_indices;
+                        }
+                        sub_ctx.active_chord_indices = chunk_ctx.active_chord_indices;
                     }
                 }
                 all_indices.extend_from_slice(&sub_ctx.active_chord_indices);

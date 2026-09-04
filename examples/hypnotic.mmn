@@ -1,0 +1,35 @@
+// --- CYCLE MIDI: HYPNOTIC POLYMETER ---
+// Demonstrating the { , } polymeter syntax where layers share 
+// the same step duration but have different sequence lengths, 
+// causing them to phase and shift against each other over time.
+
+#BPM=115
+#SCALE=F2 dorian
+
+// T1: Phasing Arpeggios
+// We use `fast 4` so the base layer's 4 steps act as 16th notes.
+// Layer 1 (Base): 4 steps. A driving, repetitive bassline.
+// Layer 2: 3 steps. A mid-range harmony that shifts every 3/16ths.
+// Layer 3: 5 steps. A high twinkling melody that shifts every 5/16ths.
+// The entire node takes 60 beats (LCM of 4, 3, 5) to perfectly realign!
+T1 fast 4: {
+    0 2 0 4 ,
+    7 . 5 ,
+    12 11 . 9 . 
+}
+
+// T2: Grounding Pad
+// A slow, steady chord progression to anchor the shifting melodies,
+// so the phasing doesn't sound entirely chaotic.
+T2 slow 4: 
+    < [0+2+4 _ _ _] [4+6+8 _ _ _] [-1+1+3 _ _ _] [2+4+6 _ _ _] >
+
+// T10: Phasing Drum Machine
+// Layer 1 (Base): 4 steps. Standard 4-on-the-floor kick and clap.
+// Layer 2: 3 steps. Hi-hats that create a rolling, syncopated groove.
+// Layer 3: 5 steps. A subtle rimshot/perc to add unpredictability.
+T10 fast 4: {
+    36 . 39 . ,
+    42 42 . ,
+    . 37 . . .
+}

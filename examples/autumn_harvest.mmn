@@ -1,0 +1,43 @@
+// --- CYCLE MIDI: AUTUMN HARVEST FESTIVAL ---
+// A warm, rustic, and slightly more energetic sequence, like a town fair in fall
+#BPM=115
+#SCALE=D3 major
+#QUANTIZE=AUTO
+
+// T4: Warm Mellotron / String Pad
+// Plays a comforting, nostalgic chord progression (I - vi - IV - V)
+// Uses slow 4 to hold each chord for an entire measure
+T4 slow 4: 
+    < 0+2+4 5+7+9 3+5+7 4+6+8 >
+
+// T1: Acoustic Guitar / Harp
+// Plays rapid, cascading fingerpicking patterns to drive the momentum
+// Follows the harmonic changes of T4
+T1 fast 2: 
+    < [0 4 2 4] [5 9 7 9] [3 7 5 7] [4 8 6 8] >
+
+// T2: Fiddle / Wooden Whistle Lead
+// Pitched up an octave for clarity. 
+// Uses random selections and probability for a playful, "live" improvisational feel
+// Expression LFO gives the instrument natural swelling dynamics
+T2 up 1: {
+    < [0 2 4 2] [5 _ 4 _] [3 [4|2] 0 2] [4 _ . [0|2]?60] > |
+    cc11@sine(70, 127, 0.25)
+}
+
+// T3: Marimba / Mallets
+// Adds a subtle, bouncing counter-rhythm that only plays on off-beats
+T3:
+    < . [2 4]*2 . [4 2]*2 >?75
+
+// T10: Festive Town Percussion
+// Layer 1: A bouncy acoustic kick drum pattern
+// Layer 2: A brushed snare / rimshot on the backbeat
+// Layer 3: A lively shaker using a Euclidean rhythm
+// Layer 4: A bright triangle (81) that only rings on the 4th cycle to mark the phrase
+T10: {
+    < [36 . 36 .] [36 . . 36] > |
+    . 37 . 37 |
+    82(5,8) |
+    [ . . . 81 ] only(4)
+}

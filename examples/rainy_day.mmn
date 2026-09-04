@@ -1,0 +1,38 @@
+// --- CYCLE MIDI: RAINY DAY INDOORS ---
+// A slower, gentle, and cozy sequence, reminiscent of a rainy day in the valley
+#BPM=88
+#SCALE=E3 major
+#QUANTIZE=AUTO
+
+// T4: Warm Soft Synth / String Pad
+// Plays a slow, comforting, and slightly melancholic progression (I - V - IV - I)
+// Uses slow 4 to stretch each lush chord over a full measure
+T4 slow 4: 
+    < 0+2+4 4+6+8 3+5+7 0+2+4 >
+
+// T1: Soft Acoustic Guitar / Electric Piano
+// Plays a gentle, rolling arpeggio that outlines the pad's chords
+// 'fast 2' gives it a steady, rhythmic flow without rushing
+T1 fast 2: 
+    < [0 4 2 4] [4 8 6 8] [3 7 5 7] [0 4 2 4] >
+
+// T2: Oboe / Gentle Flute Lead
+// Shifted up an octave for a sweet, airy melody
+// Sparser phrasing with longer holds (_) and rests (.) to reflect the slower tempo
+// Expression LFO (CC11) is slower to match the relaxed breathing of the track
+T2 up 1: {
+    < [0 _ 2 .] [4 _ . [2|4]?70] [3 2 0 _] [0 _ _ .] > |
+    cc11@sine(50, 110, 0.125)
+}
+
+// T10: Muted, Minimal Percussion
+// Layer 1: A very soft, sparse kick drum
+// Layer 2: A brushed snare (37) with lower probability so it feels organic and loose
+// Layer 3: A sparse Euclidean shaker pattern to mimic the sound of light rain
+// Layer 4: A gentle triangle (81) that only chimes every 4th cycle
+T10: {
+    < [36 . . .] [ . . 36 . ] > |
+    . 37?60 . 37?60 |
+    82(3,8) |
+    [ . . . 81 ] only(4)
+}

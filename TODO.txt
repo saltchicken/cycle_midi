@@ -1,4 +1,4 @@
-Fix this if(4,3) issue
-
-
 Best way to visualize cycles going by
+
+
+Add polymeter to gem
