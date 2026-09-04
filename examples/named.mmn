@@ -1,0 +1,29 @@
+#BPM=110
+#SCALE=C3 minor
+#QUANTIZE=4
+
+// ---------------------------------------------------------
+// 1. DIATONIC NUMERIC CHORDS
+// Uses the global scale (C minor). '0' is the root note.
+// ---------------------------------------------------------
+T1: [0_triad 4_triad 5_7th 3_triad] * 0.5
+
+// Diatonic chords feed perfectly into the arpeggiator
+T2: [0_9th 2_7th 4_triad 5_sus4] arp(updown) * 2
+
+// ---------------------------------------------------------
+// 2. ABSOLUTE NAMED CHORDS
+// Uses exact semitones, overriding the global scale constraint.
+// ---------------------------------------------------------
+// FIX: Removed parentheses around track modifiers
+T3 scale C3 major: [C4_maj7 A3_min7 F3_maj7 G3_dom7] 
+
+// ---------------------------------------------------------
+// 3. COMBINATIONS & MODIFIERS
+// Stack chords together with '+', and apply velocity/gate
+// ---------------------------------------------------------
+// Stacks a C3 power chord (C3 + G3) with an Eb4 minor chord
+T6: C3_power+Eb4_min @90%50
+
+// A lush ambient pad that drops probability and shifts phase
+T4: [0_7th 2_sus2] ?80 ~>0.05

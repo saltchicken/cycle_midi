@@ -3,3 +3,16 @@ Best way to visualize cycles going by
 
 Implement named chords.
 
+
+slow and fast are not working properly for <>
+
+T2 slow 4:
+  <
+    [0 -3 3 2]
+    [0 -3 3 2]
+    [0 -3 3 2]
+    [15 3 3 2]
+  >
+
+only [15 3 3 2] is playing
+

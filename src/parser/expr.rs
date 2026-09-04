@@ -71,21 +71,80 @@ fn cc_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         })
 }
 
+// Absolute semitone offsets for literal pitches (e.g., C4_maj)
+fn absolute_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + Clone {
+    choice((
+        just("maj7").or(just("M7")).to(vec![0, 4, 7, 11]),
+        just("min7").or(just("m7")).to(vec![0, 3, 7, 10]),
+        just("dom7").to(vec![0, 4, 7, 10]),
+        just("dim7").to(vec![0, 3, 6, 9]),
+        just("m7b5").or(just("halfdim")).to(vec![0, 3, 6, 10]),
+        just("aug7").to(vec![0, 4, 8, 10]),
+        just("sus2").to(vec![0, 2, 7]),
+        just("sus4").to(vec![0, 5, 7]),
+        just("power").to(vec![0, 7]),
+    ))
+    .or(choice((
+        just("maj").or(just("M")).to(vec![0, 4, 7]),
+        just("min").or(just("m")).to(vec![0, 3, 7]),
+        just("dim").to(vec![0, 3, 6]),
+        just("aug").to(vec![0, 4, 8]),
+        just("7").to(vec![0, 4, 7, 10]),
+        just("5").to(vec![0, 7]),
+    )))
+}
+
+// Scale degree offsets for numeric diatonic chords (e.g., 0_triad)
+fn diatonic_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + Clone {
+    choice((
+        just("triad").or(just("t")).to(vec![0, 2, 4]),
+        just("7th").or(just("7")).to(vec![0, 2, 4, 6]),
+        just("9th").or(just("9")).to(vec![0, 2, 4, 6, 8]),
+        just("sus2").to(vec![0, 1, 4]),
+        just("sus4").to(vec![0, 3, 4]),
+    ))
+}
+
 fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
-    let pitch = pitch_val()
+    let single_pitch = pitch_val()
         .or(drum_val())
         .map(Pitch::Absolute)
-        .or(int_i32().map(Pitch::Numeric));
+        .or(int_i32().map(Pitch::Numeric))
+        .map(|p| vec![p]);
 
-    let velocity = just('@').ignore_then(int_u8());
-    let gate = just('%').ignore_then(int_u8());
+    let absolute_named_chord = pitch_val()
+        .then_ignore(just('_'))
+        .then(absolute_chord_type())
+        .map(|(root, intervals)| {
+            intervals
+                .into_iter()
+                .map(|interval| Pitch::Absolute((root as i32 + interval).clamp(0, 127) as u8))
+                .collect::<Vec<_>>()
+        });
 
-    pitch
+    let numeric_named_chord = int_i32()
+        .then_ignore(just('_'))
+        .then(diatonic_chord_type())
+        .map(|(root_degree, intervals)| {
+            intervals
+                .into_iter()
+                .map(|interval| Pitch::Numeric(root_degree + interval))
+                .collect::<Vec<_>>()
+        });
+
+    let pitch_group = choice((absolute_named_chord, numeric_named_chord, single_pitch));
+
+    // FIX: Upgraded to `pad_char` so velocity and gate accept surrounding whitespace
+    let velocity = pad_char('@').ignore_then(int_u8());
+    let gate = pad_char('%').ignore_then(int_u8());
+
+    pitch_group
         .separated_by(pad_char('+'))
         .at_least(1)
         .then(velocity.or_not())
         .then(gate.or_not())
-        .map(|((pitches, v), g)| {
+        .map(|((pitch_groups, v), g)| {
+            let pitches: Vec<Pitch> = pitch_groups.into_iter().flatten().collect();
             let notes: Vec<Node> = pitches
                 .into_iter()
                 .map(|p| Node::Note {
@@ -168,15 +227,16 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             PostfixOp::MacroIf(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize)
         });
 
-    let euclidean = just('(')
+    let euclidean = pad_char('(')
         .ignore_then(int_u8())
-        .then_ignore(just(','))
+        .then_ignore(pad_char(','))
         .then(int_u8())
-        .then_ignore(just(')'))
+        .then_ignore(pad_char(')'))
         .map(|(p, s)| PostfixOp::Euclidean(p, s));
 
-    let speed_mul = just('*').ignore_then(float_f32()).map(PostfixOp::Mul);
-    let speed_div = just('/').ignore_then(float_f32()).map(PostfixOp::Div);
+    // FIX: Replaced `just` with `pad_char` so that spaces are allowed (e.g. `* 0.5`)
+    let speed_mul = pad_char('*').ignore_then(float_f32()).map(PostfixOp::Mul);
+    let speed_div = pad_char('/').ignore_then(float_f32()).map(PostfixOp::Div);
 
     let arp_style = choice((
         just("updown").to(ArpStyle::UpDown),
@@ -189,13 +249,15 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
         just("down").to(ArpStyle::Down),
     ));
 
-    let arp_mod = just("arp")
+    // FIX: Used `kw` and `pad_char` to allow spacing like `arp ( up )`
+    let arp_mod = kw("arp")
         .ignore_then(pad_char('('))
         .ignore_then(arp_style)
         .then_ignore(pad_char(')'))
         .map(PostfixOp::Arp);
 
-    let prob_mod = just('?').ignore_then(int_u8()).map(PostfixOp::Prob);
+    // FIX: Replaced `just` with `pad_char` so probability works with spacing (e.g. `? 80`)
+    let prob_mod = pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob);
     
     let phase_shift = choice((
         just("~>").padded_by(padding()).ignore_then(float_f32()),
