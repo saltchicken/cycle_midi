@@ -1,0 +1,67 @@
+// --- CYCLE MIDI: SEQP & SEQPLOOP ARRANGEMENT ---
+// A demonstration of building a structured track using the new seqPLoop syntax.
+
+#BPM=120
+#SCALE=C3 dorian
+#QUANTIZE=AUTO
+
+// --- ALIASES (Building Blocks) ---
+
+// Define our basic drum loops
+$DRUMS_A = {
+    [36 . . .] |       // Kick on the downbeat
+    [. . 38 .] |       // Snare on the backbeat
+    42*4               // 16th note hi-hats
+}
+
+$DRUMS_B = {
+    [36 . 36 .] |      // More active kick
+    [. 38 . 38] |      // Double snare
+    46*4               // Open/splash hats
+}
+
+$DRUMS_FILL = {
+    [36 36 36 36] |
+    [45 45 47 47]      // Tom fill
+}
+
+// Define some bass and melody phrases
+$BASS_MAIN = [0 0 2 0] arp(up)
+$BASS_ALT  = [4 2 -1 0] arp(updown)
+
+
+// --- ARRANGEMENT ---
+
+// T10: Drum Machine
+// We use seqPLoop to create an 8-cycle repeating structure.
+// Cycles 0-3: Intro/A section drums
+// Cycles 3-4: A quick 1-cycle drum fill (Segments can be any length!)
+// Cycles 4-8: B section / Chorus drums
+T10: seqPLoop {
+    (0, 3): $DRUMS_A |
+    (3, 4): $DRUMS_FILL |
+    (4, 8): $DRUMS_B
+}
+
+// T1: Driving Bassline
+// The bass follows the same 8-cycle loop structure, changing its riff in the B section.
+// We apply `fast 2` at the track level so the whole structure runs at 8th notes.
+T1 fast 2: seqPLoop {
+    (0, 4): $BASS_MAIN |
+    (4, 8): $BASS_ALT
+}
+
+// T2: Arpeggiated Lead
+// Uses seqPLoop to stay completely silent during the A section, 
+// then drops into a complex arpeggio specifically during the B section.
+T2 up 2 fast 4: seqPLoop {
+    (0, 4): . |                          // Rest during the A section
+    (4, 8): [0 2 4 7 9] arp(converge)    // Erupts into a complex arp during the B section
+}
+
+// T3: One-Shot Sound FX
+// Uses standard seqP (non-looping) so it ONLY triggers at the very beginning of the 
+// program's lifecycle, acting like a crash/sweep that introduces the sequence.
+T3: seqP {
+    (0, 1): 49@120    // A loud crash cymbal on cycle 0
+}

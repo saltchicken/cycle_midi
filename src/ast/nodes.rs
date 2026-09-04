@@ -20,6 +20,7 @@ pub enum Node {
     Sequence(Vec<Node>),
     Parallel(Vec<Vec<Node>>),
     Polymeter(Vec<Vec<Node>>),
+    SeqP(Vec<(usize, usize, Box<Node>)>, bool),
     Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
     RandomChoice(Vec<Node>),
@@ -69,6 +70,11 @@ impl Node {
                     }
                 }
             }
+            Node::SeqP(segments, _) => {
+                for (_, _, child) in segments {
+                    child.expand_refs(env, depth)?;
+                }
+            }
             Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) => {
                 child.expand_refs(env, depth)?;
             }
@@ -109,6 +115,9 @@ impl Node {
                     let sync_macro_cycles = lcm(l0, li * layer_child_lcm) / l0;
                     lcm(acc, sync_macro_cycles)
                 })
+            }
+            Node::SeqP(segments, _) => {
+                segments.iter().map(|s| s.1).max().unwrap_or(1).max(1)
             }
             Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) => {
                 child.cycle_length()

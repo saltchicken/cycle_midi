@@ -267,6 +267,38 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .separated_by(pad_char(','))
             .delimited_by(just('{'), just('}'))
             .map(Node::Polymeter);
+            
+        let seqp_segment = pad_char('(')
+            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<usize>()
+                    .map_err(|e| Simple::custom(span, format!("Invalid start: {}", e)))
+            }))
+            .then_ignore(pad_char(','))
+            .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<usize>()
+                    .map_err(|e| Simple::custom(span, format!("Invalid end: {}", e)))
+            }))
+            .then_ignore(pad_char(')'))
+            .then_ignore(pad_char(':'))
+            .then(expr.clone())
+            .map(|((start, end), node)| (start, end, Box::new(node)));
+
+        let seqp = kw("seqP")
+            .ignore_then(
+                seqp_segment
+                    .clone()
+                    .separated_by(pad_char('|'))
+                    .delimited_by(pad_char('{'), pad_char('}')) // <-- FIX: Consume trailing padding before '}'
+            )
+            .map(|segments| Node::SeqP(segments, false));
+
+        let seqploop = kw("seqPLoop")
+            .ignore_then(
+                seqp_segment
+                    .separated_by(pad_char('|'))
+                    .delimited_by(pad_char('{'), pad_char('}')) // <-- FIX: Consume trailing padding before '}'
+            )
+            .map(|segments| Node::SeqP(segments, true));
 
         let atom = choice((
             rest,
@@ -274,10 +306,14 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             alias_ref,
             seq_group,
             alt_group,
-            parallel_group,
-            polymeter_group,
-            cc_parser(),
-            chord_or_note(),
+            choice((
+                parallel_group,
+                polymeter_group,
+                seqploop,  // <-- FIX: Reordered before seqp so "seqPLoop" isn't hijacked
+                seqp,      
+                cc_parser(),
+                chord_or_note(),
+            ))
         ));
 
         atom.then(postfix_parser().repeated())

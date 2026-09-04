@@ -96,6 +96,27 @@ pub fn flatten_notes(
             }
             res
         }
+        Node::SeqP(segments, is_loop) => {
+            let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
+            let current_cycle = if *is_loop {
+                cycle_count % max_end
+            } else {
+                cycle_count
+            };
+            let mut res = Vec::new();
+            for (start, end, child) in segments {
+                if current_cycle >= *start && current_cycle < *end {
+                    res.extend(flatten_notes(
+                        child,
+                        current_cycle,
+                        macro_cycle_length,
+                        alternator_stride,
+                        rng,
+                    ));
+                }
+            }
+            res
+        }
         Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) | Node::PhaseShift(child, _) => {
             flatten_notes(
                 child,
@@ -377,6 +398,29 @@ pub fn traverse_ast(
             }
             let index = rng.random_range(0..elements.len());
             traverse_ast(&elements[index], ctx, out_events, rng);
+        }
+        Node::SeqP(segments, is_loop) => {
+            let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
+            let current_cycle = if *is_loop {
+                ctx.cycle_count % max_end
+            } else {
+                ctx.cycle_count
+            };
+
+            let orig_indices = ctx.active_chord_indices.clone();
+            let mut all_indices = Vec::new();
+
+            for (start, end, child) in segments {
+                if current_cycle >= *start && current_cycle < *end {
+                    let mut sub_ctx = ctx.clone();
+                    // Using `current_cycle` guarantees alternators reset flawlessly during loop wrap-arounds
+                    sub_ctx.cycle_count = current_cycle; 
+                    sub_ctx.active_chord_indices = orig_indices.clone();
+                    traverse_ast(child, &mut sub_ctx, out_events, rng);
+                    all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
+                }
+            }
+            ctx.active_chord_indices = all_indices;
         }
         Node::Condition {
             interval,
