@@ -34,22 +34,32 @@ pub fn int_i32() -> impl Parser<char, i32, Error = Simple<char>> + Clone {
 }
 
 pub fn float_f32() -> impl Parser<char, f32, Error = Simple<char>> + Clone {
-    text::int(10)
-        .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
-        .collect::<String>()
-        .try_map(|s, span| {
+    just('-')
+        .or_not()
+        .then(
+            text::int::<char, Simple<char>>(10)
+                .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
+                .collect::<String>()
+        )
+        .try_map(|(sign, s), span| {
             s.parse::<f32>()
                 .map_err(|e| Simple::custom(span, format!("Invalid float: {}", e)))
+                .map(|num| if sign.is_some() { -num } else { num })
         })
 }
 
 pub fn float_f64() -> impl Parser<char, f64, Error = Simple<char>> + Clone {
-    text::int::<char, Simple<char>>(10)
-        .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
-        .collect::<String>()
-        .try_map(|s, span| {
+    just('-')
+        .or_not()
+        .then(
+            text::int::<char, Simple<char>>(10)
+                .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
+                .collect::<String>()
+        )
+        .try_map(|(sign, s), span| {
             s.parse::<f64>()
                 .map_err(|e| Simple::custom(span, format!("Invalid f64: {}", e)))
+                .map(|num| if sign.is_some() { -num } else { num })
         })
 }
 

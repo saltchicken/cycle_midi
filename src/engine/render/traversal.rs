@@ -95,7 +95,7 @@ pub fn flatten_notes(
             }
             res
         }
-        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) => {
+        Node::Euclidean(child, _, _) | Node::SpeedModifier(child, _) | Node::Arp(child, _) | Node::PhaseShift(child, _) => {
             flatten_notes(
                 child,
                 cycle_count,
@@ -313,7 +313,6 @@ pub fn traverse_ast(
                     sub_ctx.active_chord_indices.clear();
                 } else {
                     let li = layer.len() as f64;
-                    // Calculate relative speed difference to maintain a constant step duration
                     let speed = l0 / li;
                     let local_duration = sub_ctx.duration_ms / speed;
                     
@@ -345,6 +344,8 @@ pub fn traverse_ast(
                             traverse_ast(el, &mut step_ctx, out_events, rng);
                             chunk_ctx.active_chord_indices = step_ctx.active_chord_indices;
                         }
+                        
+                        // FIX: Moved this line INSIDE the chunks_to_render loop!
                         sub_ctx.active_chord_indices = chunk_ctx.active_chord_indices;
                     }
                 }
@@ -455,6 +456,40 @@ pub fn traverse_ast(
                 traverse_ast(child, &mut sub_ctx, out_events, rng);
                 ctx.active_chord_indices = sub_ctx.active_chord_indices;
             }
+        }
+        Node::PhaseShift(child, shift_amount) => {
+            // How many milliseconds to offset the child timeline by
+            let shift_ms = *shift_amount as f64 * ctx.duration_ms;
+            
+            // Reconstruct the master time grid
+            let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
+            let offset_in_cycle = ctx.start_ms - ctx.cycle_start_ms;
+            
+            // "virtual_start_ms" is the time from the perspective of the child sequence.
+            // A positive shift means the child happens later, so we look backwards in time 
+            // relative to the child's perspective to see what should be playing now.
+            let virtual_start_ms = theoretical_cycle_start + offset_in_cycle - shift_ms;
+
+            // Calculate the modulo phase offset 
+            let phase_offset = (virtual_start_ms + 1e-9).rem_euclid(ctx.duration_ms);
+            let chunk_start_ms = ctx.start_ms - phase_offset;
+            
+            // 2 chunks of context are mathematically guaranteed to cover our sliding window
+            let chunks_to_render = 2; 
+            let mut all_indices = Vec::new();
+
+            for i in 0..chunks_to_render {
+                let absolute_chunk_start = chunk_start_ms + (i as f64 * ctx.duration_ms);
+                let mut sub_ctx = ctx.clone();
+                sub_ctx.start_ms = absolute_chunk_start;
+                
+                let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * ctx.duration_ms);
+                sub_ctx.cycle_count = (virtual_chunk_start / ctx.master_duration_ms).floor().max(0.0) as usize;
+
+                traverse_ast(child, &mut sub_ctx, out_events, rng);
+                all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
+            }
+            ctx.active_chord_indices = all_indices;
         }
         Node::Arp(child, style) => {
             let raw_notes = flatten_notes(

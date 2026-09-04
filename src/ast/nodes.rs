@@ -27,7 +27,7 @@ pub enum Node {
     Condition {
         interval: usize,
         offset: usize,
-        true_branch: Box<Node>, // <-- Fixed missing '>' here
+        true_branch: Box<Node>, 
         false_branch: Box<Node>,
     },
     MacroCondition {
@@ -37,6 +37,7 @@ pub enum Node {
         true_branch: Box<Node>,
         false_branch: Box<Node>,
     },
+    PhaseShift(Box<Node>, f32),
 }
 
 impl Node {
@@ -69,7 +70,7 @@ impl Node {
                     lcm(acc, sync_macro_cycles)
                 })
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) => {
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) => {
                 child.cycle_length()
             }
             Node::Condition {

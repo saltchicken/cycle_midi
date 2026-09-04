@@ -1,0 +1,35 @@
+// --- CYCLE MIDI: PHASE SHIFTING ---
+// Demonstrating the new phase shift operators: 
+// ~> (delay/shift right) and <~ (advance/shift left).
+
+#BPM=95
+#SCALE=C3 dorian
+#QUANTIZE=AUTO
+
+// T1: The primary melody
+// A bouncy arpeggio playing strict 16th notes.
+T1 fast 2:
+    [0 2 4 7] arp(updown)
+
+// T2: The "Shadow" Melody (Canon effect)
+// Plays the exact same pattern, but delayed by 0.125 (1/8th of the cycle, 
+// which equals an 8th note). This creates a galloping, interlocking harmony.
+T2 down 1 fast 2:
+    [0 2 4 7] arp(updown) ~> 0.125
+
+// T3: Off-beat Bassline
+// We write a simple note on the downbeat, but shift the entire sequence 
+// to the right by exactly 0.125 (an 8th note).
+T3 down 2:
+    [0%50 . 0%50 .] ~> 0.125
+
+// T10: Lo-Fi "Drunk" Drum Groove
+// We can use micro-shifts to give the drums a humanized, unquantized feel.
+// Layer 1: Solid Kick on the grid.
+// Layer 2: Snare on the 2 and 4, delayed by 0.03 to give a lazy, dragging feel.
+// Layer 3: Hi-hats advanced by 0.015 so they slightly rush the beat.
+T10: {
+    36 . [36 . . 36] . |
+    [. 38 . 38] ~> 0.15 |
+    42*4 <~ 0.15
+}

@@ -15,6 +15,7 @@ enum PostfixOp {
     If(usize, usize),
     MacroIf(usize, usize),
     Prob(u8),
+    PhaseShift(f32),
 }
 
 struct Postfix {
@@ -188,9 +189,15 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
         .map(PostfixOp::Arp);
 
     let prob_mod = just('?').ignore_then(int_u8()).map(PostfixOp::Prob);
+    
+    let phase_shift = choice((
+        just("~>").padded_by(padding()).ignore_then(float_f32()),
+        just("<~").padded_by(padding()).ignore_then(float_f32()).map(|v| -v),
+        kw("shift").ignore_then(pad_char('(')).ignore_then(float_f32()).then_ignore(pad_char(')'))
+    )).map(PostfixOp::PhaseShift);
 
     let postfix_op = choice((
-        euclidean, speed_mul, speed_div, arp_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod,
+        euclidean, speed_mul, speed_div, arp_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift
     ))
     .padded_by(padding());
 
@@ -299,6 +306,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                             false_branch: Box::new(Node::Rest),
                         },
                         PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p),
+                        PostfixOp::PhaseShift(val) => Node::PhaseShift(Box::new(acc.clone()), val),
                     };
 
                     let micro_applied = match post.cond {
