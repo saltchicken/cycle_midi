@@ -2,5 +2,4 @@ Best way to visualize cycles going by
 
 
 Implement named chords.
-Provide aliases for drum parts.
 
