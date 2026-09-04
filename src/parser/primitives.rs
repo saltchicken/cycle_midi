@@ -108,3 +108,16 @@ pub fn pitch_val() -> impl Parser<char, u8, Error = Simple<char>> + Clone {
             ((oct + 1) * 12 + base).clamp(0, 127) as u8
         })
 }
+
+pub fn drum_val() -> impl Parser<char, u8, Error = Simple<char>> + Clone {
+    choice((
+        just("bd").to(36u8), // Bass Drum / Kick
+        just("sn").to(38u8), // Snare
+        just("cp").to(39u8), // Clap
+        just("lt").to(41u8), // Low Tom
+        just("ch").to(42u8), // Closed Hi-Hat
+        just("mt").to(45u8), // Mid Tom
+        just("oh").to(46u8), // Open Hi-Hat
+        just("ht").to(48u8), // High Tom
+    ))
+}

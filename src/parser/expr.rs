@@ -1,5 +1,5 @@
 use super::directives::global_directives;
-use super::primitives::{float_f32, float_f64, int_i32, int_u8, padding, pitch_val, kw, pad_char};
+use super::primitives::{float_f32, float_f64, int_i32, int_u8, padding, pitch_val, drum_val, kw, pad_char};
 use super::track::track_parser;
 use crate::ast::{ArpStyle, DynamicValue, Node, Pitch, Program};
 use chumsky::prelude::*;
@@ -73,6 +73,7 @@ fn cc_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
 
 fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
     let pitch = pitch_val()
+        .or(drum_val())
         .map(Pitch::Absolute)
         .or(int_i32().map(Pitch::Numeric));
 
@@ -288,7 +289,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 seqp_segment
                     .clone()
                     .separated_by(pad_char('|'))
-                    .delimited_by(pad_char('{'), pad_char('}')) // <-- FIX: Consume trailing padding before '}'
+                    .delimited_by(pad_char('{'), pad_char('}'))
             )
             .map(|segments| Node::SeqP(segments, false));
 
@@ -296,7 +297,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .ignore_then(
                 seqp_segment
                     .separated_by(pad_char('|'))
-                    .delimited_by(pad_char('{'), pad_char('}')) // <-- FIX: Consume trailing padding before '}'
+                    .delimited_by(pad_char('{'), pad_char('}'))
             )
             .map(|segments| Node::SeqP(segments, true));
 
@@ -309,7 +310,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             choice((
                 parallel_group,
                 polymeter_group,
-                seqploop,  // <-- FIX: Reordered before seqp so "seqPLoop" isn't hijacked
+                seqploop,
                 seqp,      
                 cc_parser(),
                 chord_or_note(),
