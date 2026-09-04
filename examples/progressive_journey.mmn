@@ -1,0 +1,47 @@
+// --- CYCLE MIDI: 64-BAR PROGRESSIVE JOURNEY ---
+// An evolving melodic house/techno arrangement designed to self-modulate over 64 bars.
+#BPM=124
+#SCALE=A2 minor
+#QUANTIZE=AUTO
+
+// T1: Evolving Atmospheric Pad 
+// Runs at 1/4 speed to span long sections. The chords shift every 4 bars.
+// A very slow sine wave modulates the filter cutoff (CC74) over the entire arrangement.
+T1 slow 4: {
+    < [0+2+4 _ _ _] [3+5+7 _ _ _] [-1+1+3 _ _ _] [4+6+8 _ _ _] > |
+    cc74@sine(30, 110, 0.015) 
+}
+
+// T2: Generative Pluck Arp
+// Plays fast 16th notes. The 'seed 404 m_every 8' forces the random sequence 
+// to lock into a groove, but then mutate into a completely new pattern every 8 bars.
+T2 up 1 fast 2 seed 404 m_every 8: {
+    < [0 2 4] [4 6 8] [2 4 6] [3 5 7] > arp(diverge) [0 | 2 | 4]?75 . |
+    cc13@saw(10, 100, 0.25)
+}
+
+// T3: Deep Rolling Sub Bass
+// Uses m_if to drop out every 8th macro-cycle, creating a natural 1-bar drum/melody fill,
+// and entirely drops out on the 16th macro-cycle for the main breakdowns.
+T3 down 2:
+    < [0 . 0 _] [0 0 . 0] [0 . -1 .] [0 2 -1 .] > m_if(8, 7) m_if(16, 15)
+
+// T4: Climactic Counter-Melody
+// Uses Euclidean rhythms to create polyrhythmic tension.
+// m_only(4) ensures this layer only enters every 4th bar to keep the loop from getting stale.
+T4 up 2 slow 2:
+    < 4(3,8) 6(5,8) 7(3,8) 2(5,8) > m_only(4)
+
+// T10: Progressive Drum Structure
+// Layer 1: Solid Kick, drops out on the 16th macro-cycle (breakdown).
+// Layer 2: Hi-hats that use an alternator to build energy (quarter -> 8th -> poly -> 16th notes).
+// Layer 3: Standard clap on the 2 and 4.
+// Layer 4: Crash cymbal marking 16-bar phrases.
+// Layer 5: Heavy Ride cymbal that only triggers on the climactic 64th bar.
+T10: {
+    [36 36 36 36] m_if(16, 15) |
+    < 42(4,16) 42(8,16) 42(12,16) 42(16,16) > |
+    [ . 39 . 39 ] |
+    [49 . . .] m_only(16) |
+    [51 . . .] m_only(64) 
+}

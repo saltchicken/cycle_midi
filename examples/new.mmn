@@ -1,0 +1,18 @@
+// --- CYCLE MIDI: LIVE SESSION ---
+// A driving, melodic techno-ish groove in D Dorian
+
+#BPM=120
+#SCALE=D3 dorian
+#QUANTIZE=AUTO
+
+
+// T10: Complex Drum Machine (Standard MIDI Drum Map)
+// Layer 1: Kick with a Euclidean rhythm and a turnaround fill
+// Layer 2: Snare that drops out on the 4th cycle to leave room for the tom fill
+// Layer 3: Hi-hats with random 32nd note ratchets via the random choice pipe
+// Layer 4: Big Tom & Snare fill that ONLY triggers on the 4th cycle (using only())
+T10: {
+    42*4  |
+    36 m_only(4)
+}
+
