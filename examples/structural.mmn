@@ -1,0 +1,30 @@
+// --- CYCLE MIDI: STRUCTURAL SEQUENCING ("UR" EQUIVALENT) ---
+#BPM=115
+#SCALE=E3 minor
+
+// 1. Define named patterns (aliases) using $
+$KICK = [36 . . .]
+$SNARE = [. 38 . 38]
+$HATS = 42*4
+$DRUMS = { $KICK | $SNARE | $HATS }
+
+$BASS_A = [0 2 0 -2]
+$BASS_B = [4 2 -1 0]
+
+$FILL = [36 38 36 [38 38]]
+
+// 2. Sequence the aliases over macro-cycles to create a song structure!
+T10: [
+    $DRUMS       // Bar 1
+    $DRUMS       // Bar 2
+    $DRUMS       // Bar 3
+    $FILL        // Bar 4 (Turnaround)
+]
+
+// 3. You can still apply modifiers (arp, shift, polyrhythms) to aliases!
+T1: [
+    $BASS_A
+    $BASS_A
+    $BASS_A
+    $BASS_B*2   // Plays twice as fast during the fill
+]

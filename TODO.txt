@@ -3,3 +3,4 @@ Best way to visualize cycles going by
 
 Add polymeter to gem
 Add phase shift to gem
+Add Structural Sequencing to gem

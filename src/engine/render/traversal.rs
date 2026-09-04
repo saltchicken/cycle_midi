@@ -26,6 +26,7 @@ pub fn flatten_notes(
             gate,
         } => vec![(pitch.clone(), *velocity, *gate)],
         Node::CC { .. } => vec![],
+        Node::Ref(_) => vec![],
         Node::Chord(elements) | Node::Sequence(elements) => {
             let mut res = Vec::new();
             for n in elements {
@@ -237,6 +238,9 @@ pub fn traverse_ast(
                     }
                 }
             }
+        }
+        Node::Ref(_) => {
+            ctx.active_chord_indices.clear();
         }
         Node::Chord(elements) => {
             let mut chord_indices = Vec::new();

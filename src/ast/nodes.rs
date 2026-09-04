@@ -1,5 +1,6 @@
 use super::types::{ArpStyle, DynamicValue, Pitch, QuantizeMode, ScaleDef, SeedDef};
 use crate::engine::render::math::lcm;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
@@ -15,6 +16,7 @@ pub enum Node {
     Chord(Vec<Node>),
     Rest,
     Hold,
+    Ref(String),
     Sequence(Vec<Node>),
     Parallel(Vec<Vec<Node>>),
     Polymeter(Vec<Vec<Node>>),
@@ -41,9 +43,47 @@ pub enum Node {
 }
 
 impl Node {
+    pub fn expand_refs(&mut self, env: &HashMap<String, Node>, depth: usize) -> Result<(), String> {
+        if depth > 32 {
+            return Err("Max macro expansion depth exceeded (circular reference?)".to_string());
+        }
+        match self {
+            Node::Ref(name) => {
+                if let Some(resolved) = env.get(name) {
+                    let mut cloned = resolved.clone();
+                    cloned.expand_refs(env, depth + 1)?;
+                    *self = cloned;
+                } else {
+                    return Err(format!("Unresolved alias: ${}", name));
+                }
+            }
+            Node::Chord(elements) | Node::Sequence(elements) | Node::RandomChoice(elements) | Node::Alternator(elements) => {
+                for el in elements {
+                    el.expand_refs(env, depth)?;
+                }
+            }
+            Node::Parallel(layers) | Node::Polymeter(layers) => {
+                for layer in layers {
+                    for el in layer {
+                        el.expand_refs(env, depth)?;
+                    }
+                }
+            }
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) => {
+                child.expand_refs(env, depth)?;
+            }
+            Node::Condition { true_branch, false_branch, .. } | Node::MacroCondition { true_branch, false_branch, .. } => {
+                true_branch.expand_refs(env, depth)?;
+                false_branch.expand_refs(env, depth)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     pub fn cycle_length(&self) -> usize {
         match self {
-            Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold => 1,
+            Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold | Node::Ref(_) => 1,
             Node::Chord(elements) | Node::Sequence(elements) | Node::RandomChoice(elements) => {
                 elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()))
             }

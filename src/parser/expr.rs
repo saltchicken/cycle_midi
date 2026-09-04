@@ -3,6 +3,7 @@ use super::primitives::{float_f32, float_f64, int_i32, int_u8, padding, pitch_va
 use super::track::track_parser;
 use crate::ast::{ArpStyle, DynamicValue, Node, Pitch, Program};
 use chumsky::prelude::*;
+use std::collections::HashMap;
 
 #[derive(Clone)]
 enum PostfixOp {
@@ -22,6 +23,11 @@ struct Postfix {
     op: PostfixOp,
     cond: Option<(usize, usize)>,
     m_cond: Option<(usize, usize)>,
+}
+
+enum TopLevelItem {
+    Alias(String, Node),
+    Track(crate::ast::Track),
 }
 
 fn dynamic_value() -> impl Parser<char, DynamicValue, Error = Simple<char>> + Clone {
@@ -213,6 +219,10 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let rest = just('.').to(Node::Rest);
         let hold = just('_').to(Node::Hold);
 
+        let alias_ref = just('$')
+            .ignore_then(text::ident())
+            .map(Node::Ref);
+
         let seq_group = expr
             .clone()
             .padded_by(pad_expr.clone())
@@ -261,6 +271,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let atom = choice((
             rest,
             hold,
+            alias_ref,
             seq_group,
             alt_group,
             parallel_group,
@@ -333,14 +344,47 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             })
     });
 
+    let alias_def = just('$')
+        .ignore_then(text::ident())
+        .then_ignore(pad_char('='))
+        .then(expr.clone())
+        .map(|(name, node)| TopLevelItem::Alias(name, node));
+
+    let track_def = track_parser(expr)
+        .map(TopLevelItem::Track);
+
+    let item = choice((alias_def, track_def)).padded_by(padding());
+
     global_directives()
-        .then(track_parser(expr).repeated())
-        .map(|((bpm, quantize, scale, global_silence), tracks)| Program {
-            bpm,
-            quantize,
-            scale,
-            global_silence,
-            tracks,
+        .then(item.repeated())
+        .try_map(|((bpm, quantize, scale, global_silence), items), span| {
+            let mut aliases = HashMap::new();
+            let mut tracks = Vec::new();
+
+            for item in items {
+                match item {
+                    TopLevelItem::Alias(name, node) => {
+                        aliases.insert(name, node);
+                    }
+                    TopLevelItem::Track(track) => {
+                        tracks.push(track);
+                    }
+                }
+            }
+
+            for track in &mut tracks {
+                if let Err(e) = track.root_node.expand_refs(&aliases, 0) {
+                    return Err(Simple::custom(span, e));
+                }
+            }
+
+            Ok(Program {
+                bpm,
+                quantize,
+                scale,
+                global_silence,
+                tracks,
+            })
         })
         .padded_by(padding())
         .then_ignore(end())
