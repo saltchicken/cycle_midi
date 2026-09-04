@@ -6,7 +6,8 @@ use std::path::PathBuf;
 pub struct AppConfig {
     pub mmn_directory: String,
     pub midi_port: Option<String>,
-    pub startup_file: Option<String>, // Added this field
+    pub startup_file: Option<String>,
+    pub default_quantize: Option<String>,
 }
 
 fn expand_tilde(path: &str) -> PathBuf {
@@ -36,7 +37,15 @@ pub fn initialize_config() -> (AppConfig, PathBuf, PathBuf) {
             .join("cycle_midi_workspace");
 
         let default_config_content = format!(
-            "# cycle_midi configuration\n# Specify the absolute path or use ~/ for your home directory\nmmn_directory = \"{}\"\n# Specify the default file to load when the engine starts\nstartup_file = \"live.mmn\"\n# Optional: Specify a default MIDI output port name to connect to\n# midi_port = \"Midi Through Port-0\"\n",
+            "# cycle_midi configuration\n\
+             # Specify the absolute path or use ~/ for your home directory\n\
+             mmn_directory = \"{}\"\n\
+             # Specify the default file to load when the engine starts\n\
+             startup_file = \"live.mmn\"\n\
+             # Optional: Specify a default MIDI output port name to connect to\n\
+             # midi_port = \"Midi Through Port-0\"\n\
+             # Optional: Default quantize mode for files missing #QUANTIZE (e.g. \"auto\" or \"16\")\n\
+             # default_quantize = \"auto\"\n",
             default_workspace.display()
         );
         fs::write(&config_path, default_config_content)

@@ -1,3 +1,5 @@
+// src/engine/scheduler.rs
+
 use crate::ast::{self, Program};
 use super::render::{ScheduledEvent, generate_next_cycle};
 use rtrb::Producer;
@@ -28,9 +30,10 @@ macro_rules! send_midi {
 }
 
 pub fn run_scheduler(
-    rx: Receiver<(String, Program)>, // <--- Now receives the filename
+    rx: Receiver<(String, Program)>,
     mut midi_tx: Producer<Vec<u8>>,
     running: Arc<AtomicBool>,
+    default_quantize: ast::QuantizeMode,
 ) {
     let thread_id = thread_native_id();
     if let Err(e) = set_thread_priority_and_policy(
@@ -60,16 +63,13 @@ pub fn run_scheduler(
     };
     
     let mut staged_program: Option<(String, Program)> = None;
-    let mut current_quantize = ast::QuantizeMode::Fixed(1);
     let mut cycle_count = 0;
 
     println!("Waiting for initial AST compilation...");
     if let Ok((filename, initial_prog)) = rx.recv() {
         current_filename = filename;
         current_program = initial_prog;
-        if let Some(q) = &current_program.quantize {
-            current_quantize = q.clone();
-        }
+        
         if let Some(new_bpm) = current_program.bpm {
             bpm = new_bpm;
             cycle_duration_ms = (60_000.0 / bpm) * 4.0;
@@ -126,7 +126,7 @@ pub fn run_scheduler(
 
             if let Some((staged_filename, staged)) = &staged_program {
                 let is_hot_reload = *staged_filename == current_filename;
-                let q_mode = staged.quantize.clone().unwrap_or(current_quantize.clone());
+                let q_mode = staged.quantize.clone().unwrap_or(default_quantize.clone());
 
                 let target_q_cycles = match q_mode {
                     ast::QuantizeMode::Fixed(n) => n,
@@ -139,7 +139,6 @@ pub fn run_scheduler(
                     let (filename, prog) = staged_program.take().unwrap();
                     current_program = prog;
                     current_filename = filename;
-                    current_quantize = q_mode;
 
                     let calculated_len = current_program.pattern_length_cycles();
                     
