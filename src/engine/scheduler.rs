@@ -1,5 +1,3 @@
-// src/engine/scheduler.rs
-
 use crate::ast::{self, Program};
 use super::render::{ScheduledEvent, generate_next_cycle};
 use rtrb::Producer;
@@ -34,6 +32,7 @@ pub fn run_scheduler(
     mut midi_tx: Producer<Vec<u8>>,
     running: Arc<AtomicBool>,
     default_quantize: ast::QuantizeMode,
+    max_auto_quantize: usize,
 ) {
     let thread_id = thread_native_id();
     if let Err(e) = set_thread_priority_and_policy(
@@ -130,7 +129,7 @@ pub fn run_scheduler(
 
                 let target_q_cycles = match q_mode {
                     ast::QuantizeMode::Fixed(n) => n,
-                    ast::QuantizeMode::Auto => current_program.pattern_length_cycles(),
+                    ast::QuantizeMode::Auto => current_program.pattern_length_cycles().min(max_auto_quantize),
                 };
 
                 let position_in_phrase = cycle_count % target_q_cycles;

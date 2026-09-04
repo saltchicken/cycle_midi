@@ -44,8 +44,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => QuantizeMode::Fixed(1), // Ultimate fallback
     };
 
+    // Grab the auto quantize max cap from config, defaulting to 16 if not provided
+    let max_auto_quantize = app_config.max_auto_quantize.unwrap_or(16);
+
     // 6. Run the Main Real-Time Scheduler
-    engine::scheduler::run_scheduler(rx, midi_tx, running, global_quantize);
+    engine::scheduler::run_scheduler(rx, midi_tx, running, global_quantize, max_auto_quantize);
 
     println!("Graceful shutdown complete.");
     Ok(())

@@ -8,6 +8,7 @@ pub struct AppConfig {
     pub midi_port: Option<String>,
     pub startup_file: Option<String>,
     pub default_quantize: Option<String>,
+    pub max_auto_quantize: Option<usize>,
 }
 
 fn expand_tilde(path: &str) -> PathBuf {
@@ -45,7 +46,9 @@ pub fn initialize_config() -> (AppConfig, PathBuf, PathBuf) {
              # Optional: Specify a default MIDI output port name to connect to\n\
              # midi_port = \"Midi Through Port-0\"\n\
              # Optional: Default quantize mode for files missing #QUANTIZE (e.g. \"auto\" or \"16\")\n\
-             # default_quantize = \"auto\"\n",
+             # default_quantize = \"auto\"\n\
+             # Optional: Maximum macro-cycles to wait for a transition when quantize is AUTO\n\
+             # max_auto_quantize = 16\n",
             default_workspace.display()
         );
         fs::write(&config_path, default_config_content)
