@@ -21,8 +21,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })
     .expect("Error setting Ctrl-C handler");
 
-    // 3. Setup AST Communication Channel
-    let (tx, rx) = channel::<Program>();
+    // 3. Setup AST Communication Channel - NOW PASSES (Filename, Program)
+    let (tx, rx) = channel::<(String, Program)>();
 
     // 4. Start File Watcher Thread
     io::watcher::start_file_watcher(watch_dir, file_path, tx);

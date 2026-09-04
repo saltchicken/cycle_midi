@@ -8,7 +8,7 @@ use std::sync::mpsc::{Sender, channel};
 use std::thread;
 use std::time::Duration;
 
-pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<Program>) {
+pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(String, Program)>) {
     thread::spawn(move || {
         let (watch_tx, watch_rx) = channel();
 
@@ -29,7 +29,8 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<Pro
         // Initially load the default file (e.g., live.mmn)
         if let Ok(contents) = fs::read_to_string(&file_path) {
             if let Ok(initial_prog) = parser.parse(contents) {
-                let _ = tx.send(initial_prog);
+                let filename = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let _ = tx.send((filename, initial_prog));
             }
         }
 
@@ -43,6 +44,7 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<Pro
                         .map(|e| &e.path);
 
                     if let Some(active_file) = saved_mmn_file {
+                        let filename = active_file.file_name().unwrap_or_default().to_string_lossy().to_string();
                         println!("Detected save in: {}", active_file.display());
                         
                         if let Ok(contents) = fs::read_to_string(active_file) {
@@ -54,7 +56,7 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<Pro
                                     global_silence: true,
                                     tracks: vec![],
                                 };
-                                if tx.send(empty_prog).is_ok() {
+                                if tx.send((filename.clone(), empty_prog)).is_ok() {
                                     println!("File empty. Silencing all tracks.");
                                 }
                                 continue;
@@ -62,7 +64,7 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<Pro
 
                             match parser.parse(contents) {
                                 Ok(new_prog) => {
-                                    let _ = tx.send(new_prog);
+                                    let _ = tx.send((filename, new_prog));
                                 }
                                 Err(errs) => {
                                     println!("Syntax Error! Continuing to play old sequence.");

@@ -19,8 +19,6 @@ const MIDI_ALL_NOTES_OFF: u8 = 123;
 
 macro_rules! send_midi {
     ($tx:expr, $msg:expr) => {
-        // Added a basic spin limit to prevent hard-locking the real-time thread 
-        // if the ring buffer fills up and the OS stalls the MIDI consumer.
         let mut attempts = 0;
         while $tx.push($msg).is_err() && attempts < 10_000 {
             std::hint::spin_loop();
@@ -30,7 +28,7 @@ macro_rules! send_midi {
 }
 
 pub fn run_scheduler(
-    rx: Receiver<Program>,
+    rx: Receiver<(String, Program)>, // <--- Now receives the filename
     mut midi_tx: Producer<Vec<u8>>,
     running: Arc<AtomicBool>,
 ) {
@@ -50,9 +48,9 @@ pub fn run_scheduler(
 
     let mut bpm = 120.0;
     let mut cycle_duration_ms = (60_000.0 / bpm) * 4.0;
-    // MIDI Clock is defined as 24 Pulses Per Quarter Note (PPQN)
     let mut clock_interval_ms = 60_000.0 / (bpm * 24.0);
 
+    let mut current_filename = String::new();
     let mut current_program = Program {
         bpm: None,
         quantize: None,
@@ -60,12 +58,14 @@ pub fn run_scheduler(
         global_silence: false,
         tracks: vec![],
     };
-    let mut staged_program: Option<Program> = None;
+    
+    let mut staged_program: Option<(String, Program)> = None;
     let mut current_quantize = ast::QuantizeMode::Fixed(1);
     let mut cycle_count = 0;
 
     println!("Waiting for initial AST compilation...");
-    if let Ok(initial_prog) = rx.recv() {
+    if let Ok((filename, initial_prog)) = rx.recv() {
+        current_filename = filename;
         current_program = initial_prog;
         if let Some(q) = &current_program.quantize {
             current_quantize = q.clone();
@@ -78,8 +78,8 @@ pub fn run_scheduler(
 
         let initial_macro_len = current_program.pattern_length_cycles();
         println!(
-            "Initial AST loaded. Macro-cycle length is {} cycles. Sequence running...",
-            initial_macro_len
+            "Initial AST loaded ({}). Macro-cycle length is {} cycles. Sequence running...",
+            current_filename, initial_macro_len
         );
     }
 
@@ -109,13 +109,13 @@ pub fn run_scheduler(
         }
 
         match rx.try_recv() {
-            Ok(new_prog) => {
+            Ok((filename, new_prog)) => {
                 let staged_macro_len = new_prog.pattern_length_cycles();
                 println!(
-                    "AST staged! Macro-cycle length is {} cycles. Waiting for phrase boundary...",
-                    staged_macro_len
+                    "AST staged from {}! Macro-cycle length is {} cycles. Waiting for phrase boundary...",
+                    filename, staged_macro_len
                 );
-                staged_program = Some(new_prog);
+                staged_program = Some((filename, new_prog));
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => break,
@@ -124,7 +124,8 @@ pub fn run_scheduler(
         if elapsed_ms >= next_cycle_start_ms {
             let mut transition_progress: Option<f64> = None;
 
-            if let Some(staged) = &staged_program {
+            if let Some((staged_filename, staged)) = &staged_program {
+                let is_hot_reload = *staged_filename == current_filename;
                 let q_mode = staged.quantize.clone().unwrap_or(current_quantize.clone());
 
                 let target_q_cycles = match q_mode {
@@ -135,18 +136,27 @@ pub fn run_scheduler(
                 let position_in_phrase = cycle_count % target_q_cycles;
 
                 if position_in_phrase == 0 {
-                    current_program = staged_program.take().unwrap();
+                    let (filename, prog) = staged_program.take().unwrap();
+                    current_program = prog;
+                    current_filename = filename;
                     current_quantize = q_mode;
 
                     let calculated_len = current_program.pattern_length_cycles();
-                    println!(
-                        "Swapped to new pattern! (Quantize: {:?} - Sequence loop length: {} cycles)",
-                        current_quantize, calculated_len
-                    );
-
-                    // THE DROP: Reset Expression/Volume to max on the new phrase!
-                    for ch in 0..16 {
-                        send_midi!(midi_tx, vec![MIDI_CC | ch, 11, 127]);
+                    
+                    if is_hot_reload {
+                        println!(
+                            "Hot reloaded {}! (Sequence loop length: {} cycles)",
+                            current_filename, calculated_len
+                        );
+                    } else {
+                        println!(
+                            "Swapped to new pattern: {}! (Sequence loop length: {} cycles)",
+                            current_filename, calculated_len
+                        );
+                        // THE DROP: Reset Expression/Volume to max on the new phrase!
+                        for ch in 0..16 {
+                            send_midi!(midi_tx, vec![MIDI_CC | ch, 11, 127]);
+                        }
                     }
 
                     if let Some(new_bpm) = current_program.bpm {
@@ -159,21 +169,27 @@ pub fn run_scheduler(
                     }
                 } else {
                     let cycles_left = target_q_cycles - position_in_phrase;
-                    
-                    // Calculate progress from 1.0 -> 0.0
-                    let prog = cycles_left as f64 / target_q_cycles as f64;
-                    transition_progress = Some(prog);
 
-                    // THE BUILD-UP: Gradually drop MIDI Expression (CC 11) for all channels
-                    let sweep_val = (prog * 127.0) as u8;
-                    for ch in 0..16 {
-                        send_midi!(midi_tx, vec![MIDI_CC | ch, 11, sweep_val]);
+                    // ONLY fade if we are moving to a totally different file
+                    if !is_hot_reload {
+                        let prog = cycles_left as f64 / target_q_cycles as f64;
+                        transition_progress = Some(prog);
+
+                        let sweep_val = (prog * 127.0) as u8;
+                        for ch in 0..16 {
+                            send_midi!(midi_tx, vec![MIDI_CC | ch, 11, sweep_val]);
+                        }
+
+                        println!(
+                            "Transitioning to {}... {} cycles left (Fade: {})",
+                            staged_filename, cycles_left, sweep_val
+                        );
+                    } else {
+                        println!(
+                            "Hot reloading {} in {} cycles... (Waiting for full phrase length of {})",
+                            staged_filename, cycles_left, target_q_cycles
+                        );
                     }
-
-                    println!(
-                        "Transitioning... {} cycles left (Fade: {})",
-                        cycles_left, sweep_val
-                    );
                 }
             }
 
@@ -185,7 +201,7 @@ pub fn run_scheduler(
                 next_cycle_start_ms,
                 cycle_count,
                 pattern_len,
-                transition_progress, // PASS PROGRESS TO RENDERER FOR "DISSOLVE"
+                transition_progress,
             );
 
             new_events.sort_by(|a, b| b.start_ms().partial_cmp(&a.start_ms()).unwrap());
