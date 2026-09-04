@@ -1,0 +1,38 @@
+// --- CYCLE MIDI: PELICAN TOWN SPRINGTIME ---
+// A cozy, pastoral, and upbeat sequence inspired by Stardew Valley
+#BPM=105
+#SCALE=G3 major
+#QUANTIZE=AUTO
+
+// T3: Warm Synth Pad / String Section
+// Plays a lush, slow chord progression (I - IV - vi - V)
+// Uses slow 4 to stretch each chord over a full 4-beat measure
+T3 slow 4: 
+    < 0+2+4 3+5+7 5+7+9 4+6+8 >
+
+// T1: Acoustic Guitar / Banjo Fingerpicking
+// Plays twice as fast (eighth notes) to create a bouncy, folksy rhythm
+// Outlines the chords from T3 with an alternating bass/arpeggio pattern
+T1 fast 2: 
+    < [0 4 2 4] [3 7 5 7] [5 9 7 9] [4 8 6 8] >
+
+// T2: Flute / Synth Lead Melody
+// Shifted up an octave for a bright, cheerful tone
+// Uses random choice [ | ] and probability ?50 for slight generative variations on each loop
+// Incorporates an expression LFO (CC11) to give the melody a natural, breathing dynamic
+T2 up 2: {
+    < [2 . 4 2] [0 _ 2 _] [4 [5|3] 4 2] [0 _ . [2|4]?50] > |
+    cc11@sine(60, 127, 0.25)
+}
+
+// T10: Light & Rustic Percussion
+// Layer 1: Soft kick drum on beats 1 and 3
+// Layer 2: Tambourine (54) on beats 2 and 4
+// Layer 3: Occasional woodblock (76) with 40% probability for playful syncopation
+// Layer 4: A gentle shaker (82) doing a Euclidean rhythm for groove
+T10: {
+    < [36 . . .] [36 . . .] > |
+    . 54 . 54 |
+    [ . . 76?40 . ] |
+    82(5,8)
+}
