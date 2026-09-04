@@ -1,0 +1,52 @@
+// --- CYCLE MIDI: CYBERPUNK MIDTEMPO ---
+#BPM=100
+#SCALE=G1 phrygian
+#QUANTIZE=AUTO
+
+// --- ALIASES (Building Blocks) ---
+// Heavy, half-time midtempo groove
+$KICK_SNARE = { bd . . . | . . sn . }
+
+// 4-against-3 polymeter for phasing, robotic hi-hats
+$HATS_POLY = { ch ch . ch , oh . . } 
+
+// Intro drum setup (sparse)
+$DRUMS_INTRO = { $KICK_SNARE | ch(4,16) }
+
+// Drop drum setup (adds polymeter and Euclidean mid-toms)
+$DRUMS_DROP = { $KICK_SNARE | $HATS_POLY | mt(5,16) }
+
+// Sluggish, dark bass growl for the build-up
+$BASS_INTRO = [ 0 _ -1 _ ]
+
+// Aggressive, fast alternating bass for the drop
+$BASS_DROP = [ 0 2 0 -3 ]*2
+
+// Glitchy generative pluck. 
+// FIXED SYNTAX: Wrapped in an outer [ ] so it is a single root node!
+$GLITCH_PLUCK = [ < [0 2 4] [0 3 5] > arp(converge)  [7 | -1]?80  . ]
+
+// --- ARRANGEMENT ---
+
+// T1: Sub & Mid Bass
+// Smooth in the intro, frantic in the drop.
+T1 fast 2: seqPLoop {
+    (0, 4): $BASS_INTRO |
+    (4, 8): $BASS_DROP
+}
+
+// T2: Cyber Plucks with LFO Filter Sweeps
+// Muted for the first 2 cycles, builds up with a slow sine wave sweep, 
+// then switches to a fast, choppy sawtooth LFO on the filter (CC74) for the drop.
+T2 up 2 fast 4 seed 808 m_every 4: seqPLoop {
+    (0, 2): . |
+    (2, 4): $GLITCH_PLUCK |
+    (4, 8): $GLITCH_PLUCK
+}
+
+// T10: Industrial Drums
+T10: seqPLoop {
+    (0, 4): $DRUMS_INTRO |
+    (4, 8): $DRUMS_DROP
+}
+
