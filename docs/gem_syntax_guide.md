@@ -31,7 +31,7 @@ Tracks are defined by `T<channel> [modifiers]: <expression>`.
 
 ## 3. Core Syntax (Notes, Rests, Chords, CC)
 *   **Numeric Pitches (Scale Degrees):** Prefer using integers (`0`, `2`, `-1`). These map dynamically to the defined scale. `0` is the root, `2` is the 3rd, `-1` is the 7th below the root.
-*   **Absolute Pitches:** Direct MIDI notes can be written as absolute text (e.g., `C4`, `F#3`) or numbers on Drum channels (e.g., `36` for Kick, `38` for Snare).
+*   **Absolute Pitches & Drums:** Direct MIDI notes can be written as absolute text (e.g., `C4`, `F#3`), or raw numbers (e.g., `60`). For drum tracks (like `T10`), use the native abbreviations: `bd` (kick/bass drum), `sn` (snare), `cp` (clap), `ch` (closed hi-hat), `oh` (open hi-hat), `lt` (low tom), `mt` (mid tom), `ht` (high tom).
 *   **Rests:** `.` represents a rest for the current step.
 *   **Holds (Ties):** `_` extends the duration of the previous note into the current step.
 *   **Chords:** Link notes with `+` (e.g., `0+2+4` plays a root triad).
@@ -51,9 +51,9 @@ Tracks are defined by `T<channel> [modifiers]: <expression>`.
 *   **Alternators `< ... >`**: Iterates through elements one by one on each cycle.
     *   `< [0 2] [4 5] >` plays `0 2` on cycle 1, `4 5` on cycle 2, then loops.
 *   **Parallel `{ ... | ... }`**: Plays multiple layers simultaneously. The layers are stretched/compressed so they all share the exact same total cycle duration.
-    *   `{ 36 . 36 . | . 38 . 38 }` plays a kick and snare pattern at the same time.
+    *   `{ bd . bd . | . sn . sn }` plays a kick and snare pattern at the same time.
 *   **Polymeter `{ ... , ... }`**: Plays multiple layers simultaneously using commas. Layers share the same *step* duration but have different *sequence lengths*, causing them to phase and shift against each other over time.
-    *   `{ 36 . 39 . , 42 42 . }` loops a 4-step layer and a 3-step layer independently.
+    *   `{ bd . cp . , ch ch . }` loops a 4-step layer and a 3-step layer independently.
 *   **Arrangements (`seqP`, `seqPLoop`)**: Schedule expressions to play during specific cycle windows.
     *   `seqPLoop { (start, end): expr | (start2, end2): expr2 }`: Loops a structured arrangement. `(0, 4): $A | (4, 8): $B` plays `$A` for 4 cycles, then `$B` for 4 cycles, and repeats.
     *   `seqP { ... }`: Uses identical syntax but plays exactly *once* at the beginning of the program's lifecycle (non-looping).
@@ -65,14 +65,14 @@ Append these to any atom or group to modify its behavior:
     *   `[0 2 4]*2` plays twice as fast (8th notes instead of quarter notes).
 *   **Phase Shift (`~>`, `<~`):** Shifts the block right (delay) or left (advance) in time by a fraction of its total cycle duration.
     *   `[0 2 4 7] ~> 0.125` delays the arpeggio by 1/8th of its cycle.
-    *   `42 <~ 0.15` advances the hi-hat slightly for a "rushed" or "lazy" unquantized feel.
+    *   `ch <~ 0.15` advances the hi-hat slightly for a "rushed" or "lazy" unquantized feel.
 *   **Euclidean Rhythms `(pulses, steps)`:** Distributes *pulses* evenly across *steps*.
-    *   `36(3,8)` plays a kick drum 3 times spread evenly across 8 steps.
+    *   `bd(3,8)` plays a kick drum 3 times spread evenly across 8 steps.
 *   **Arpeggiator `arp(style)`:** Arpeggiates chords or sequences. 
     *   *Styles:* `up`, `down`, `updown`, `downup`, `converge`, `diverge`, `pinkyup`, `pinkyupdown`.
     *   *Example:* `[0 2 4 6] arp(diverge)`
 *   **Probability `?<int>`:** Percentage chance (0-100) of playing. 
-    *   `42?80` has an 80% chance of triggering a hi-hat.
+    *   `ch?80` has an 80% chance of triggering a hi-hat.
 *   **Conditionals:** `if`, `only`, `m_if`, `m_only` followed by `(interval, offset)`.
     *   `only(4)`: Will *only* play every 4th cycle.
     *   `m_only(4, 3)`: Will *only* play on the 4th macro-cycle, offset by 3 (meaning it plays on cycle 3, 7, 11...).
@@ -87,18 +87,21 @@ When asked to generate a genre, build a full `.mmn` file applying these concepts
 #QUANTIZE=AUTO
 
 // --- ALIASES (Building Blocks) ---
-$KICK = [36 . . .]$SNARE = [. 38 . 38]
-$HATS_POLY = { 42 . 42 . , 46 46 . } // Polymeter for phasing hats$DRUMS_A = { $KICK \vert{}$HATS_POLY }
-$DRUMS_B = {$KICK | $SNARE \vert{}$HATS_POLY | 39(3,8) } // Adds Euclidean rims
+$KICK = [bd . . .]
+$SNARE = [. sn . sn]
+$HATS_POLY = { ch . ch . , oh oh . } // Polymeter for phasing hats
+$DRUMS_A = { $KICK | $HATS_POLY }
+$DRUMS_B = { $KICK | $SNARE | $HATS_POLY | cp(3,8) } // Adds Euclidean claps
 
-$BASS_MAIN = [0 0 2 0] arp(up)$BASS_ALT  = [4 2 -1 0] arp(updown)
+$BASS_MAIN = [0 0 2 0] arp(up)
+$BASS_ALT  = [4 2 -1 0] arp(updown)
 
 // --- ARRANGEMENT ---
 
 // T1: Evolving Bassline
 // Uses a subtle phase shift (~>) to delay the bassline slightly for a laid-back groove.
 T1 fast 2: seqPLoop {
-    (0, 4): $BASS_MAIN ~> 0.05 \vert{} (4, 8):$BASS_ALT ~> 0.05
+    (0, 4): $BASS_MAIN ~> 0.05 | (4, 8): $BASS_ALT ~> 0.05
 }
 
 // T2: Generative Arp
@@ -110,11 +113,11 @@ T2 up 2 fast 4 seed 404 m_every 4: seqPLoop {
 
 // T10: Arranged Drum Machine
 T10: seqPLoop {
-    (0, 4): $DRUMS_A \vert{} (4, 8):$DRUMS_B
+    (0, 4): $DRUMS_A | (4, 8): $DRUMS_B
 }
 
-// T3: Intro Crash
+// T3: Intro Impact
 // Uses seqP (non-looping) so it only triggers on the very first cycle
 T3: seqP {
-    (0, 1): 49@120
+    (0, 1): ht@120
 }
