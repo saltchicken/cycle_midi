@@ -2,7 +2,6 @@
 // A cozy, pastoral, and upbeat sequence inspired by Stardew Valley
 #BPM=105
 #SCALE=G3 major
-#QUANTIZE=AUTO
 
 // T3: Warm Synth Pad / String Section
 // Plays a lush, slow chord progression (I - IV - vi - V)
@@ -20,7 +19,7 @@ T1 fast 2:
 // Shifted up an octave for a bright, cheerful tone
 // Uses random choice [ | ] and probability ?50 for slight generative variations on each loop
 // Incorporates an expression LFO (CC11) to give the melody a natural, breathing dynamic
-T2 up 2: {
+T2 down 2: {
     < [2 . 4 2] [0 _ 2 _] [4 [5|3] 4 2] [0 _ . [2|4]?50] > |
     cc11@sine(60, 127, 0.25)
 }
