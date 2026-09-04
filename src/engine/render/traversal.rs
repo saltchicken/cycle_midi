@@ -200,8 +200,11 @@ pub fn traverse_ast(
                         chunk_ctx.start_ms = absolute_chunk_start;
                         chunk_ctx.duration_ms = local_duration;
                         
+                        chunk_ctx.master_duration_ms = local_duration;
+                        chunk_ctx.cycle_start_ms = absolute_chunk_start;
+                        
                         let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * local_duration);
-                        chunk_ctx.cycle_count = (virtual_chunk_start / chunk_ctx.master_duration_ms).floor().max(0.0) as usize;
+                        chunk_ctx.cycle_count = (virtual_chunk_start / local_duration).floor().max(0.0) as usize;
 
                         let step_duration = local_duration / li;
                         for (step_idx, el) in layer.iter().enumerate() {
@@ -339,8 +342,11 @@ pub fn traverse_ast(
                 sub_ctx.start_ms = absolute_chunk_start;
                 sub_ctx.duration_ms = local_duration;
                 
+                sub_ctx.master_duration_ms = local_duration;
+                sub_ctx.cycle_start_ms = absolute_chunk_start;
+
                 let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * local_duration);
-                sub_ctx.cycle_count = (virtual_chunk_start / ctx.master_duration_ms).floor().max(0.0) as usize;
+                sub_ctx.cycle_count = (virtual_chunk_start / local_duration).floor().max(0.0) as usize;
 
                 traverse_ast(child, &mut sub_ctx, out_events, rng);
                 ctx.active_chord_indices = sub_ctx.active_chord_indices;
