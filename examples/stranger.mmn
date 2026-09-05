@@ -1,0 +1,42 @@
+// --- CYCLE MIDI: PROGRESSIVE HOUSE ---
+#BPM=124
+#SCALE=F2 dorian
+#QUANTIZE=AUTO
+
+// --- ALIASES (Building Blocks) ---
+$KICK = [bd . . .]
+$SNARE = [. sn . sn]
+$HATS_POLY = { ch . ch . , oh oh . } // Polymeter for phasing hats
+$DRUMS_A = { $KICK | $HATS_POLY }
+$DRUMS_B = { $KICK | $SNARE | $HATS_POLY | cp(3,8) } // Adds Euclidean claps
+
+// Utilizing named diatonic chords fed into arpeggiators
+$BASS_MAIN = [0_triad 2_sus2] arp(up)
+$BASS_ALT = [4_7th 2_triad -1_triad 0_triad] arp(updown)
+
+// --- ARRANGEMENT ---
+
+// T2: Evolving Bassline
+// Uses a subtle phase shift (~>) to delay the bassline slightly for a laid-back groove.
+T2 fast 2: seqPLoop {
+    (0, 4): $BASS_MAIN ~> 0.05 | 
+    (4, 8): $BASS_ALT ~> 0.05
+}
+
+// T1: Generative Arp
+// Uses random choices and stays completely silent during the A section.
+T1 up 2 fast 4 seed 404 m_every 4: seqPLoop {
+    (0, 8): < 0_9th 4_7th > arp(diverge)
+}
+
+// T10: Arranged Drum Machine
+T10: seqPLoop {
+    (0, 4): $DRUMS_A | 
+    (4, 8): $DRUMS_B
+}
+
+T6 up 2: seqPLoop {
+    (0, 4): F2_power @60 |
+    (4, 8): G2_power @60
+
+}

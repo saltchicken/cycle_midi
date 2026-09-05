@@ -1,22 +1,32 @@
 #BPM=120
 #SCALE=E3 dorian
 
-!T1 slow 4:
-    [0 1 2 3]*4
-    [3 2 1 0]*2
-    [5 4 2 1]*4
-    [4 3 2 1]*2
-
-T2 fast 2 down 1:
-<
-    [0 -3 3 2]
-    [0 -3 3 2]
-    [0 -3 3 2]
-    [15 3 3 2]
->
-
-T10:
+$RANDOM_INTERVAL = [ 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 ]
+$DRUM_1 = 
   {
     bd*4 |
     sn(3,8)
   }
+
+$DRUM_2 = bd*4
+
+
+T2 slow 16:
+    [0_t 5_sus4]
+    [2_t 3_sus4]
+    [0_t 3_sus4]
+    [-2_t 2_sus4]
+
+T1 slow 2 seed 420 m_every 1:
+  $RANDOM_INTERVAL
+  $RANDOM_INTERVAL
+  $RANDOM_INTERVAL
+  $RANDOM_INTERVAL
+  $RANDOM_INTERVAL
+  $RANDOM_INTERVAL
+  $RANDOM_INTERVAL
+  $RANDOM_INTERVAL
+
+
+T10 seed 420 every 4:
+  [ $DRUM_1 | $DRUM_2 ]

@@ -1,0 +1,13 @@
+#BPM=150
+#QUANTIZE=4
+#SCALE=D3 dorian
+
+$kick = bd
+$snare = [. sn . sn]
+$hats = [ch ch [ch ch] ch(3,4)]
+$powerup = [0 2 4 7] * 4
+
+T10: { $kick | $snare | $hats }
+T2 down 1: [0 0 7 0] [3 3 7 3] [-2 -2 5 -2] [-4 -4 3 -4]
+T3 up 2: . . . $powerup only(4)
+T4 slow 4: 0_triad _ -2_triad _
