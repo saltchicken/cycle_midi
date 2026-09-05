@@ -303,6 +303,43 @@ pub fn traverse_ast(
             traverse_ast(child, &mut sub_ctx, out_events, rng);
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
+        Node::Invert(child, amount) => {
+            let start_idx = out_events.len();
+            traverse_ast(child, ctx, out_events, rng);
+            
+            if *amount > 0 {
+                let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
+                for i in start_idx..out_events.len() {
+                    if let ScheduledEvent::Note { start_ms, .. } = out_events[i] {
+                        // Group simultaneous events using a millisecond-precision key
+                        let time_key = (start_ms * 1000.0).round() as i64;
+                        notes_by_time.entry(time_key).or_default().push(i);
+                    }
+                }
+                
+                for (_, mut indices) in notes_by_time {
+                    // Sort indices from lowest pitch to highest
+                    indices.sort_by_key(|&i| {
+                        if let ScheduledEvent::Note { pitch, .. } = out_events[i] {
+                            pitch
+                        } else {
+                            0
+                        }
+                    });
+                    
+                    let num_notes = indices.len();
+                    if num_notes == 0 { continue; }
+                    
+                    // Modulo math nicely manages inversion depths exceeding the chord count (e.g. ^4 on a triad)
+                    for inv in 0..*amount as usize {
+                        let target_idx = indices[inv % num_notes];
+                        if let ScheduledEvent::Note { pitch, .. } = &mut out_events[target_idx] {
+                            *pitch = (*pitch as i32 + 12).clamp(0, 127) as u8;
+                        }
+                    }
+                }
+            }
+        }
         Node::SeqP(segments, is_loop) => {
             let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
             let current_cycle = if *is_loop {
