@@ -538,6 +538,11 @@ pub fn traverse_ast(
             // Disable transition dissolve for the buffer generation to avoid double-fading notes
             sub_ctx.transition_fade = None;
 
+            // FIX: Bypass window bounds so the child's pitches are harvested 
+            // even if their original start times fall outside the current render slice.
+            sub_ctx.window_start_ms = f64::MIN;
+            sub_ctx.window_end_ms = f64::MAX;
+
             // Generate notes for the child node
             traverse_ast(child, &mut sub_ctx, &mut temp_events, rng);
 
@@ -548,8 +553,10 @@ pub fn traverse_ast(
                         resolved_notes.push((pitch, velocity));
                     }
                     cc @ ScheduledEvent::CC { .. } => {
-                        // Pass CCs through unharmed
-                        out_events.push(cc);
+                        // Pass CCs through unharmed, but respect the actual original window
+                        if cc.start_ms() >= ctx.window_start_ms - 0.1 && cc.start_ms() < ctx.window_end_ms - 0.1 {
+                            out_events.push(cc);
+                        }
                     }
                 }
             }
