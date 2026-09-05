@@ -40,6 +40,7 @@ pub struct ScaleDef {
 pub enum SeedInterval {
     Micro(usize),
     Macro(usize),
+    Track(usize),
 }
 
 #[derive(Debug, Clone, PartialEq)]

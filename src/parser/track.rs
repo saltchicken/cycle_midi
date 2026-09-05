@@ -48,7 +48,11 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
                     .map_err(|e| Simple::custom(span, format!("Invalid seed: {}", e)))
             }))
             .then(
-                choice((kw("m_every").to(true), kw("every").to(false)))
+                choice((
+                    kw("m_every").to(0u8),
+                    kw("t_every").to(1u8),
+                    kw("every").to(2u8)
+                ))
                     .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
                         s.parse::<usize>()
                             .map_err(|e| Simple::custom(span, format!("Invalid interval: {}", e)))
@@ -56,11 +60,11 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
                     .or_not(),
             )
             .map(|(base, interval_data)| {
-                let interval = interval_data.map(|(is_macro, val)| {
-                    if is_macro {
-                        SeedInterval::Macro(val)
-                    } else {
-                        SeedInterval::Micro(val)
+                let interval = interval_data.map(|(interval_type, val)| {
+                    match interval_type {
+                        0 => SeedInterval::Macro(val),
+                        1 => SeedInterval::Track(val),
+                        _ => SeedInterval::Micro(val),
                     }
                 });
                 TrackModifier::Seed(SeedDef { base, interval })

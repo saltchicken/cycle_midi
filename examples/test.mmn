@@ -1,7 +1,7 @@
 #BPM=120
 #SCALE=E3 dorian
 
-$RANDOM_INTERVAL = [ 20:0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 ]
+$RANDOM_INTERVAL = [ 4:0 | 1 | 2 | 3 | 2:4 | 4:5 | 6 | 7 | 8 ]
 $DRUM_1 = 
   {
     bd*4 |
@@ -11,13 +11,13 @@ $DRUM_1 =
 $DRUM_2 = bd*4
 
 
-T2 slow 16:
+!T2 slow 16:
     [0_t 5_sus4]
     [2_t 3_sus4]
     [0_t 3_sus4]
     [-2_t 2_sus4]
 
-T1 slow 2 seed 420 m_every 1:
+T1 slow 2 seed 420 t_every 4:
   $RANDOM_INTERVAL
   $RANDOM_INTERVAL
   $RANDOM_INTERVAL

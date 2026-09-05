@@ -82,6 +82,10 @@ pub fn generate_next_cycle(
             if let Some(interval) = &seed_def.interval {
                 let seed_bump = match interval {
                     SeedInterval::Macro(m) => (macro_cycle_count / *m) as u64,
+                    SeedInterval::Track(t) => {
+                        let track_len = track.root_node.cycle_length().max(1);
+                        ((cycle_count / track_len) / *t) as u64
+                    },
                     SeedInterval::Micro(m) => (cycle_count / *m) as u64,
                 };
                 final_seed = final_seed.wrapping_add(seed_bump);
