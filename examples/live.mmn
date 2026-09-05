@@ -27,15 +27,15 @@ $HOME_CHORD = < 0_t -2_t 2_t >
 // Rolls the dice on how the phrase resolves
 $TURNAROUND = [ 5_sus4 | 4_7 | 3_sus4 | 6_t ]
 
-T2 slow 16 seed 808 t_every 4:
-//    $TONIC $SUBDOM $TONIC $DOM
-//    $TONIC $PASSING $SUBDOM $DOM
-
-//    [ 4: $PHRASE_A | 2: $PHRASE_B | 1: $PHRASE_C ]
-    $HOME_CHORD  3_t  $HOME_CHORD  $TURNAROUND
+T2 down 1 slow 16 seed 808 t_every 8:
+  [ 
+  $TONIC $SUBDOM $TONIC $DOM $TONIC $PASSING $SUBDOM $DOM |
+  [ 4: $PHRASE_A | 2: $PHRASE_B | 1: $PHRASE_C ] |
+  $HOME_CHORD  3_t  $HOME_CHORD  $TURNAROUND
+  ]
 
 T1 slow 2 seed 420 t_every 4:
   $RANDOM_INTERVAL*8
 
 T10:
-  { $DRUM_2 | $DRUM_1 if(4) }
+  { $DRUM_2 | $DRUM_1 if(4) | [ _ _ lt*3] if(16) }
