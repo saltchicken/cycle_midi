@@ -29,7 +29,6 @@ pub fn traverse_ast(
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
                 let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
                 
-                // NEW: Ratchet division math applied at note-render time
                 let splits = ctx.ratchet_splits.max(1);
                 let sub_step = ctx.duration_ms / splits as f64;
                 let actual_duration = sub_step * (*gate as f64 / 100.0);
@@ -297,15 +296,10 @@ pub fn traverse_ast(
             traverse_ast(child, &mut sub_ctx, out_events, rng);
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
-        Node::HumanizeVelocity(child, amount) => {
+        Node::Humanize(child, vel, time) => {
             let mut sub_ctx = ctx.clone();
-            sub_ctx.humanize_velocity_range = *amount;
-            traverse_ast(child, &mut sub_ctx, out_events, rng);
-            ctx.active_chord_indices = sub_ctx.active_chord_indices;
-        }
-        Node::HumanizeTiming(child, amount) => {
-            let mut sub_ctx = ctx.clone();
-            sub_ctx.humanize_timing_range_ms = amount.abs();
+            sub_ctx.humanize_velocity_range = *vel;
+            sub_ctx.humanize_timing_range_ms = time.abs();
             traverse_ast(child, &mut sub_ctx, out_events, rng);
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }

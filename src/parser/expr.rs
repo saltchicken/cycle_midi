@@ -11,9 +11,8 @@ enum PostfixOp {
     Mul(f32),
     Div(f32),
     Arp(ArpStyle),
-    Ratchet(u8), // NEW
-    HumanizeVelocity(u8),
-    HumanizeTiming(f64),
+    Ratchet(u8),
+    Humanize(u8, f64), // Unified humanize
     Only(usize, usize),
     MacroOnly(usize, usize),
     If(usize, usize),
@@ -270,21 +269,29 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
         kw("shift").ignore_then(pad_char('(')).ignore_then(float_f32()).then_ignore(pad_char(')'))
     )).map(PostfixOp::PhaseShift);
 
-    let humanize_vel = kw("humanize_velocity")
-        .ignore_then(pad_char('('))
-        .ignore_then(int_u8())
-        .then_ignore(pad_char(')'))
-        .map(PostfixOp::HumanizeVelocity);
+    let humanize_args = int_u8()
+        .then(
+            pad_char(',')
+                .ignore_then(float_f64())
+                .then_ignore(just("ms").padded_by(padding()).or_not())
+                .or_not()
+        )
+        .or_not();
 
-    let humanize_time = kw("humanize_timing")
+    let humanize_mod = kw("humanize")
         .ignore_then(pad_char('('))
-        .ignore_then(float_f64())
-        .then_ignore(just("ms").padded_by(padding()).or_not()) // allow optional "ms" string
+        .ignore_then(humanize_args)
         .then_ignore(pad_char(')'))
-        .map(PostfixOp::HumanizeTiming);
+        .map(|args| {
+            let (vel, time) = match args {
+                Some((v, t)) => (v, t.unwrap_or(0.0)),
+                None => (0, 0.0),
+            };
+            PostfixOp::Humanize(vel, time)
+        });
 
     let postfix_op = choice((
-        euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_vel, humanize_time
+        euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod
     ))
     .padded_by(padding());
 
@@ -418,8 +425,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                         }
                         PostfixOp::Arp(style) => Node::Arp(Box::new(acc.clone()), style),
                         PostfixOp::Ratchet(splits) => Node::Ratchet(Box::new(acc.clone()), splits), // NEW
-                        PostfixOp::HumanizeVelocity(val) => Node::HumanizeVelocity(Box::new(acc.clone()), val),
-                        PostfixOp::HumanizeTiming(val) => Node::HumanizeTiming(Box::new(acc.clone()), val),
+                        PostfixOp::Humanize(vel, time) => Node::Humanize(Box::new(acc.clone()), vel, time),
                         PostfixOp::Only(interval, offset) => Node::Condition {
                             interval,
                             offset,
