@@ -21,8 +21,11 @@ enum PostfixOp {
     PhaseShift(f32),
     Invert(i32),
     Drop(u8),
+    Transpose(i32),
+    Off(f32, Vec<Postfix>),
 }
 
+#[derive(Clone)]
 struct Postfix {
     op: PostfixOp,
     cond: Option<(usize, usize)>,
@@ -166,151 +169,221 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
 }
 
 fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone {
-    let condition_clause = just("if(")
-        .ignore_then(int_u8())
-        .then(
-            pad_char(',')
-                .ignore_then(int_u8())
-                .or_not(),
-        )
-        .then_ignore(just(')'))
-        .map(|(interval, offset)| (interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
+    recursive(|postfix| {
+        let condition_clause = just("if(")
+            .ignore_then(int_u8())
+            .then(
+                pad_char(',')
+                    .ignore_then(int_u8())
+                    .or_not(),
+            )
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| (interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
 
-    let m_condition_clause = just("m_if(")
-        .ignore_then(int_u8())
-        .then(
-            pad_char(',')
-                .ignore_then(int_u8())
-                .or_not(),
-        )
-        .then_ignore(just(')'))
-        .map(|(interval, offset)| (interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
+        let m_condition_clause = just("m_if(")
+            .ignore_then(int_u8())
+            .then(
+                pad_char(',')
+                    .ignore_then(int_u8())
+                    .or_not(),
+            )
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| (interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
 
-    let only_mod = just("only(")
-        .ignore_then(int_u8())
-        .then(
-            pad_char(',')
-                .ignore_then(int_u8())
-                .or_not(),
-        )
-        .then_ignore(just(')'))
-        .map(|(interval, offset)| PostfixOp::Only(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
+        let only_mod = just("only(")
+            .ignore_then(int_u8())
+            .then(
+                pad_char(',')
+                    .ignore_then(int_u8())
+                    .or_not(),
+            )
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| PostfixOp::Only(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
 
-    let m_only_mod = just("m_only(")
-        .ignore_then(int_u8())
-        .then(
-            pad_char(',')
-                .ignore_then(int_u8())
-                .or_not(),
-        )
-        .then_ignore(just(')'))
-        .map(|(interval, offset)| {
-            PostfixOp::MacroOnly(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize)
-        });
+        let m_only_mod = just("m_only(")
+            .ignore_then(int_u8())
+            .then(
+                pad_char(',')
+                    .ignore_then(int_u8())
+                    .or_not(),
+            )
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| {
+                PostfixOp::MacroOnly(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize)
+            });
 
-    let if_mod = just("if(")
-        .ignore_then(int_u8())
-        .then(
-            pad_char(',')
-                .ignore_then(int_u8())
-                .or_not(),
-        )
-        .then_ignore(just(')'))
-        .map(|(interval, offset)| PostfixOp::If(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
+        let if_mod = just("if(")
+            .ignore_then(int_u8())
+            .then(
+                pad_char(',')
+                    .ignore_then(int_u8())
+                    .or_not(),
+            )
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| PostfixOp::If(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
 
-    let m_if_mod = just("m_if(")
-        .ignore_then(int_u8())
-        .then(
-            pad_char(',')
-                .ignore_then(int_u8())
-                .or_not(),
-        )
-        .then_ignore(just(')'))
-        .map(|(interval, offset)| {
-            PostfixOp::MacroIf(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize)
-        });
+        let m_if_mod = just("m_if(")
+            .ignore_then(int_u8())
+            .then(
+                pad_char(',')
+                    .ignore_then(int_u8())
+                    .or_not(),
+            )
+            .then_ignore(just(')'))
+            .map(|(interval, offset)| {
+                PostfixOp::MacroIf(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize)
+            });
 
-    let euclidean = pad_char('(')
-        .ignore_then(int_u8())
-        .then_ignore(pad_char(','))
-        .then(int_u8())
-        .then_ignore(pad_char(')'))
-        .map(|(p, s)| PostfixOp::Euclidean(p, s));
+        let euclidean = pad_char('(')
+            .ignore_then(int_u8())
+            .then_ignore(pad_char(','))
+            .then(int_u8())
+            .then_ignore(pad_char(')'))
+            .map(|(p, s)| PostfixOp::Euclidean(p, s));
 
-    let speed_mul = pad_char('*').ignore_then(float_f32()).map(PostfixOp::Mul);
-    let speed_div = pad_char('/').ignore_then(float_f32()).map(PostfixOp::Div);
+        let speed_mul = pad_char('*').ignore_then(float_f32()).map(PostfixOp::Mul);
+        let speed_div = pad_char('/').ignore_then(float_f32()).map(PostfixOp::Div);
 
-    let arp_style = choice((
-        just("updown").to(ArpStyle::UpDown),
-        just("downup").to(ArpStyle::DownUp),
-        just("converge").to(ArpStyle::Converge),
-        just("diverge").to(ArpStyle::Diverge),
-        just("pinkyupdown").to(ArpStyle::PinkyUpDown),
-        just("pinkyup").to(ArpStyle::PinkyUp),
-        just("up").to(ArpStyle::Up),
-        just("down").to(ArpStyle::Down),
-    ));
+        let arp_style = choice((
+            just("updown").to(ArpStyle::UpDown),
+            just("downup").to(ArpStyle::DownUp),
+            just("converge").to(ArpStyle::Converge),
+            just("diverge").to(ArpStyle::Diverge),
+            just("pinkyupdown").to(ArpStyle::PinkyUpDown),
+            just("pinkyup").to(ArpStyle::PinkyUp),
+            just("up").to(ArpStyle::Up),
+            just("down").to(ArpStyle::Down),
+        ));
 
-    let arp_mod = kw("arp")
-        .ignore_then(pad_char('('))
-        .ignore_then(arp_style)
-        .then_ignore(pad_char(')'))
-        .map(PostfixOp::Arp);
+        let arp_mod = kw("arp")
+            .ignore_then(pad_char('('))
+            .ignore_then(arp_style)
+            .then_ignore(pad_char(')'))
+            .map(PostfixOp::Arp);
 
-    let ratchet_mod = kw("ratchet")
-        .ignore_then(pad_char('('))
-        .ignore_then(int_u8())
-        .then_ignore(pad_char(')'))
-        .map(PostfixOp::Ratchet);
+        let ratchet_mod = kw("ratchet")
+            .ignore_then(pad_char('('))
+            .ignore_then(int_u8())
+            .then_ignore(pad_char(')'))
+            .map(PostfixOp::Ratchet);
 
-    let prob_mod = pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob);
-    
-    // Updated invert parsing to accept an i32 (for negative downward inversions)
-    let invert_mod = pad_char('^').ignore_then(int_i32()).map(PostfixOp::Invert);
-    
-    // New drop modifier parsing
-    let drop_mod = kw("drop")
-        .ignore_then(pad_char('('))
-        .ignore_then(int_u8())
-        .then_ignore(pad_char(')'))
-        .map(PostfixOp::Drop);
-    
-    let phase_shift = choice((
-        just("~>").padded_by(padding()).ignore_then(float_f32()),
-        just("<~").padded_by(padding()).ignore_then(float_f32()).map(|v| -v),
-        kw("shift").ignore_then(pad_char('(')).ignore_then(float_f32()).then_ignore(pad_char(')'))
-    )).map(PostfixOp::PhaseShift);
+        let prob_mod = pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob);
+        
+        let invert_mod = pad_char('^').ignore_then(int_i32()).map(PostfixOp::Invert);
+        
+        let drop_mod = kw("drop")
+            .ignore_then(pad_char('('))
+            .ignore_then(int_u8())
+            .then_ignore(pad_char(')'))
+            .map(PostfixOp::Drop);
+        
+        let phase_shift = choice((
+            just("~>").padded_by(padding()).ignore_then(float_f32()),
+            just("<~").padded_by(padding()).ignore_then(float_f32()).map(|v| -v),
+            kw("shift").ignore_then(pad_char('(')).ignore_then(float_f32()).then_ignore(pad_char(')'))
+        )).map(PostfixOp::PhaseShift);
 
-    let humanize_args = int_u8()
-        .then(
-            pad_char(',')
-                .ignore_then(float_f64())
-                .then_ignore(just("ms").padded_by(padding()).or_not())
-                .or_not()
-        )
-        .or_not();
+        let humanize_args = int_u8()
+            .then(
+                pad_char(',')
+                    .ignore_then(float_f64())
+                    .then_ignore(just("ms").padded_by(padding()).or_not())
+                    .or_not()
+            )
+            .or_not();
 
-    let humanize_mod = kw("humanize")
-        .ignore_then(pad_char('('))
-        .ignore_then(humanize_args)
-        .then_ignore(pad_char(')'))
-        .map(|args| {
-            let (vel, time) = match args {
-                Some((v, t)) => (v, t.unwrap_or(0.0)),
-                None => (0, 0.0),
-            };
-            PostfixOp::Humanize(vel, time)
-        });
+        let humanize_mod = kw("humanize")
+            .ignore_then(pad_char('('))
+            .ignore_then(humanize_args)
+            .then_ignore(pad_char(')'))
+            .map(|args| {
+                let (vel, time) = match args {
+                    Some((v, t)) => (v, t.unwrap_or(0.0)),
+                    None => (0, 0.0),
+                };
+                PostfixOp::Humanize(vel, time)
+            });
 
-    let postfix_op = choice((
-        euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod
-    ))
-    .padded_by(padding());
+        let transpose_mod = kw("up").ignore_then(int_i32()).map(PostfixOp::Transpose);
+        let transpose_down_mod = kw("down").ignore_then(int_i32()).map(|v| PostfixOp::Transpose(-v));
 
-    postfix_op
-        .then(condition_clause.padded_by(padding()).or_not())
-        .then(m_condition_clause.padded_by(padding()).or_not())
-        .map(|((op, cond), m_cond)| Postfix { op, cond, m_cond })
+        let off_mod = kw("off")
+            .ignore_then(pad_char('('))
+            .ignore_then(float_f32())
+            .then_ignore(pad_char(','))
+            .then(postfix.repeated())
+            .then_ignore(pad_char(')'))
+            .map(|(shift, ops)| PostfixOp::Off(shift, ops));
+
+        let postfix_op = choice((
+            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod
+        ))
+        .padded_by(padding());
+
+        postfix_op
+            .then(condition_clause.padded_by(padding()).or_not())
+            .then(m_condition_clause.padded_by(padding()).or_not())
+            .map(|((op, cond), m_cond)| Postfix { op, cond, m_cond })
+    })
+}
+
+fn apply_postfix(acc: Node, post: Postfix) -> Node {
+    let true_branch = match post.op {
+        PostfixOp::Euclidean(p, s) => Node::Euclidean(Box::new(acc.clone()), p, s),
+        PostfixOp::Mul(val) => Node::SpeedModifier(Box::new(acc.clone()), val),
+        PostfixOp::Div(val) => Node::SpeedModifier(Box::new(acc.clone()), 1.0 / val),
+        PostfixOp::Arp(style) => Node::Arp(Box::new(acc.clone()), style),
+        PostfixOp::Ratchet(splits) => Node::Ratchet(Box::new(acc.clone()), splits),
+        PostfixOp::Humanize(vel, time) => Node::Humanize(Box::new(acc.clone()), vel, time),
+        PostfixOp::PhaseShift(val) => Node::PhaseShift(Box::new(acc.clone()), val),
+        PostfixOp::Invert(amount) => Node::Invert(Box::new(acc.clone()), amount),
+        PostfixOp::Drop(voice) => Node::Drop(Box::new(acc.clone()), voice),
+        PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p), // FIXED: Changed Probability to Prob
+        PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc.clone()), amt),
+        
+        PostfixOp::Off(shift, mods) => {
+            let mut shifted = acc.clone();
+            for m in mods {
+                shifted = apply_postfix(shifted, m);
+            }
+            shifted = Node::PhaseShift(Box::new(shifted), shift);
+            Node::Parallel(vec![vec![acc.clone()], vec![shifted]])
+        }
+        
+        PostfixOp::Only(interval, offset) | PostfixOp::If(interval, offset) => Node::Condition {
+            interval, offset,
+            true_branch: Box::new(acc.clone()),
+            false_branch: Box::new(Node::Rest),
+        },
+        PostfixOp::MacroOnly(interval, offset) => Node::MacroCondition {
+            interval, offset, is_gate: true,
+            true_branch: Box::new(acc.clone()),
+            false_branch: Box::new(Node::Rest),
+        },
+        PostfixOp::MacroIf(interval, offset) => Node::MacroCondition {
+            interval, offset, is_gate: false,
+            true_branch: Box::new(acc.clone()),
+            false_branch: Box::new(Node::Rest),
+        },
+    };
+
+    let micro_applied = match post.cond {
+        Some((interval, offset)) => Node::Condition {
+            interval, offset,
+            true_branch: Box::new(true_branch),
+            false_branch: Box::new(acc.clone()),
+        },
+        None => true_branch,
+    };
+
+    match post.m_cond {
+        Some((interval, offset)) => Node::MacroCondition {
+            interval, offset, is_gate: false,
+            true_branch: Box::new(micro_applied),
+            false_branch: Box::new(acc),
+        },
+        None => micro_applied,
+    }
 }
 
 pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
@@ -428,69 +501,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
         atom.then(postfix_parser().repeated())
             .map(|(base, postfixes)| {
-                postfixes.into_iter().fold(base, |acc, post| {
-                    let true_branch = match post.op {
-                        PostfixOp::Euclidean(p, s) => Node::Euclidean(Box::new(acc.clone()), p, s),
-                        PostfixOp::Mul(val) => Node::SpeedModifier(Box::new(acc.clone()), val),
-                        PostfixOp::Div(val) => {
-                            Node::SpeedModifier(Box::new(acc.clone()), 1.0 / val)
-                        }
-                        PostfixOp::Arp(style) => Node::Arp(Box::new(acc.clone()), style),
-                        PostfixOp::Ratchet(splits) => Node::Ratchet(Box::new(acc.clone()), splits), // NEW
-                        PostfixOp::Humanize(vel, time) => Node::Humanize(Box::new(acc.clone()), vel, time),
-                        PostfixOp::Only(interval, offset) => Node::Condition {
-                            interval,
-                            offset,
-                            true_branch: Box::new(acc.clone()),
-                            false_branch: Box::new(Node::Rest),
-                        },
-                        PostfixOp::MacroOnly(interval, offset) => Node::MacroCondition {
-                            interval,
-                            offset,
-                            is_gate: true,
-                            true_branch: Box::new(acc.clone()),
-                            false_branch: Box::new(Node::Rest),
-                        },
-                        PostfixOp::If(interval, offset) => Node::Condition {
-                            interval,
-                            offset,
-                            true_branch: Box::new(acc.clone()),
-                            false_branch: Box::new(Node::Rest),
-                        },
-                        PostfixOp::MacroIf(interval, offset) => Node::MacroCondition {
-                            interval,
-                            offset,
-                            is_gate: false,
-                            true_branch: Box::new(acc.clone()),
-                            false_branch: Box::new(Node::Rest),
-                        },
-                        PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p),
-                        PostfixOp::PhaseShift(val) => Node::PhaseShift(Box::new(acc.clone()), val),
-                        PostfixOp::Invert(amount) => Node::Invert(Box::new(acc.clone()), amount),
-                        PostfixOp::Drop(voice) => Node::Drop(Box::new(acc.clone()), voice),
-                    };
-
-                    let micro_applied = match post.cond {
-                        Some((interval, offset)) => Node::Condition {
-                            interval,
-                            offset,
-                            true_branch: Box::new(true_branch),
-                            false_branch: Box::new(acc.clone()),
-                        },
-                        None => true_branch,
-                    };
-
-                    match post.m_cond {
-                        Some((interval, offset)) => Node::MacroCondition {
-                            interval,
-                            offset,
-                            is_gate: false,
-                            true_branch: Box::new(micro_applied),
-                            false_branch: Box::new(acc),
-                        },
-                        None => micro_applied,
-                    }
-                })
+                postfixes.into_iter().fold(base, apply_postfix)
             })
     });
 

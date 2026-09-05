@@ -2,7 +2,10 @@
 #SCALE=E3 dorian
 
 T10 fast 4:
-  [ bd | sn ] ratchet(2)
+  { bd | [sn(3,8)] if(4) }
 
-T1:
-  0_t drop(2)
+!T1:
+  0_t drop(2) arp(down) 5_7 arp(up)
+
+T2:
+  0%50 off(0.25, up 7)

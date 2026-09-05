@@ -388,13 +388,24 @@ pub fn traverse_ast(
                 }
             }
         }
+        Node::Transpose(child, amt) => {
+            let start_idx = out_events.len();
+            traverse_ast(child, ctx, out_events, rng);
+            
+            for i in start_idx..out_events.len() {
+                if let ScheduledEvent::Note { pitch, .. } = &mut out_events[i] {
+                    *pitch = (*pitch as i32 + *amt).clamp(0, 127) as u8;
+                }
+            }
+        }
         Node::SeqP(segments, is_loop) => {
             let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
             let current_cycle = if *is_loop {
                 ctx.cycle_count % max_end
             } else {
                 ctx.cycle_count
-            };
+            }
+            ;
 
             let orig_indices = ctx.active_chord_indices.clone();
             let mut all_indices = Vec::new();

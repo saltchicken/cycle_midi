@@ -31,6 +31,7 @@ pub enum Node {
     Probability(Box<Node>, u8),
     Invert(Box<Node>, i32),
     Drop(Box<Node>, u8),
+    Transpose(Box<Node>, i32),
     Condition {
         interval: usize,
         offset: usize,
@@ -84,7 +85,7 @@ impl Node {
                     child.expand_refs(env, depth)?;
                 }
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) | Node::Ratchet(child, _) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) => {
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) | Node::Ratchet(child, _) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) => {
                 child.expand_refs(env, depth)?;
             }
             Node::Condition { true_branch, false_branch, .. } | Node::MacroCondition { true_branch, false_branch, .. } => {
@@ -131,7 +132,7 @@ impl Node {
             Node::SeqP(segments, _) => {
                 segments.iter().map(|s| s.1).max().unwrap_or(1).max(1)
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) => {
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) => {
                 child.cycle_length()
             }
             Node::Condition {
