@@ -307,7 +307,7 @@ pub fn traverse_ast(
             let start_idx = out_events.len();
             traverse_ast(child, ctx, out_events, rng);
             
-            if *amount > 0 {
+            if *amount != 0 {
                 let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
                 for i in start_idx..out_events.len() {
                     if let ScheduledEvent::Note { start_ms, .. } = out_events[i] {
@@ -330,11 +330,59 @@ pub fn traverse_ast(
                     let num_notes = indices.len();
                     if num_notes == 0 { continue; }
                     
-                    // Modulo math nicely manages inversion depths exceeding the chord count (e.g. ^4 on a triad)
-                    for inv in 0..*amount as usize {
-                        let target_idx = indices[inv % num_notes];
+                    let amt = *amount;
+                    if amt > 0 {
+                        // Upward inversions: grab the lowest notes and raise them an octave
+                        for inv in 0..amt as usize {
+                            let target_idx = indices[inv % num_notes];
+                            if let ScheduledEvent::Note { pitch, .. } = &mut out_events[target_idx] {
+                                *pitch = (*pitch as i32 + 12).clamp(0, 127) as u8;
+                            }
+                        }
+                    } else {
+                        // Downward inversions: grab the highest notes and drop them an octave
+                        let abs_amt = amt.unsigned_abs() as usize;
+                        for inv in 0..abs_amt {
+                            let target_idx = indices[num_notes - 1 - (inv % num_notes)];
+                            if let ScheduledEvent::Note { pitch, .. } = &mut out_events[target_idx] {
+                                *pitch = (*pitch as i32 - 12).clamp(0, 127) as u8;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Node::Drop(child, voice) => {
+            let start_idx = out_events.len();
+            traverse_ast(child, ctx, out_events, rng);
+            
+            if *voice > 0 {
+                let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
+                for i in start_idx..out_events.len() {
+                    if let ScheduledEvent::Note { start_ms, .. } = out_events[i] {
+                        let time_key = (start_ms * 1000.0).round() as i64;
+                        notes_by_time.entry(time_key).or_default().push(i);
+                    }
+                }
+                
+                for (_, mut indices) in notes_by_time {
+                    indices.sort_by_key(|&i| {
+                        if let ScheduledEvent::Note { pitch, .. } = out_events[i] {
+                            pitch
+                        } else {
+                            0
+                        }
+                    });
+                    
+                    let num_notes = indices.len();
+                    let v = *voice as usize;
+                    
+                    // A Drop 2 needs at least 2 notes. Drop 3 needs at least 3.
+                    if num_notes >= v {
+                        // e.g. If length is 4 and voice is 2 (Drop 2), we want index 2.
+                        let target_idx = indices[num_notes - v];
                         if let ScheduledEvent::Note { pitch, .. } = &mut out_events[target_idx] {
-                            *pitch = (*pitch as i32 + 12).clamp(0, 127) as u8;
+                            *pitch = (*pitch as i32 - 12).clamp(0, 127) as u8;
                         }
                     }
                 }
