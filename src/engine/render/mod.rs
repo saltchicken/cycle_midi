@@ -48,6 +48,7 @@ pub struct RenderContext {
     pub octave_offset: i32,
     pub alternator_stride: usize,
     pub transition_fade: Option<f64>,
+    pub velocity_modifier: f32,
     pub ratchet_splits: usize, // NEW
     pub humanize_velocity_range: u8,
     pub humanize_timing_range_ms: f64,
@@ -113,6 +114,7 @@ pub fn generate_next_cycle(
             octave_offset: track.octave_offset,
             alternator_stride: 1,
             transition_fade, 
+            velocity_modifier: 1.0,
             ratchet_splits: 1, // INITIALIZED
             humanize_velocity_range: 0,
             humanize_timing_range_ms: 0.0,

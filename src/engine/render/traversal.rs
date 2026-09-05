@@ -33,7 +33,7 @@ pub fn traverse_ast(
                 let sub_step = ctx.duration_ms / splits as f64;
                 let actual_duration = sub_step * (*gate as f64 / 100.0);
 
-                let mut final_vel = *velocity;
+                let mut final_vel = (*velocity as f32 * ctx.velocity_modifier).clamp(0.0, 127.0) as u8;
                 let mut play_note = true;
 
                 // TRANSITION DISSOLVE EFFECT
@@ -235,6 +235,10 @@ pub fn traverse_ast(
                         chunk_ctx.start_ms = absolute_chunk_start;
                         chunk_ctx.duration_ms = local_duration;
                         
+                        // Bounding the inner evaluation window prevents duplicate notes across phase chunk boundaries
+                        chunk_ctx.window_start_ms = sub_ctx.window_start_ms.max(absolute_chunk_start);
+                        chunk_ctx.window_end_ms = sub_ctx.window_end_ms.min(absolute_chunk_start + local_duration);
+                        
                         chunk_ctx.master_duration_ms = local_duration;
                         chunk_ctx.cycle_start_ms = absolute_chunk_start;
                         
@@ -295,6 +299,50 @@ pub fn traverse_ast(
             sub_ctx.ratchet_splits *= *splits as usize;
             traverse_ast(child, &mut sub_ctx, out_events, rng);
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
+        }
+        Node::Stut(child, depth, feedback, shift_amount) => {
+            let orig_indices = ctx.active_chord_indices.clone();
+            let mut all_indices = Vec::new();
+
+            for i in 0..=*depth {
+                let mut sub_ctx = ctx.clone();
+                sub_ctx.active_chord_indices = orig_indices.clone();
+                sub_ctx.velocity_modifier *= feedback.powi(i as i32);
+
+                if i == 0 {
+                    traverse_ast(child, &mut sub_ctx, out_events, rng);
+                    all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
+                } else {
+                    let shift_ms = (*shift_amount * i as f32) as f64 * sub_ctx.duration_ms;
+
+                    let theoretical_cycle_start = sub_ctx.cycle_count as f64 * sub_ctx.master_duration_ms;
+                    let offset_in_cycle = sub_ctx.start_ms - sub_ctx.cycle_start_ms;
+                    let virtual_start_ms = theoretical_cycle_start + offset_in_cycle - shift_ms;
+
+                    let phase_offset = (virtual_start_ms + 1e-9).rem_euclid(sub_ctx.duration_ms);
+                    let chunk_start_ms = sub_ctx.start_ms - phase_offset;
+
+                    let chunks_to_render = 2;
+
+                    for c in 0..chunks_to_render {
+                        let absolute_chunk_start = chunk_start_ms + (c as f64 * sub_ctx.duration_ms);
+                        let mut chunk_ctx = sub_ctx.clone();
+                        chunk_ctx.start_ms = absolute_chunk_start;
+
+                        // Constrain logical window so inner sequence modifiers don't over-evaluate
+                        chunk_ctx.window_start_ms = sub_ctx.window_start_ms.max(absolute_chunk_start);
+                        chunk_ctx.window_end_ms = sub_ctx.window_end_ms.min(absolute_chunk_start + sub_ctx.duration_ms);
+                        chunk_ctx.cycle_start_ms = absolute_chunk_start;
+
+                        let virtual_chunk_start = virtual_start_ms - phase_offset + (c as f64 * sub_ctx.duration_ms);
+                        chunk_ctx.cycle_count = (virtual_chunk_start / sub_ctx.master_duration_ms).floor().max(0.0) as usize;
+
+                        traverse_ast(child, &mut chunk_ctx, out_events, rng);
+                        all_indices.extend_from_slice(&chunk_ctx.active_chord_indices);
+                    }
+                }
+            }
+            ctx.active_chord_indices = all_indices;
         }
         Node::Humanize(child, vel, time) => {
             let mut sub_ctx = ctx.clone();
@@ -495,6 +543,10 @@ pub fn traverse_ast(
                 sub_ctx.start_ms = absolute_chunk_start;
                 sub_ctx.duration_ms = local_duration;
                 
+                // Enforce logical window bounds for inner multipliers
+                sub_ctx.window_start_ms = ctx.window_start_ms.max(absolute_chunk_start);
+                sub_ctx.window_end_ms = ctx.window_end_ms.min(absolute_chunk_start + local_duration);
+                
                 sub_ctx.master_duration_ms = local_duration;
                 sub_ctx.cycle_start_ms = absolute_chunk_start;
 
@@ -523,6 +575,11 @@ pub fn traverse_ast(
                 let absolute_chunk_start = chunk_start_ms + (i as f64 * ctx.duration_ms);
                 let mut sub_ctx = ctx.clone();
                 sub_ctx.start_ms = absolute_chunk_start;
+                
+                // Enforce logical window bounds for phase-shifted chunks
+                sub_ctx.window_start_ms = ctx.window_start_ms.max(absolute_chunk_start);
+                sub_ctx.window_end_ms = ctx.window_end_ms.min(absolute_chunk_start + ctx.duration_ms);
+                sub_ctx.cycle_start_ms = absolute_chunk_start;
                 
                 let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * ctx.duration_ms);
                 sub_ctx.cycle_count = (virtual_chunk_start / ctx.master_duration_ms).floor().max(0.0) as usize;

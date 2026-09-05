@@ -12,6 +12,7 @@ enum PostfixOp {
     Div(f32),
     Arp(ArpStyle),
     Ratchet(u8),
+    Stut(u8, f32, f32),
     Humanize(u8, f64), // Unified humanize
     Only(usize, usize),
     MacroOnly(usize, usize),
@@ -267,6 +268,16 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Ratchet);
 
+        let stut_mod = kw("stut")
+            .ignore_then(pad_char('('))
+            .ignore_then(int_u8()) // depth
+            .then_ignore(pad_char(','))
+            .then(float_f32()) // feedback multiplier
+            .then_ignore(pad_char(','))
+            .then(float_f32()) // time shift fraction
+            .then_ignore(pad_char(')'))
+            .map(|((d, f), t)| PostfixOp::Stut(d, f, t));
+
         let prob_mod = pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob);
         
         let invert_mod = pad_char('^').ignore_then(int_i32()).map(PostfixOp::Invert);
@@ -316,7 +327,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             .map(|(shift, ops)| PostfixOp::Off(shift, ops));
 
         let postfix_op = choice((
-            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod
+            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, stut_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod
         ))
         .padded_by(padding());
 
@@ -334,6 +345,7 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
         PostfixOp::Div(val) => Node::SpeedModifier(Box::new(acc.clone()), 1.0 / val),
         PostfixOp::Arp(style) => Node::Arp(Box::new(acc.clone()), style),
         PostfixOp::Ratchet(splits) => Node::Ratchet(Box::new(acc.clone()), splits),
+        PostfixOp::Stut(d, f, t) => Node::Stut(Box::new(acc.clone()), d, f, t),
         PostfixOp::Humanize(vel, time) => Node::Humanize(Box::new(acc.clone()), vel, time),
         PostfixOp::PhaseShift(val) => Node::PhaseShift(Box::new(acc.clone()), val),
         PostfixOp::Invert(amount) => Node::Invert(Box::new(acc.clone()), amount),
