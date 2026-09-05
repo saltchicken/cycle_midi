@@ -28,7 +28,11 @@ pub fn traverse_ast(
         } => {
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
                 let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
-                let actual_duration = ctx.duration_ms * (*gate as f64 / 100.0);
+                
+                // NEW: Ratchet division math applied at note-render time
+                let splits = ctx.ratchet_splits.max(1);
+                let sub_step = ctx.duration_ms / splits as f64;
+                let actual_duration = sub_step * (*gate as f64 / 100.0);
 
                 let mut final_vel = *velocity;
                 let mut play_note = true;
@@ -42,16 +46,17 @@ pub fn traverse_ast(
                 }
 
                 if play_note && final_vel > 0 {
-                    out_events.push(ScheduledEvent::Note {
-                        channel: ctx.channel,
-                        pitch: actual_pitch,
-                        velocity: final_vel,
-                        start_ms: ctx.start_ms,
-                        duration_ms: actual_duration,
-                    });
-
                     ctx.active_chord_indices.clear();
-                    ctx.active_chord_indices.push(out_events.len() - 1);
+                    for i in 0..splits {
+                        out_events.push(ScheduledEvent::Note {
+                            channel: ctx.channel,
+                            pitch: actual_pitch,
+                            velocity: final_vel,
+                            start_ms: ctx.start_ms + (i as f64 * sub_step),
+                            duration_ms: actual_duration,
+                        });
+                        ctx.active_chord_indices.push(out_events.len() - 1);
+                    }
                 } else {
                     ctx.active_chord_indices.clear();
                 }
@@ -61,39 +66,53 @@ pub fn traverse_ast(
         }
         Node::CC { controller, value } => {
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
-                let actual_value = match value {
-                    DynamicValue::Static(v) => *v,
-                    DynamicValue::Sine(min, max, speed) => {
-                        let phase = calculate_lfo_phase(ctx, *speed);
-                        let normalized = (phase * std::f64::consts::TAU).sin() * 0.5 + 0.5;
-                        let range = *max as f64 - *min as f64;
-                        (*min as f64 + normalized * range).clamp(0.0, 127.0) as u8
-                    }
-                    DynamicValue::Saw(min, max, speed) => {
-                        let phase = calculate_lfo_phase(ctx, *speed);
-                        let range = *max as f64 - *min as f64;
-                        (*min as f64 + phase * range).clamp(0.0, 127.0) as u8
-                    }
-                    DynamicValue::Tri(min, max, speed) => {
-                        let phase = calculate_lfo_phase(ctx, *speed);
-                        let tri = if phase < 0.5 {
-                            phase * 2.0
-                        } else {
-                            2.0 - phase * 2.0
-                        };
-                        let range = *max as f64 - *min as f64;
-                        (*min as f64 + tri * range).clamp(0.0, 127.0) as u8
-                    }
-                };
+                let splits = ctx.ratchet_splits.max(1);
+                let sub_step = ctx.duration_ms / splits as f64;
 
-                out_events.push(ScheduledEvent::CC {
-                    channel: ctx.channel,
-                    controller: *controller,
-                    value: actual_value,
-                    start_ms: ctx.start_ms,
-                });
+                ctx.active_chord_indices.clear(); // Ensure clear before loop
+
+                for i in 0..splits {
+                    let note_start = ctx.start_ms + (i as f64 * sub_step);
+
+                    // Re-calculate the phase precisely for the sub-step time
+                    let mut lfo_ctx = ctx.clone();
+                    lfo_ctx.start_ms = note_start;
+
+                    let actual_value = match value {
+                        DynamicValue::Static(v) => *v,
+                        DynamicValue::Sine(min, max, speed) => {
+                            let phase = calculate_lfo_phase(&lfo_ctx, *speed);
+                            let normalized = (phase * std::f64::consts::TAU).sin() * 0.5 + 0.5;
+                            let range = *max as f64 - *min as f64;
+                            (*min as f64 + normalized * range).clamp(0.0, 127.0) as u8
+                        }
+                        DynamicValue::Saw(min, max, speed) => {
+                            let phase = calculate_lfo_phase(&lfo_ctx, *speed);
+                            let range = *max as f64 - *min as f64;
+                            (*min as f64 + phase * range).clamp(0.0, 127.0) as u8
+                        }
+                        DynamicValue::Tri(min, max, speed) => {
+                            let phase = calculate_lfo_phase(&lfo_ctx, *speed);
+                            let tri = if phase < 0.5 {
+                                phase * 2.0
+                            } else {
+                                2.0 - phase * 2.0
+                            };
+                            let range = *max as f64 - *min as f64;
+                            (*min as f64 + tri * range).clamp(0.0, 127.0) as u8
+                        }
+                    };
+
+                    out_events.push(ScheduledEvent::CC {
+                        channel: ctx.channel,
+                        controller: *controller,
+                        value: actual_value,
+                        start_ms: note_start,
+                    });
+                }
+            } else {
+                ctx.active_chord_indices.clear();
             }
-            ctx.active_chord_indices.clear();
         }
         Node::Rest => {
             ctx.active_chord_indices.clear();
@@ -255,6 +274,13 @@ pub fn traverse_ast(
                 let index = rng.random_range(0..elements.len());
                 traverse_ast(&elements[index].1, ctx, out_events, rng);
             }
+        }
+        Node::Ratchet(child, splits) => {
+            // Ratchet passes the multiplier down instead of re-evaluating the AST
+            let mut sub_ctx = ctx.clone();
+            sub_ctx.ratchet_splits *= *splits as usize;
+            traverse_ast(child, &mut sub_ctx, out_events, rng);
+            ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
         Node::SeqP(segments, is_loop) => {
             let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
@@ -525,8 +551,11 @@ pub fn traverse_ast(
                 if step_ctx.start_ms >= step_ctx.window_start_ms - 0.1
                     && step_ctx.start_ms < step_ctx.window_end_ms - 0.1
                 {
+                    // If Arp itself was subjected to ratcheting, this inherits ctx.ratchet_splits
+                    let splits = step_ctx.ratchet_splits.max(1);
+                    let sub_step = step_ctx.duration_ms / splits as f64;
                     // Default to legato (100% gate) for arpeggiated steps
-                    let actual_duration = step_duration;
+                    let actual_duration = sub_step;
 
                     let mut final_vel = vel;
                     let mut play_note = true;
@@ -540,15 +569,16 @@ pub fn traverse_ast(
                     }
 
                     if play_note && final_vel > 0 {
-                        out_events.push(ScheduledEvent::Note {
-                            channel: step_ctx.channel,
-                            pitch,
-                            velocity: final_vel,
-                            start_ms: step_ctx.start_ms,
-                            duration_ms: actual_duration,
-                        });
-
-                        all_indices.push(out_events.len() - 1);
+                        for sub_i in 0..splits {
+                            out_events.push(ScheduledEvent::Note {
+                                channel: step_ctx.channel,
+                                pitch,
+                                velocity: final_vel,
+                                start_ms: step_ctx.start_ms + (sub_i as f64 * sub_step),
+                                duration_ms: actual_duration,
+                            });
+                            all_indices.push(out_events.len() - 1);
+                        }
                     }
                 }
             }

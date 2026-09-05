@@ -11,6 +11,7 @@ enum PostfixOp {
     Mul(f32),
     Div(f32),
     Arp(ArpStyle),
+    Ratchet(u8), // NEW
     Only(usize, usize),
     MacroOnly(usize, usize),
     If(usize, usize),
@@ -134,7 +135,6 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
 
     let pitch_group = choice((absolute_named_chord, numeric_named_chord, single_pitch));
 
-    // FIX: Upgraded to `pad_char` so velocity and gate accept surrounding whitespace
     let velocity = pad_char('@').ignore_then(int_u8());
     let gate = pad_char('%').ignore_then(int_u8());
 
@@ -254,6 +254,12 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
         .then_ignore(pad_char(')'))
         .map(PostfixOp::Arp);
 
+    let ratchet_mod = kw("ratchet")
+        .ignore_then(pad_char('('))
+        .ignore_then(int_u8())
+        .then_ignore(pad_char(')'))
+        .map(PostfixOp::Ratchet);
+
     let prob_mod = pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob);
     
     let phase_shift = choice((
@@ -263,7 +269,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
     )).map(PostfixOp::PhaseShift);
 
     let postfix_op = choice((
-        euclidean, speed_mul, speed_div, arp_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift
+        euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift
     ))
     .padded_by(padding());
 
@@ -284,7 +290,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .map(Node::Ref);
 
         let choice_branch = int_u8()
-            .padded_by(pad_expr.clone()) // <--- FIX: Correctly eat the padding BEFORE the integer!
+            .padded_by(pad_expr.clone())
             .then_ignore(pad_char(':'))
             .or_not()
             .then(expr.clone().padded_by(pad_expr.clone()).repeated());
@@ -396,6 +402,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                             Node::SpeedModifier(Box::new(acc.clone()), 1.0 / val)
                         }
                         PostfixOp::Arp(style) => Node::Arp(Box::new(acc.clone()), style),
+                        PostfixOp::Ratchet(splits) => Node::Ratchet(Box::new(acc.clone()), splits), // NEW
                         PostfixOp::Only(interval, offset) => Node::Condition {
                             interval,
                             offset,

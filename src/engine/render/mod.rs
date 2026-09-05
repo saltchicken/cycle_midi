@@ -47,7 +47,8 @@ pub struct RenderContext {
     pub active_chord_indices: Vec<usize>,
     pub octave_offset: i32,
     pub alternator_stride: usize,
-    pub transition_fade: Option<f64>, // NEW: 1.0 down to 0.0 during transitions
+    pub transition_fade: Option<f64>,
+    pub ratchet_splits: usize, // NEW
 }
 
 pub fn generate_next_cycle(
@@ -56,7 +57,7 @@ pub fn generate_next_cycle(
     cycle_start_time_ms: f64,
     cycle_count: usize,
     macro_cycle_length: usize,
-    transition_fade: Option<f64>, // NEW
+    transition_fade: Option<f64>,
 ) -> Vec<ScheduledEvent> {
     if program.global_silence {
         return Vec::new();
@@ -109,7 +110,8 @@ pub fn generate_next_cycle(
             active_chord_indices: vec![],
             octave_offset: track.octave_offset,
             alternator_stride: 1,
-            transition_fade, // PASS FADE CONTEXT DOWN
+            transition_fade, 
+            ratchet_splits: 1, // INITIALIZED
         };
         
         traverse_ast(&track.root_node, &mut ctx, &mut events, &mut rng);

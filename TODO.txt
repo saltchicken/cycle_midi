@@ -1,6 +1,7 @@
 Best way to visualize cycles going by
 
 Implement humanizing things like swing or change in velocity
+humanize timing and velocity
 
 standard
 track
@@ -8,3 +9,6 @@ macro
 
 
 scene
+
+
+
