@@ -1,0 +1,39 @@
+// --- CYCLE MIDI: LIVE SESSION ---
+// A driving, melodic techno-ish groove in D Dorian
+
+#BPM=60
+#SCALE=D3 dorian
+
+// T1: The Lead Melody
+// Uses a seed that changes every 4 cycles to lock in a random choice,
+// creating a repeating phrase that evolves over time.
+// Also runs a parallel Saw wave LFO to the Mod Wheel (CC 1)
+T1 up seed 1337 every 4: { 
+    [0 2 4 2] <[7 6 4 .] [4 6 7 .]> [7 9 | 6 4 | 4 2] [2 . 0 .]?80 | 
+    cc1@saw(0,64,2) 
+}
+
+// T2: The Bassline
+// Pushed down an octave. Syncopated 16th notes using short gates (%)
+T2 down: 
+    [0%50 . 0%50 7%40] 
+    [0%50 3%60 . 5%60] 
+    [0%50 . 0%50 7%40] 
+    [0%50 -2%80 . 0%50]
+
+// TODO: Add proper comment explaining this track
+T4 slow 4: { 
+    0@50 2@50 4@50 2@50
+}
+
+// T10: Complex Drum Machine (Standard MIDI Drum Map)
+// Layer 1: Kick with a Euclidean rhythm and a turnaround fill
+// Layer 2: Snare that drops out on the 4th cycle to leave room for the tom fill
+// Layer 3: Hi-hats with random 32nd note ratchets via the random choice pipe
+// Layer 4: Big Tom & Snare fill that ONLY triggers on the 4th cycle (using only())
+T10: {
+    bd(3,8) bd(3,8) bd(3,8) <bd(3,8) [bd . bd bd]> |
+    . 38 . <38 38 38 .> |
+    42*4 [42*2 46 42] 42*4 [42*4 | 42*8] |
+    [. . [. 38*2 38*2 38*2] [45*4 47*4]] only(4,3)
+}
