@@ -48,11 +48,22 @@ pub fn traverse_ast(
                 if play_note && final_vel > 0 {
                     ctx.active_chord_indices.clear();
                     for i in 0..splits {
+                        let mut jitter = 0.0;
+                        if ctx.humanize_timing_range_ms > 0.0 {
+                            jitter = rng.random_range(-ctx.humanize_timing_range_ms..=ctx.humanize_timing_range_ms);
+                        }
+
+                        let mut split_vel = final_vel;
+                        if ctx.humanize_velocity_range > 0 {
+                            let offset = rng.random_range(-(ctx.humanize_velocity_range as i32)..=(ctx.humanize_velocity_range as i32));
+                            split_vel = (split_vel as i32 + offset).clamp(1, 127) as u8;
+                        }
+
                         out_events.push(ScheduledEvent::Note {
                             channel: ctx.channel,
                             pitch: actual_pitch,
-                            velocity: final_vel,
-                            start_ms: ctx.start_ms + (i as f64 * sub_step),
+                            velocity: split_vel,
+                            start_ms: ctx.start_ms + (i as f64 * sub_step) + jitter,
                             duration_ms: actual_duration,
                         });
                         ctx.active_chord_indices.push(out_events.len() - 1);
@@ -72,7 +83,11 @@ pub fn traverse_ast(
                 ctx.active_chord_indices.clear(); // Ensure clear before loop
 
                 for i in 0..splits {
-                    let note_start = ctx.start_ms + (i as f64 * sub_step);
+                    let mut jitter = 0.0;
+                    if ctx.humanize_timing_range_ms > 0.0 {
+                        jitter = rng.random_range(-ctx.humanize_timing_range_ms..=ctx.humanize_timing_range_ms);
+                    }
+                    let note_start = ctx.start_ms + (i as f64 * sub_step) + jitter;
 
                     // Re-calculate the phase precisely for the sub-step time
                     let mut lfo_ctx = ctx.clone();
@@ -279,6 +294,18 @@ pub fn traverse_ast(
             // Ratchet passes the multiplier down instead of re-evaluating the AST
             let mut sub_ctx = ctx.clone();
             sub_ctx.ratchet_splits *= *splits as usize;
+            traverse_ast(child, &mut sub_ctx, out_events, rng);
+            ctx.active_chord_indices = sub_ctx.active_chord_indices;
+        }
+        Node::HumanizeVelocity(child, amount) => {
+            let mut sub_ctx = ctx.clone();
+            sub_ctx.humanize_velocity_range = *amount;
+            traverse_ast(child, &mut sub_ctx, out_events, rng);
+            ctx.active_chord_indices = sub_ctx.active_chord_indices;
+        }
+        Node::HumanizeTiming(child, amount) => {
+            let mut sub_ctx = ctx.clone();
+            sub_ctx.humanize_timing_range_ms = amount.abs();
             traverse_ast(child, &mut sub_ctx, out_events, rng);
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
@@ -570,11 +597,16 @@ pub fn traverse_ast(
 
                     if play_note && final_vel > 0 {
                         for sub_i in 0..splits {
+                            let mut jitter = 0.0;
+                            if step_ctx.humanize_timing_range_ms > 0.0 {
+                                jitter = rng.random_range(-step_ctx.humanize_timing_range_ms..=step_ctx.humanize_timing_range_ms);
+                            }
+
                             out_events.push(ScheduledEvent::Note {
                                 channel: step_ctx.channel,
                                 pitch,
-                                velocity: final_vel,
-                                start_ms: step_ctx.start_ms + (sub_i as f64 * sub_step),
+                                velocity: final_vel, // Note: Velocity humanization was already safely captured when Arp resolved its children.
+                                start_ms: step_ctx.start_ms + (sub_i as f64 * sub_step) + jitter,
                                 duration_ms: actual_duration,
                             });
                             all_indices.push(out_events.len() - 1);
