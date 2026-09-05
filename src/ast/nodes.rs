@@ -23,7 +23,7 @@ pub enum Node {
     SeqP(Vec<(usize, usize, Box<Node>)>, bool),
     Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
-    RandomChoice(Vec<Node>),
+    RandomChoice(Vec<(u32, Node)>),
     SpeedModifier(Box<Node>, f32),
     Arp(Box<Node>, ArpStyle),
     Probability(Box<Node>, u8),
@@ -58,8 +58,13 @@ impl Node {
                     return Err(format!("Unresolved alias: ${}", name));
                 }
             }
-            Node::Chord(elements) | Node::Sequence(elements) | Node::RandomChoice(elements) | Node::Alternator(elements) => {
+            Node::Chord(elements) | Node::Sequence(elements) | Node::Alternator(elements) => {
                 for el in elements {
+                    el.expand_refs(env, depth)?;
+                }
+            }
+            Node::RandomChoice(elements) => {
+                for (_, el) in elements {
                     el.expand_refs(env, depth)?;
                 }
             }
@@ -90,8 +95,11 @@ impl Node {
     pub fn cycle_length(&self) -> usize {
         match self {
             Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold | Node::Ref(_) => 1,
-            Node::Chord(elements) | Node::Sequence(elements) | Node::RandomChoice(elements) => {
+            Node::Chord(elements) | Node::Sequence(elements) => {
                 elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()))
+            }
+            Node::RandomChoice(elements) => {
+                elements.iter().fold(1, |acc, (_, n)| lcm(acc, n.cycle_length()))
             }
             Node::Alternator(elements) => {
                 let children_lcm = elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()));

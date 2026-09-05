@@ -3,6 +3,8 @@ use crate::ast::{ArpStyle, DynamicValue, Node};
 use super::{RenderContext, ScheduledEvent};
 use rand::RngExt;
 use rand::rngs::StdRng;
+use rand::distr::Distribution;
+use rand::distr::weighted::WeightedIndex;
 
 fn calculate_lfo_phase(ctx: &RenderContext, speed: f64) -> f64 {
     let lfo_duration = ctx.master_duration_ms / speed;
@@ -243,8 +245,16 @@ pub fn traverse_ast(
                 ctx.active_chord_indices.clear();
                 return;
             }
-            let index = rng.random_range(0..elements.len());
-            traverse_ast(&elements[index], ctx, out_events, rng);
+            
+            let weights: Vec<u32> = elements.iter().map(|(w, _)| *w).collect();
+            
+            if let Ok(dist) = WeightedIndex::new(&weights) {
+                let index = dist.sample(rng);
+                traverse_ast(&elements[index].1, ctx, out_events, rng);
+            } else {
+                let index = rng.random_range(0..elements.len());
+                traverse_ast(&elements[index].1, ctx, out_events, rng);
+            }
         }
         Node::SeqP(segments, is_loop) => {
             let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);

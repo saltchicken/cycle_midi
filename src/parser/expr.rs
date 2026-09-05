@@ -234,7 +234,6 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
         .then_ignore(pad_char(')'))
         .map(|(p, s)| PostfixOp::Euclidean(p, s));
 
-    // FIX: Replaced `just` with `pad_char` so that spaces are allowed (e.g. `* 0.5`)
     let speed_mul = pad_char('*').ignore_then(float_f32()).map(PostfixOp::Mul);
     let speed_div = pad_char('/').ignore_then(float_f32()).map(PostfixOp::Div);
 
@@ -249,14 +248,12 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
         just("down").to(ArpStyle::Down),
     ));
 
-    // FIX: Used `kw` and `pad_char` to allow spacing like `arp ( up )`
     let arp_mod = kw("arp")
         .ignore_then(pad_char('('))
         .ignore_then(arp_style)
         .then_ignore(pad_char(')'))
         .map(PostfixOp::Arp);
 
-    // FIX: Replaced `just` with `pad_char` so probability works with spacing (e.g. `? 80`)
     let prob_mod = pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob);
     
     let phase_shift = choice((
@@ -286,25 +283,35 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .ignore_then(text::ident())
             .map(Node::Ref);
 
-        let seq_group = expr
-            .clone()
-            .padded_by(pad_expr.clone())
-            .repeated()
+        let choice_branch = int_u8()
+            .padded_by(pad_expr.clone()) // <--- FIX: Correctly eat the padding BEFORE the integer!
+            .then_ignore(pad_char(':'))
+            .or_not()
+            .then(expr.clone().padded_by(pad_expr.clone()).repeated());
+
+        let seq_group = choice_branch
             .separated_by(pad_char('|'))
             .delimited_by(just('['), just(']'))
             .map(|choices| {
                 if choices.len() == 1 {
-                    Node::Sequence(choices.into_iter().next().unwrap())
+                    let (_, seq) = choices.into_iter().next().unwrap();
+                    if seq.len() == 1 {
+                        seq.into_iter().next().unwrap()
+                    } else {
+                        Node::Sequence(seq)
+                    }
                 } else {
                     Node::RandomChoice(
                         choices
                             .into_iter()
-                            .map(|seq| {
-                                if seq.len() == 1 {
+                            .map(|(w, seq)| {
+                                let node = if seq.len() == 1 {
                                     seq.into_iter().next().unwrap()
                                 } else {
                                     Node::Sequence(seq)
                                 }
+                                ;
+                                (w.unwrap_or(1) as u32, node)
                             })
                             .collect(),
                     )
