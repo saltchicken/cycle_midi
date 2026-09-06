@@ -1,5 +1,5 @@
 use super::directives::global_directives;
-use super::primitives::{float_f32, float_f64, int_i32, int_u8, padding, pitch_val, drum_val, kw, pad_char};
+use super::primitives::{drum_val, float_f32, float_f64, int_i32, int_u8, kw, pad_char, padding, pitch_val};
 use super::track::track_parser;
 use crate::ast::{ArpStyle, DynamicValue, Node, Pitch, Program};
 use chumsky::prelude::*;
@@ -425,6 +425,13 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let alias_ref = just('$')
             .ignore_then(text::ident())
             .map(Node::Ref);
+            
+        let with_scale = kw("scale")
+            .ignore_then(pad_char('('))
+            .ignore_then(super::directives::scale_def())
+            .then_ignore(pad_char(')'))
+            .then(expr.clone())
+            .map(|(scale, child)| Node::WithScale(scale, Box::new(child)));
 
         let choice_branch = int_u8()
             .padded_by(pad_expr.clone())
@@ -526,6 +533,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             rest,
             hold,
             alias_ref,
+            with_scale,
             seq_group,
             shuf_group,
             alt_group,
@@ -558,7 +566,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
     global_directives()
         .then(item.repeated())
-        .map(|((bpm, signature, quantize, scale, global_silence, includes), items)| {
+        .map(|((bpm, signature, quantize, scale, scale_seq, global_silence, includes), items)| {
             let mut aliases = HashMap::new();
             let mut tracks = Vec::new();
 
@@ -578,6 +586,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 signature,
                 quantize,
                 scale,
+                scale_seq,
                 global_silence,
                 includes,
                 aliases,

@@ -120,6 +120,7 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
                                     signature: None,
                                     quantize: None,
                                     scale: None,
+                                    scale_seq: None,
                                     global_silence: true,
                                     includes: vec![],
                                     aliases: HashMap::new(),

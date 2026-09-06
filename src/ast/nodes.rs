@@ -49,6 +49,7 @@ pub enum Node {
         false_branch: Box<Node>,
     },
     PhaseShift(Box<Node>, f32),
+    WithScale(ScaleDef, Box<Node>),
 }
 
 impl Node {
@@ -88,7 +89,7 @@ impl Node {
                     child.expand_refs(env, depth)?;
                 }
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) => {
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) => {
                 child.expand_refs(env, depth)?;
             }
             Node::Condition { true_branch, false_branch, .. } | Node::MacroCondition { true_branch, false_branch, .. } => {
@@ -135,7 +136,7 @@ impl Node {
             Node::SeqP(segments, _) => {
                 segments.iter().map(|s| s.1).max().unwrap_or(1).max(1)
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) => {
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) => {
                 child.cycle_length()
             }
             Node::Condition {
@@ -193,6 +194,7 @@ pub struct Program {
     pub signature: Option<(u8, u8)>,
     pub quantize: Option<QuantizeMode>,
     pub scale: Option<ScaleDef>,
+    pub scale_seq: Option<Vec<(usize, usize, ScaleDef)>>,
     pub global_silence: bool,
     pub includes: Vec<String>,
     pub aliases: HashMap<String, Node>,

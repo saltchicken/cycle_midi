@@ -835,5 +835,12 @@ pub fn traverse_ast(
             }
             ctx.active_chord_indices = all_indices;
         }
+        Node::WithScale(scale, child) => {
+            let mut sub_ctx = ctx.clone();
+            sub_ctx.scale = Some(scale.clone());
+            traverse_ast(child, &mut sub_ctx, out_events, rng);
+            // Copy back chord indices so held notes work
+            ctx.active_chord_indices = sub_ctx.active_chord_indices;
+        }
     }
 }

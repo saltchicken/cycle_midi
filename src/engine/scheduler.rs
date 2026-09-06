@@ -58,8 +58,9 @@ pub fn run_scheduler(
         signature: None,
         quantize: None,
         scale: None,
+        scale_seq: None,
         global_silence: false,
-        includes: vec![], // <-- ADDED THIS FIELD
+        includes: vec![],
         aliases: std::collections::HashMap::new(),
         tracks: vec![],
     };

@@ -73,6 +73,20 @@ pub fn generate_next_cycle(
     let mut events = Vec::new();
     let macro_cycle_count = cycle_count / macro_cycle_length.max(1);
 
+    let mut active_global_scale = program.scale.clone();
+    
+    if let Some(seq) = &program.scale_seq {
+        let max_end = seq.iter().map(|s| s.1).max().unwrap_or(1).max(1);
+        let loop_cycle = cycle_count % max_end;
+        
+        for (start, end, scale) in seq {
+            if loop_cycle >= *start && loop_cycle < *end {
+                active_global_scale = Some(scale.clone());
+                break;
+            }
+        }
+    }
+
     for track in &program.tracks {
         if track.is_muted {
             continue;
@@ -81,7 +95,7 @@ pub fn generate_next_cycle(
         let active_scale = if track.channel == 9 {
             track.scale.clone()
         } else {
-            track.scale.clone().or(program.scale.clone())
+            track.scale.clone().or(active_global_scale.clone())
         };
 
         let mut rng = if let Some(seed_def) = &track.seed {

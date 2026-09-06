@@ -1,4 +1,4 @@
-use super::primitives::{float_f64, padding, pitch_val};
+use super::primitives::{float_f64, pad_char, padding, pitch_val};
 use crate::ast::{QuantizeMode, ScaleDef};
 use chumsky::prelude::*;
 
@@ -8,6 +8,7 @@ enum Directive {
     Signature(u8, u8),
     Quantize(QuantizeMode),
     Scale(ScaleDef),
+    ScaleSeq(Vec<(usize, usize, ScaleDef)>),
     Silence,
     Include(String),
 }
@@ -36,8 +37,27 @@ pub fn scale_def() -> impl Parser<char, ScaleDef, Error = Simple<char>> + Clone 
         })
 }
 
+pub fn scale_seq_def() -> impl Parser<char, Vec<(usize, usize, ScaleDef)>, Error = Simple<char>> + Clone {
+    let segment = pad_char('(')
+        .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+            s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid start: {}", e)))
+        }))
+        .then_ignore(pad_char(','))
+        .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+            s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid end: {}", e)))
+        }))
+        .then_ignore(pad_char(')'))
+        .then_ignore(pad_char(':'))
+        .then(scale_def())
+        .map(|((start, end), scale)| (start, end, scale));
+
+    segment
+        .separated_by(pad_char('|'))
+        .delimited_by(pad_char('{'), pad_char('}'))
+}
+
 pub fn global_directives()
--> impl Parser<char, (Option<f64>, Option<(u8, u8)>, Option<QuantizeMode>, Option<ScaleDef>, bool, Vec<String>), Error = Simple<char>>
+-> impl Parser<char, (Option<f64>, Option<(u8, u8)>, Option<QuantizeMode>, Option<ScaleDef>, Option<Vec<(usize, usize, ScaleDef)>>, bool, Vec<String>), Error = Simple<char>>
 + Clone {
     let directive = choice((
         just("#BPM=").ignore_then(float_f64()).map(Directive::Bpm),
@@ -70,6 +90,9 @@ pub fn global_directives()
         just("#SCALE=")
             .ignore_then(scale_def())
             .map(Directive::Scale),
+        just("#SCALE_SEQ=").or(just("#SCALE_SEQ")).padded_by(padding())
+            .ignore_then(scale_seq_def())
+            .map(Directive::ScaleSeq),
         just("#SILENCE").to(Directive::Silence),
         just("#INCLUDE").padded_by(padding())
             .ignore_then(just('"'))
@@ -84,6 +107,7 @@ pub fn global_directives()
         let mut signature = None;
         let mut quantize = None;
         let mut scale = None;
+        let mut scale_seq = None;
         let mut global_silence = false;
         let mut includes = Vec::new();
 
@@ -93,11 +117,12 @@ pub fn global_directives()
                 Directive::Signature(n, d) => signature = Some((n, d)),
                 Directive::Quantize(v) => quantize = Some(v),
                 Directive::Scale(v) => scale = Some(v),
+                Directive::ScaleSeq(v) => scale_seq = Some(v),
                 Directive::Silence => global_silence = true,
                 Directive::Include(path) => includes.push(path),
             }
         }
 
-        (bpm, signature, quantize, scale, global_silence, includes)
+        (bpm, signature, quantize, scale, scale_seq, global_silence, includes)
     })
 }
