@@ -8,6 +8,7 @@ enum Directive {
     Quantize(QuantizeMode),
     Scale(ScaleDef),
     Silence,
+    Include(String),
 }
 
 pub fn scale_name() -> impl Parser<char, Vec<u8>, Error = Simple<char>> + Clone {
@@ -35,7 +36,7 @@ pub fn scale_def() -> impl Parser<char, ScaleDef, Error = Simple<char>> + Clone 
 }
 
 pub fn global_directives()
--> impl Parser<char, (Option<f64>, Option<QuantizeMode>, Option<ScaleDef>, bool), Error = Simple<char>>
+-> impl Parser<char, (Option<f64>, Option<QuantizeMode>, Option<ScaleDef>, bool, Vec<String>), Error = Simple<char>>
 + Clone {
     let directive = choice((
         just("#BPM=").ignore_then(float_f64()).map(Directive::Bpm),
@@ -54,6 +55,11 @@ pub fn global_directives()
             .ignore_then(scale_def())
             .map(Directive::Scale),
         just("#SILENCE").to(Directive::Silence),
+        just("#INCLUDE").padded_by(padding())
+            .ignore_then(just('"'))
+            .ignore_then(filter(|c: &char| *c != '"').repeated().collect::<String>())
+            .then_ignore(just('"'))
+            .map(Directive::Include),
     ))
     .padded_by(padding());
 
@@ -62,6 +68,7 @@ pub fn global_directives()
         let mut quantize = None;
         let mut scale = None;
         let mut global_silence = false;
+        let mut includes = Vec::new();
 
         for d in dirs {
             match d {
@@ -69,9 +76,10 @@ pub fn global_directives()
                 Directive::Quantize(v) => quantize = Some(v),
                 Directive::Scale(v) => scale = Some(v),
                 Directive::Silence => global_silence = true,
+                Directive::Include(path) => includes.push(path),
             }
         }
 
-        (bpm, quantize, scale, global_silence)
+        (bpm, quantize, scale, global_silence, includes)
     })
 }

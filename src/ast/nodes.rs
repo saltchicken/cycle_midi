@@ -193,6 +193,7 @@ pub struct Program {
     pub quantize: Option<QuantizeMode>,
     pub scale: Option<ScaleDef>,
     pub global_silence: bool,
+    pub includes: Vec<String>,
     pub aliases: HashMap<String, Node>,
     pub tracks: Vec<Track>,
 }

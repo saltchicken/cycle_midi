@@ -357,7 +357,7 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
         PostfixOp::PhaseShift(val) => Node::PhaseShift(Box::new(acc.clone()), val),
         PostfixOp::Invert(amount) => Node::Invert(Box::new(acc.clone()), amount),
         PostfixOp::Drop(voice) => Node::Drop(Box::new(acc.clone()), voice),
-        PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p), // FIXED: Changed Probability to Prob
+        PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p), 
         PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc.clone()), amt),
         PostfixOp::Strum(amt) => Node::Strum(Box::new(acc.clone()), amt),
         
@@ -548,7 +548,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
     global_directives()
         .then(item.repeated())
-        .map(|((bpm, quantize, scale, global_silence), items)| {
+        .map(|((bpm, quantize, scale, global_silence, includes), items)| {
             let mut aliases = HashMap::new();
             let mut tracks = Vec::new();
 
@@ -568,6 +568,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 quantize,
                 scale,
                 global_silence,
+                includes,
                 aliases,
                 tracks,
             }
