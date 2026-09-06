@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
 use std::time::Duration;
+use std::collections::HashMap;
 
 pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(String, Program)>) {
     thread::spawn(move || {
@@ -25,11 +26,53 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
         );
 
         let parser = mmn_parser();
+        let globals_path = watch_dir.join("globals.mmn");
+
+        // Helper closure to parse, merge globals, and expand references
+        let process_file = |content: String, _filename: String| -> Result<Program, String> {
+            let mut globals_aliases = HashMap::new();
+            
+            // 1. Harvest aliases from globals.mmn if it exists
+            if globals_path.exists() {
+                if let Ok(g_content) = fs::read_to_string(&globals_path) {
+                    if let Ok(g_prog) = parser.parse(g_content) {
+                        globals_aliases = g_prog.aliases;
+                    } else {
+                        println!("Warning: Syntax error in globals.mmn, skipping globals.");
+                    }
+                }
+            }
+
+            // 2. Parse the active file
+            match parser.parse(content) {
+                Ok(mut prog) => {
+                    // Merge globals into local (local variables override globals with the same name)
+                    for (k, v) in globals_aliases {
+                        prog.aliases.entry(k).or_insert(v);
+                    }
+                    
+                    // 3. Expand all references now that the environment is fully merged
+                    prog.expand_all_refs().map(|_| prog)
+                },
+                Err(errs) => {
+                    println!("Syntax Error! Continuing to play old sequence.");
+                    for e in errs {
+                        let expected: Vec<_> = e.expected().cloned().collect();
+                        eprintln!(
+                            "Expected {:?} at char {}",
+                            expected,
+                            e.span().start
+                        );
+                    }
+                    Err("Syntax error".to_string())
+                }
+            }
+        };
 
         // Initially load the default file (e.g., live.mmn)
         if let Ok(contents) = fs::read_to_string(&file_path) {
-            if let Ok(initial_prog) = parser.parse(contents) {
-                let filename = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let filename = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            if let Ok(initial_prog) = process_file(contents, filename.clone()) {
                 let _ = tx.send((filename, initial_prog));
             }
         }
@@ -54,6 +97,7 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
                                     quantize: None,
                                     scale: None,
                                     global_silence: true,
+                                    aliases: HashMap::new(),
                                     tracks: vec![],
                                 };
                                 if tx.send((filename.clone(), empty_prog)).is_ok() {
@@ -62,20 +106,12 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
                                 continue;
                             }
 
-                            match parser.parse(contents) {
+                            match process_file(contents, filename.clone()) {
                                 Ok(new_prog) => {
                                     let _ = tx.send((filename, new_prog));
                                 }
-                                Err(errs) => {
-                                    println!("Syntax Error! Continuing to play old sequence.");
-                                    for e in errs {
-                                        let expected: Vec<_> = e.expected().cloned().collect();
-                                        eprintln!(
-                                            "Expected {:?} at char {}",
-                                            expected,
-                                            e.span().start
-                                        );
-                                    }
+                                Err(e) => {
+                                    println!("Compilation Error! Continuing to play old sequence. ({})", e);
                                 }
                             }
                         }

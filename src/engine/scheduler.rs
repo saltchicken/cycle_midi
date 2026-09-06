@@ -58,6 +58,7 @@ pub fn run_scheduler(
         quantize: None,
         scale: None,
         global_silence: false,
+        aliases: std::collections::HashMap::new(),
         tracks: vec![],
     };
     

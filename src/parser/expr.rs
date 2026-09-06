@@ -530,7 +530,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
     global_directives()
         .then(item.repeated())
-        .try_map(|((bpm, quantize, scale, global_silence), items), span| {
+        .map(|((bpm, quantize, scale, global_silence), items)| {
             let mut aliases = HashMap::new();
             let mut tracks = Vec::new();
 
@@ -545,19 +545,14 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 }
             }
 
-            for track in &mut tracks {
-                if let Err(e) = track.root_node.expand_refs(&aliases, 0) {
-                    return Err(Simple::custom(span, e));
-                }
-            }
-
-            Ok(Program {
+            Program {
                 bpm,
                 quantize,
                 scale,
                 global_silence,
+                aliases,
                 tracks,
-            })
+            }
         })
         .padded_by(padding())
         .then_ignore(end())

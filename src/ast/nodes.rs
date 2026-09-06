@@ -191,10 +191,19 @@ pub struct Program {
     pub quantize: Option<QuantizeMode>,
     pub scale: Option<ScaleDef>,
     pub global_silence: bool,
+    pub aliases: HashMap<String, Node>,
     pub tracks: Vec<Track>,
 }
 
 impl Program {
+    pub fn expand_all_refs(&mut self) -> Result<(), String> {
+        let env = self.aliases.clone(); 
+        for track in &mut self.tracks {
+            track.root_node.expand_refs(&env, 0)?;
+        }
+        Ok(())
+    }
+
     pub fn pattern_length_cycles(&self) -> usize {
         self.tracks
             .iter()
