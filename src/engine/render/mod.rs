@@ -66,7 +66,10 @@ pub fn generate_next_cycle(
         return Vec::new();
     }
 
-    let master_duration_ms = (60_000.0 / bpm) * 4.0;
+    let (num, den) = program.signature.unwrap_or((4, 4));
+    let beats_per_cycle = num as f64 * (4.0 / den as f64);
+    let master_duration_ms = (60_000.0 / bpm) * beats_per_cycle;
+
     let mut events = Vec::new();
     let macro_cycle_count = cycle_count / macro_cycle_length.max(1);
 

@@ -190,6 +190,7 @@ pub struct Track {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub bpm: Option<f64>,
+    pub signature: Option<(u8, u8)>,
     pub quantize: Option<QuantizeMode>,
     pub scale: Option<ScaleDef>,
     pub global_silence: bool,

@@ -117,6 +117,7 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
                             if contents.trim().is_empty() {
                                 let empty_prog = Program {
                                     bpm: None,
+                                    signature: None,
                                     quantize: None,
                                     scale: None,
                                     global_silence: true,

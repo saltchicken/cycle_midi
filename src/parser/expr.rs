@@ -548,7 +548,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
     global_directives()
         .then(item.repeated())
-        .map(|((bpm, quantize, scale, global_silence, includes), items)| {
+        .map(|((bpm, signature, quantize, scale, global_silence, includes), items)| {
             let mut aliases = HashMap::new();
             let mut tracks = Vec::new();
 
@@ -565,6 +565,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
             Program {
                 bpm,
+                signature,
                 quantize,
                 scale,
                 global_silence,

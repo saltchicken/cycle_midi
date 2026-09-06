@@ -55,6 +55,7 @@ pub fn run_scheduler(
     let mut current_filename = String::new();
     let mut current_program = Program {
         bpm: None,
+        signature: None,
         quantize: None,
         scale: None,
         global_silence: false,
@@ -73,9 +74,11 @@ pub fn run_scheduler(
         
         if let Some(new_bpm) = current_program.bpm {
             bpm = new_bpm;
-            cycle_duration_ms = (60_000.0 / bpm) * 4.0;
-            clock_interval_ms = 60_000.0 / (bpm * 24.0);
         }
+        let (num, den) = current_program.signature.unwrap_or((4, 4));
+        let beats = num as f64 * (4.0 / den as f64);
+        cycle_duration_ms = (60_000.0 / bpm) * beats;
+        clock_interval_ms = 60_000.0 / (bpm * 24.0);
 
         let initial_macro_len = current_program.pattern_length_cycles();
         println!(
@@ -162,11 +165,13 @@ pub fn run_scheduler(
                     if let Some(new_bpm) = current_program.bpm {
                         if (new_bpm - bpm).abs() > f64::EPSILON {
                             bpm = new_bpm;
-                            cycle_duration_ms = (60_000.0 / bpm) * 4.0;
-                            clock_interval_ms = 60_000.0 / (bpm * 24.0);
                             println!("BPM updated to: {}", bpm);
                         }
                     }
+                    let (num, den) = current_program.signature.unwrap_or((4, 4));
+                    let beats = num as f64 * (4.0 / den as f64);
+                    cycle_duration_ms = (60_000.0 / bpm) * beats;
+                    clock_interval_ms = 60_000.0 / (bpm * 24.0);
                 } else {
                     let cycles_left = target_q_cycles - position_in_phrase;
 

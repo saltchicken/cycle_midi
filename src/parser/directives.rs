@@ -5,6 +5,7 @@ use chumsky::prelude::*;
 #[derive(Clone)]
 enum Directive {
     Bpm(f64),
+    Signature(u8, u8),
     Quantize(QuantizeMode),
     Scale(ScaleDef),
     Silence,
@@ -36,10 +37,25 @@ pub fn scale_def() -> impl Parser<char, ScaleDef, Error = Simple<char>> + Clone 
 }
 
 pub fn global_directives()
--> impl Parser<char, (Option<f64>, Option<QuantizeMode>, Option<ScaleDef>, bool, Vec<String>), Error = Simple<char>>
+-> impl Parser<char, (Option<f64>, Option<(u8, u8)>, Option<QuantizeMode>, Option<ScaleDef>, bool, Vec<String>), Error = Simple<char>>
 + Clone {
     let directive = choice((
         just("#BPM=").ignore_then(float_f64()).map(Directive::Bpm),
+        just("#SIG=")
+            .ignore_then(
+                text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                    s.parse::<u8>()
+                        .map_err(|e| Simple::custom(span, format!("Invalid numerator: {}", e)))
+                })
+            )
+            .then_ignore(just('/'))
+            .then(
+                text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                    s.parse::<u8>()
+                        .map_err(|e| Simple::custom(span, format!("Invalid denominator: {}", e)))
+                })
+            )
+            .map(|(num, den)| Directive::Signature(num, den)),
         just("#QUANTIZE=")
             .ignore_then(choice((
                 just("auto").to(QuantizeMode::Auto),
@@ -65,6 +81,7 @@ pub fn global_directives()
 
     directive.repeated().map(|dirs| {
         let mut bpm = None;
+        let mut signature = None;
         let mut quantize = None;
         let mut scale = None;
         let mut global_silence = false;
@@ -73,6 +90,7 @@ pub fn global_directives()
         for d in dirs {
             match d {
                 Directive::Bpm(v) => bpm = Some(v),
+                Directive::Signature(n, d) => signature = Some((n, d)),
                 Directive::Quantize(v) => quantize = Some(v),
                 Directive::Scale(v) => scale = Some(v),
                 Directive::Silence => global_silence = true,
@@ -80,6 +98,6 @@ pub fn global_directives()
             }
         }
 
-        (bpm, quantize, scale, global_silence, includes)
+        (bpm, signature, quantize, scale, global_silence, includes)
     })
 }
