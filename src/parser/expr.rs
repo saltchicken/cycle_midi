@@ -146,21 +146,31 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
     let velocity = pad_char('@').ignore_then(int_u8());
     let gate = pad_char('%').ignore_then(int_u8());
 
-    pitch_group
+    // Allow velocities and gates on each individual pitch component within the chord
+    let modified_pitch_group = pitch_group
+        .then(velocity.clone().or_not())
+        .then(gate.clone().or_not());
+
+    modified_pitch_group
         .separated_by(pad_char('+'))
         .at_least(1)
         .then(velocity.or_not())
         .then(gate.or_not())
-        .map(|((pitch_groups, v), g)| {
-            let pitches: Vec<Pitch> = pitch_groups.into_iter().flatten().collect();
-            let notes: Vec<Node> = pitches
-                .into_iter()
-                .map(|p| Node::Note {
-                    pitch: p,
-                    velocity: v.unwrap_or(100),
-                    gate: g.unwrap_or(100),
-                })
-                .collect();
+        .map(|((pitch_groups, global_v), global_g)| {
+            let mut notes = Vec::new();
+            for ((pitches, local_v), local_g) in pitch_groups {
+                // Outer/Global modifiers override the local modifiers if provided, otherwise fallback to 100
+                let v = global_v.unwrap_or_else(|| local_v.unwrap_or(100));
+                let g = global_g.unwrap_or_else(|| local_g.unwrap_or(100));
+                
+                for p in pitches {
+                    notes.push(Node::Note {
+                        pitch: p,
+                        velocity: v,
+                        gate: g,
+                    });
+                }
+            }
 
             if notes.len() == 1 {
                 notes.into_iter().next().unwrap()
