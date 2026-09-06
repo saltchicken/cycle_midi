@@ -24,6 +24,7 @@ enum PostfixOp {
     Drop(u8),
     Transpose(i32),
     Off(f32, Vec<Postfix>),
+    Strum(f64),
 }
 
 #[derive(Clone)]
@@ -326,8 +327,14 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             .then_ignore(pad_char(')'))
             .map(|(shift, ops)| PostfixOp::Off(shift, ops));
 
+        let strum_mod = kw("strum")
+            .ignore_then(pad_char('('))
+            .ignore_then(float_f64())
+            .then_ignore(pad_char(')'))
+            .map(PostfixOp::Strum);
+
         let postfix_op = choice((
-            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, stut_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod
+            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, stut_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod, strum_mod
         ))
         .padded_by(padding());
 
@@ -352,6 +359,7 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
         PostfixOp::Drop(voice) => Node::Drop(Box::new(acc.clone()), voice),
         PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p), // FIXED: Changed Probability to Prob
         PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc.clone()), amt),
+        PostfixOp::Strum(amt) => Node::Strum(Box::new(acc.clone()), amt),
         
         PostfixOp::Off(shift, mods) => {
             let mut shifted = acc.clone();

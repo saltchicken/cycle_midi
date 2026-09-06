@@ -468,6 +468,49 @@ pub fn traverse_ast(
                 }
             }
         }
+        Node::Strum(child, amt) => {
+            let start_idx = out_events.len();
+            traverse_ast(child, ctx, out_events, rng);
+
+            if *amt != 0.0 {
+                let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
+                for i in start_idx..out_events.len() {
+                    if let ScheduledEvent::Note { start_ms, .. } = out_events[i] {
+                        // Group simultaneous events using a millisecond-precision key
+                        let time_key = (start_ms * 1000.0).round() as i64;
+                        notes_by_time.entry(time_key).or_default().push(i);
+                    }
+                }
+                
+                for (_, mut indices) in notes_by_time {
+                    // Sort indices from lowest pitch to highest
+                    indices.sort_by_key(|&i| {
+                        if let ScheduledEvent::Note { pitch, .. } = out_events[i] {
+                            pitch
+                        } else {
+                            0
+                        }
+                    });
+                    
+                    let num_notes = indices.len();
+                    if num_notes < 2 { continue; }
+                    
+                    let step_ms = amt.abs();
+                    let is_down = *amt < 0.0;
+                    
+                    if is_down {
+                        indices.reverse();
+                    }
+                    
+                    for (idx_in_chord, &target_idx) in indices.iter().enumerate() {
+                        let offset = idx_in_chord as f64 * step_ms;
+                        if let ScheduledEvent::Note { start_ms, .. } = &mut out_events[target_idx] {
+                            *start_ms += offset;
+                        }
+                    }
+                }
+            }
+        }
         Node::SeqP(segments, is_loop) => {
             let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
             let current_cycle = if *is_loop {
