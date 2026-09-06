@@ -13,7 +13,7 @@ enum PostfixOp {
     Arp(ArpStyle),
     Ratchet(u8),
     Stut(u8, f32, f32),
-    Humanize(u8, f64), // Unified humanize
+    Humanize(u8, f64),
     Only(usize, usize),
     MacroOnly(usize, usize),
     If(usize, usize),
