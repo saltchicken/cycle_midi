@@ -18,6 +18,7 @@ pub enum Node {
     Hold,
     Ref(String),
     Sequence(Vec<Node>),
+    ShuffledSequence(Vec<Node>),
     Parallel(Vec<Vec<Node>>),
     Polymeter(Vec<Vec<Node>>),
     SeqP(Vec<(usize, usize, Box<Node>)>, bool),
@@ -64,7 +65,7 @@ impl Node {
                     return Err(format!("Unresolved alias: ${}", name));
                 }
             }
-            Node::Chord(elements) | Node::Sequence(elements) | Node::Alternator(elements) => {
+            Node::Chord(elements) | Node::Sequence(elements) | Node::ShuffledSequence(elements) | Node::Alternator(elements) => {
                 for el in elements {
                     el.expand_refs(env, depth)?;
                 }
@@ -101,7 +102,7 @@ impl Node {
     pub fn cycle_length(&self) -> usize {
         match self {
             Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold | Node::Ref(_) => 1,
-            Node::Chord(elements) | Node::Sequence(elements) => {
+            Node::Chord(elements) | Node::Sequence(elements) | Node::ShuffledSequence(elements) => {
                 elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()))
             }
             Node::RandomChoice(elements) => {

@@ -5,6 +5,7 @@ use rand::RngExt;
 use rand::rngs::StdRng;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
+use rand::seq::SliceRandom;
 
 fn calculate_lfo_phase(ctx: &RenderContext, speed: f64) -> f64 {
     let lfo_duration = ctx.master_duration_ms / speed;
@@ -162,6 +163,27 @@ pub fn traverse_ast(
             let step_duration = ctx.duration_ms / elements.len() as f64;
 
             for (i, el) in elements.iter().enumerate() {
+                let mut sub_ctx = ctx.clone();
+                sub_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
+                sub_ctx.duration_ms = step_duration;
+                sub_ctx.window_start_ms = ctx.window_start_ms.max(sub_ctx.start_ms);
+                sub_ctx.window_end_ms = ctx.window_end_ms.min(sub_ctx.start_ms + step_duration);
+
+                traverse_ast(el, &mut sub_ctx, out_events, rng);
+                ctx.active_chord_indices = sub_ctx.active_chord_indices;
+            }
+        }
+        Node::ShuffledSequence(elements) => {
+            if elements.is_empty() {
+                ctx.active_chord_indices.clear();
+                return;
+            }
+            let mut shuffled = elements.clone();
+            shuffled.shuffle(rng);
+
+            let step_duration = ctx.duration_ms / shuffled.len() as f64;
+
+            for (i, el) in shuffled.iter().enumerate() {
                 let mut sub_ctx = ctx.clone();
                 sub_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
                 sub_ctx.duration_ms = step_duration;

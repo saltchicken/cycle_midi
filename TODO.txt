@@ -1,7 +1,6 @@
 Best way to visualize cycles going by
 
-Implement humanizing things like swing or change in velocity
-humanize timing and velocity
+Scale progression. preferrably follow the circle of 5ths
 
 standard
 track

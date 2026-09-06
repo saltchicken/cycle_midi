@@ -443,6 +443,15 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 }
             });
 
+        let shuf_group = kw("shuf")
+            .ignore_then(
+                expr.clone()
+                    .padded_by(pad_expr.clone())
+                    .repeated()
+                    .delimited_by(just('['), just(']'))
+            )
+            .map(Node::ShuffledSequence);
+
         let alt_group = expr
             .clone()
             .padded_by(pad_expr.clone())
@@ -500,6 +509,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             hold,
             alias_ref,
             seq_group,
+            shuf_group,
             alt_group,
             choice((
                 parallel_group,
