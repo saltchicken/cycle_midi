@@ -1,13 +1,17 @@
 #BPM=128
 #SCALE_SEQ {
-  (0, 16): C3 major |
-  (16, 32): G3 major
+  (0, 8): C3 major |
+  (8, 16): G3 major
 }
 #INCLUDE "include/drums.mmn"
+#INCLUDE "include/bass.mmn"
 #SIG=4/4
 
-T9 slow 4:
-  0_7 5_t
+T2 down 1:
+  [ $B_TONIC | $B_DOM ]
+
+T9:
+  0_7 arp(up) 5_t arp(down)
 
 T10:
-  $DRUM_GLITCH
+  { $DRUM_GLITCH | bd*2 }

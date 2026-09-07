@@ -29,7 +29,7 @@ pub enum Node {
     Arp(Box<Node>, ArpStyle),
     Ratchet(Box<Node>, u8), 
     Stut(Box<Node>, u8, f32, f32),
-    Humanize(Box<Node>, u8, f64), // Unified humanize node
+    Humanize(Box<Node>, u8, f64),
     Probability(Box<Node>, u8),
     Invert(Box<Node>, i32),
     Drop(Box<Node>, u8),
@@ -122,13 +122,11 @@ impl Node {
                 if layers.is_empty() {
                     return 1;
                 }
-                // Base pulse is derived from the first layer
                 let l0 = layers[0].len().max(1);
                 layers.iter().fold(1, |acc, layer| {
                     let li = layer.len().max(1);
                     let layer_child_lcm = layer.iter().fold(1, |a, n| lcm(a, n.cycle_length()));
                     
-                    // How many macro-cycles (of length L0) it takes for this layer to perfectly sync back to beat 1
                     let sync_macro_cycles = lcm(l0, li * layer_child_lcm) / l0;
                     lcm(acc, sync_macro_cycles)
                 })
@@ -185,6 +183,7 @@ pub struct Track {
     pub scale: Option<ScaleDef>,
     pub seed: Option<SeedDef>,
     pub octave_offset: i32,
+    pub program_change: Option<u8>,
     pub root_node: Node,
 }
 

@@ -9,6 +9,7 @@ enum TrackModifier {
     Scale(ScaleDef),
     Seed(SeedDef),
     Octave(i32),
+    ProgramChange(u8),
 }
 
 fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + Clone {
@@ -22,6 +23,12 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
         kw("scale")
             .ignore_then(scale_def())
             .map(TrackModifier::Scale),
+        kw("pc")
+            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<u8>()
+                    .map_err(|e| Simple::custom(span, format!("Invalid PC: {}", e)))
+            }))
+            .map(TrackModifier::ProgramChange),
         kw("up")
             .ignore_then(
                 text::int::<char, Simple<char>>(10)
@@ -92,6 +99,7 @@ pub fn track_parser<'a>(
             let mut track_speed = None;
             let mut track_seed = None;
             let mut track_octave = 0;
+            let mut track_pc = None;
 
             for m in modifiers {
                 match m {
@@ -99,6 +107,7 @@ pub fn track_parser<'a>(
                     TrackModifier::Scale(s) => track_scale = Some(s),
                     TrackModifier::Seed(s) => track_seed = Some(s),
                     TrackModifier::Octave(o) => track_octave += o,
+                    TrackModifier::ProgramChange(pc) => track_pc = Some(pc),
                 }
             }
 
@@ -112,6 +121,7 @@ pub fn track_parser<'a>(
                 scale: track_scale,
                 seed: track_seed,
                 octave_offset: track_octave,
+                program_change: track_pc,
                 root_node,
             }
         })

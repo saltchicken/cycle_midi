@@ -12,6 +12,7 @@ use thread_priority::*;
 const MIDI_NOTE_OFF: u8 = 0x80;
 const MIDI_NOTE_ON: u8 = 0x90;
 const MIDI_CC: u8 = 0xB0;
+const MIDI_PC: u8 = 0xC0;
 const MIDI_CLOCK: u8 = 0xF8;
 const MIDI_START: u8 = 0xFA;
 const MIDI_STOP: u8 = 0xFC;
@@ -67,6 +68,10 @@ pub fn run_scheduler(
     
     let mut staged_program: Option<(String, Program)> = None;
     let mut cycle_count = 0;
+    
+    // State machine to track which tracks are active and their active PC value
+    let mut track_was_playing = [false; 16];
+    let mut active_pcs: [Option<u8>; 16] = [None; 16];
 
     println!("Waiting for initial AST compilation...");
     if let Ok((filename, initial_prog)) = rx.recv() {
@@ -86,6 +91,18 @@ pub fn run_scheduler(
             "Initial AST loaded ({}). Macro-cycle length is {} cycles. Sequence running...",
             current_filename, initial_macro_len
         );
+
+        // Initial track state evaluation to fire immediate PCs
+        for track in &current_program.tracks {
+            let ch = track.channel as usize;
+            if !track.is_muted {
+                track_was_playing[ch] = true;
+                active_pcs[ch] = track.program_change;
+                if let Some(pc) = track.program_change {
+                    send_midi!(midi_tx, vec![MIDI_PC | track.channel, pc]);
+                }
+            }
+        }
     }
 
     let start_time = Instant::now();
@@ -162,6 +179,22 @@ pub fn run_scheduler(
                             send_midi!(midi_tx, vec![MIDI_CC | ch, 11, 127]);
                         }
                     }
+
+                    // Evaluate PC and track states whenever we swap sequences
+                    let mut currently_playing = [false; 16];
+                    for track in &current_program.tracks {
+                        let ch = track.channel as usize;
+                        if !track.is_muted {
+                            currently_playing[ch] = true;
+                            if !track_was_playing[ch] || active_pcs[ch] != track.program_change {
+                                if let Some(pc) = track.program_change {
+                                    send_midi!(midi_tx, vec![MIDI_PC | track.channel, pc]);
+                                }
+                                active_pcs[ch] = track.program_change;
+                            }
+                        }
+                    }
+                    track_was_playing = currently_playing;
 
                     if let Some(new_bpm) = current_program.bpm {
                         if (new_bpm - bpm).abs() > f64::EPSILON {
