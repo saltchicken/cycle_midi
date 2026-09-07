@@ -26,6 +26,7 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
         kw("pc")
             .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<u8>()
+                    .map(|v| v.saturating_sub(1)) // <--- Added: Convert 1-indexed to 0-indexed
                     .map_err(|e| Simple::custom(span, format!("Invalid PC: {}", e)))
             }))
             .map(TrackModifier::ProgramChange),
