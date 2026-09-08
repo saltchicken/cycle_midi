@@ -842,5 +842,80 @@ pub fn traverse_ast(
             // Copy back chord indices so held notes work
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
+        Node::Struct(structure, content) => {
+            // 1. Evaluate the rhythm mask inside the current viewing window
+            let mut struct_events = Vec::new();
+            traverse_ast(structure, ctx, &mut struct_events, rng);
+
+            if struct_events.is_empty() {
+                ctx.active_chord_indices.clear();
+                return;
+            }
+
+            // 2. Evaluate the melody/chord content spanning the entire cycle
+            let mut content_events = Vec::new();
+            let mut content_ctx = ctx.clone();
+            content_ctx.window_start_ms = f64::MIN;
+            content_ctx.window_end_ms = f64::MAX;
+            content_ctx.transition_fade = None; // Avoid double-fading notes
+            traverse_ast(content, &mut content_ctx, &mut content_events, rng);
+
+            let mut all_indices = Vec::new();
+
+            for s_ev in struct_events {
+                match s_ev {
+                    ScheduledEvent::Note { start_ms, duration_ms, velocity: s_vel, .. } => {
+                        let mut matched_notes = Vec::new();
+                        let mut exact_match_found = false;
+
+                        // Check for direct overlap: Find ALL content notes playing *at* start_ms
+                        for c_ev in &content_events {
+                            if let ScheduledEvent::Note { start_ms: c_start, duration_ms: c_dur, pitch, velocity, channel, .. } = c_ev {
+                                if start_ms >= *c_start - 0.1 && start_ms < (*c_start + *c_dur - 0.1) {
+                                    matched_notes.push((*pitch, *velocity, *channel));
+                                    exact_match_found = true;
+                                }
+                            }
+                        }
+
+                        // Fallback: Use the most recently played content notes if we are in a rest gap
+                        if !exact_match_found {
+                            let mut last_start_time = -1.0;
+                            for c_ev in &content_events {
+                                if let ScheduledEvent::Note { start_ms: c_start, pitch, velocity, channel, .. } = c_ev {
+                                    if *c_start <= start_ms + 0.1 {
+                                        // If this note starts later than our tracked cluster, reset the tracking group
+                                        if *c_start - last_start_time > 1.0 {
+                                            matched_notes.clear();
+                                            last_start_time = *c_start;
+                                        }
+                                        matched_notes.push((*pitch, *velocity, *channel));
+                                    }
+                                }
+                            }
+                        }
+
+                        // Map the rhythm timing to ALL matched pitches (reconstructing the chord)
+                        for (pitch, c_vel, matched_channel) in matched_notes {
+                            // Merge structural accents with underlying content velocities
+                            let final_vel = ((s_vel as f32 * c_vel as f32) / 127.0).clamp(1.0, 127.0) as u8;
+                            
+                            out_events.push(ScheduledEvent::Note {
+                                channel: matched_channel,
+                                pitch,
+                                velocity: final_vel,
+                                start_ms,
+                                duration_ms, // Maintains the staccato/legato rhythmic duration
+                            });
+                            all_indices.push(out_events.len() - 1);
+                        }
+                    }
+                    cc @ ScheduledEvent::CC { .. } => {
+                        out_events.push(cc);
+                    }
+                }
+            }
+            ctx.active_chord_indices = all_indices;
+        }
     }
 }

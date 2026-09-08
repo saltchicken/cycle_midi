@@ -529,6 +529,32 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             )
             .map(|segments| Node::SeqP(segments, true));
 
+        let struct_group = kw("struct")
+            .ignore_then(pad_char('('))
+            .ignore_then(expr.clone())
+            .then_ignore(pad_char(','))
+            .then(expr.clone())
+            .then_ignore(pad_char(')'))
+            .map(|(mask, content)| Node::Struct(Box::new(mask), Box::new(content)));
+
+        let euclid_group = just('E')
+            .ignore_then(pad_char('('))
+            .ignore_then(int_u8())
+            .then_ignore(pad_char(','))
+            .then(int_u8())
+            .then_ignore(pad_char(')'))
+            .map(|(p, s)| {
+                Node::Euclidean(
+                    Box::new(Node::Note {
+                        pitch: Pitch::Numeric(0),
+                        velocity: 100,
+                        gate: 100,
+                    }),
+                    p,
+                    s,
+                )
+            });
+
         let atom = choice((
             rest,
             hold,
@@ -537,6 +563,8 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             seq_group,
             shuf_group,
             alt_group,
+            struct_group,
+            euclid_group,
             choice((
                 parallel_group,
                 polymeter_group,

@@ -50,6 +50,7 @@ pub enum Node {
     },
     PhaseShift(Box<Node>, f32),
     WithScale(ScaleDef, Box<Node>),
+    Struct(Box<Node>, Box<Node>),
 }
 
 impl Node {
@@ -95,6 +96,10 @@ impl Node {
             Node::Condition { true_branch, false_branch, .. } | Node::MacroCondition { true_branch, false_branch, .. } => {
                 true_branch.expand_refs(env, depth)?;
                 false_branch.expand_refs(env, depth)?;
+            }
+            Node::Struct(structure, content) => {
+                structure.expand_refs(env, depth)?;
+                content.expand_refs(env, depth)?;
             }
             _ => {}
         }
@@ -151,6 +156,9 @@ impl Node {
                 false_branch,
                 ..
             } => lcm(true_branch.cycle_length(), false_branch.cycle_length()),
+            Node::Struct(structure, content) => {
+                lcm(structure.cycle_length(), content.cycle_length())
+            }
             Node::SpeedModifier(child, speed) => {
                 let child_len = child.cycle_length();
 
