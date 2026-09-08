@@ -75,6 +75,8 @@ module.exports = grammar({
       $.parallel,
       $.polymeter,
       $.seqp,
+      $.struct_group, // <-- Added struct
+      $.euclid_group, // <-- Added standalone euclidean
       $.cc_val,
       $.chord_or_note
     ),
@@ -98,6 +100,12 @@ module.exports = grammar({
       '}'
     ),
 
+    // NEW: struct(mask, content)
+    struct_group: $ => seq('struct', '(', $.expr, ',', $.expr, ')'),
+    
+    // NEW: Standalone Euclidean primitive E(pulses, steps)
+    euclid_group: $ => seq('E', '(', $.int, ',', $.int, ')'),
+
     cc_val: $ => seq(choice('cc', 'CC'), $.int, optional(seq('@', $.dynamic_val))),
     
     // Captures both absolute (C3_maj) and numeric (0_t) chords
@@ -120,7 +128,7 @@ module.exports = grammar({
     ),
 
     _postfix_op: $ => choice(
-      seq('(', $.int, ',', $.int, ')'), // euclidean
+      seq('(', $.int, ',', $.int, ')'), // euclidean postfix
       seq(choice('*', '/'), $._number),   // speed
       seq('arp', '(', $.identifier, ')'),
       seq('ratchet', '(', $.int, ')'),
@@ -133,6 +141,7 @@ module.exports = grammar({
       seq('^', $.int), // invert
       seq('drop', '(', $.int, ')'),
       seq('strum', '(', $._number, ')'),
+      seq('off', '(', $._number, ',', repeat($.postfix), ')'), // <-- Added missing off() modifier
       seq(choice('only', 'm_only'), '(', $.int, optional(seq(',', $.int)), ')'),
       $._cond,
       $._m_cond

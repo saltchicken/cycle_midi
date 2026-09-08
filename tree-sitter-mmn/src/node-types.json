@@ -150,6 +150,21 @@
     }
   },
   {
+    "type": "euclid_group",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "int",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "expr",
     "named": true,
     "fields": {},
@@ -167,6 +182,10 @@
         },
         {
           "type": "chord_or_note",
+          "named": true
+        },
+        {
+          "type": "euclid_group",
           "named": true
         },
         {
@@ -203,6 +222,10 @@
         },
         {
           "type": "shuffled_sequence",
+          "named": true
+        },
+        {
+          "type": "struct_group",
           "named": true
         }
       ]
@@ -261,6 +284,10 @@
         },
         {
           "type": "int",
+          "named": true
+        },
+        {
+          "type": "postfix",
           "named": true
         }
       ]
@@ -376,6 +403,21 @@
         },
         {
           "type": "track_def",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "struct_group",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "expr",
           "named": true
         }
       ]
@@ -532,6 +574,10 @@
     "named": false
   },
   {
+    "type": "E",
+    "named": false
+  },
+  {
     "type": "T",
     "named": false
   },
@@ -645,6 +691,10 @@
     "named": false
   },
   {
+    "type": "off",
+    "named": false
+  },
+  {
     "type": "oh",
     "named": false
   },
@@ -703,6 +753,10 @@
   {
     "type": "string",
     "named": true
+  },
+  {
+    "type": "struct",
+    "named": false
   },
   {
     "type": "strum",
