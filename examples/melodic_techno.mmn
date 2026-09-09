@@ -1,0 +1,47 @@
+#BPM=118
+#SCALE=D3 dorian
+
+#INCLUDE "include/drums.mmn"
+#INCLUDE "include/bass.mmn"
+#INCLUDE "include/progressions.mmn"
+#INCLUDE "include/random.mmn"
+
+// T9 (Pads / Chords) - Slow, evolving pad progression
+// Uses strum() to give the chords a rolled/synth-brass attack
+T9 up 1 slow 8 seed 777 t_every 4:
+  [ 
+    4: $PHRASE_A | 2: $PHRASE_C | 1: $PHRASE_B 
+  ] strum(25.0)
+
+// T2 (Bass) - Rolling 16th-note bassline
+// Alternates between the main tonic groove and a turnaround
+T2 down 1 slow 16 seed 888:
+  [
+    < $B_TONIC $B_PASSING > . $B_TONIC $B_DOM |
+    $B_HOME 3*4 $B_HOME $B_TURN
+  ]
+
+// T1 (Pluck / Arp) - Complex generative arpeggios
+// Uses the 'diverge' arp style and occasionally ratchets notes for a burst effect
+T1 up 2 slow 4 seed 999 t_every 2:
+  {
+    [0@60 2@60 4@70 7@80] arp(diverge) if(2) |
+    [3 5] ratchet(3) if(4, 3) 
+  }
+
+// T4 (Lead) - Glitchy, stuttering lead line
+// Introduces heavy delay trails (stut) and probability (?)
+T4 up 1 slow 2 seed 555 t_every 8:
+  [
+    $LEAD_POOL*2 ?70 | 
+    $LEAD_POOL*4 stut(4, 0.6, 0.5) if(3, 1) 
+  ]
+
+// T10 (Drums) - Driving 4-on-the-floor with generative fills
+T10:
+  {
+    [ 4: $DRUM_MAIN | 1: $DRUM_2 ] |
+    $DRUM_SNARE if(2) |
+    $DRUM_GLITCH if(8) |
+    [ _ _ _ bd*8 ] if(16) // Massive 32nd-note kick roll every 16 cycles
+  }

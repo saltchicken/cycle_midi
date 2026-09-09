@@ -14,13 +14,13 @@ T9 up 1 slow 8 seed 111 t_every 4:
   ]
 
 // T2 (Bass) - Relentless driving groove (*2 doubles the speed to 16ths)
-T7 down 1 slow 4 seed 222 t_every 4:
-  [
+!T7 pc 102 down 1 slow 4 seed 222 t_every 8:
+  [[
     3: $BASS_A | 2: $BASS_B | 1: $BASS_C
-  ]*2
+  ]*2] if(4)
 
 // T1 (Arp) - Classic ascending/descending acid-style runs
-!T8 up 2 slow 2 seed 333 t_every 2:
+T7 up 2 slow 2 seed 333 t_every 2:
   [ 0 1 3 4 ] arp(updown) if(7)
 
 // T4 (Lead) - Hypnotic lead with a heavy, dotted-eighth delay trail

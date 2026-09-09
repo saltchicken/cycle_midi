@@ -1,0 +1,38 @@
+#BPM=85
+#SCALE=F3 lydian
+
+#INCLUDE "include/drums.mmn"
+#INCLUDE "include/bass.mmn"
+#INCLUDE "include/progressions.mmn"
+#INCLUDE "include/random.mmn"
+
+// T9 (Pads) - Dreamy, slowly shifting chords
+// Heavily strummed and phase-shifted slightly (~> 0.125) to pull it off the strict grid
+!T9 up 1 slow 8 seed 101 t_every 4:
+  [ 3: $PAD_A | 2: $PAD_C | 1: $PAD_B ] strum(60.0) ~> 0.125
+
+// T1 (Pluck/Mallets) - Euclidean Polymeters
+// Uses the struct() node to map a 5-against-8 Euclidean rhythm 
+// onto a pool of random lead notes, creating a generative, chiming sequence.
+T9 up 2 slow 2 seed 1202 t_every 8:
+  struct(E(5, 8), $LEAD_POOL) humanize(15, 20.0)
+
+// T2 (Bass) - Sparse, deep foundation
+// Only plays occasionally (?70 probability) and uses an alternator
+T7 down 1 slow 8:
+  < $B_HOME $B_PASSING > ?70
+
+// T4 (Atmospheric Lead) - Phase-shifted parallel delays
+// We use the off() modifier to clone the original phrase, shift it in time (0.33),
+// transpose it up a perfect fifth (up 7), and halve its playback speed (* 0.5).
+T4 up 1 slow 4 seed 404:
+  [ 0 4 2 6 ] arp(converge) off(0.33, up 7 * 0.5) ?50
+
+// T10 (Drums) - Lo-fi, drunken drum groove
+// Extreme timing humanization gives the hi-hats a loose, J Dilla-style unquantized feel
+T10:
+  {
+    [ bd . . bd ] |
+    ch*4 humanize(30, 25.0) |
+    cp ~> 0.05 if(2, 1)
+  }
