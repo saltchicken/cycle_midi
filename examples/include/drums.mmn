@@ -1,1 +1,19 @@
 $DRUM_GLITCH = cp stut(4, 0.5, 0.125)
+$DRUM_SNARE = sn(3,8)
+
+
+$DRUM_1 = 
+  {
+    bd*2 |
+    sn(3,8)
+  }
+
+$DRUM_2 = bd*2 stut(2, 0.5, 0.33)
+
+$DRUM_3 = sn(3,8)
+$DRUM_4 = bd*2
+
+// --- Drum Aliases ---
+// A relentless kick paired with a low tom groove to replace hi-hats
+$DRUM_MAIN = { bd*2 | [ . lt . lt*2 ] }
+
