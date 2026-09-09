@@ -297,6 +297,19 @@
         }
       ]
     },
+    "alias_ref": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "$"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "identifier"
+        }
+      ]
+    },
     "track_def": {
       "type": "SEQ",
       "members": [
@@ -495,17 +508,8 @@
           "value": "_"
         },
         {
-          "type": "SEQ",
-          "members": [
-            {
-              "type": "STRING",
-              "value": "$"
-            },
-            {
-              "type": "SYMBOL",
-              "name": "identifier"
-            }
-          ]
+          "type": "SYMBOL",
+          "name": "alias_ref"
         },
         {
           "type": "SEQ",

@@ -19,6 +19,21 @@
     }
   },
   {
+    "type": "alias_ref",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "alternator",
     "named": true,
     "fields": {},
@@ -173,6 +188,10 @@
       "required": false,
       "types": [
         {
+          "type": "alias_ref",
+          "named": true
+        },
+        {
           "type": "alternator",
           "named": true
         },
@@ -190,10 +209,6 @@
         },
         {
           "type": "expr",
-          "named": true
-        },
-        {
-          "type": "identifier",
           "named": true
         },
         {

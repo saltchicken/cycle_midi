@@ -42,6 +42,8 @@ module.exports = grammar({
 
     alias_def: $ => seq('$', $.identifier, '=', $.expr),
 
+    alias_ref: $ => seq('$', $.identifier),
+
     track_def: $ => seq(
       optional('!'),
       'T', 
@@ -67,7 +69,7 @@ module.exports = grammar({
     _atom: $ => choice(
       '.', // rest
       '_', // hold
-      seq('$', $.identifier), // alias ref
+      $.alias_ref, // alias ref
       seq('scale', '(', $.scale_def, ')', $.expr),
       $.sequence,
       $.shuffled_sequence,
