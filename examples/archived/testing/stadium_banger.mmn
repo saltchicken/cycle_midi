@@ -1,0 +1,34 @@
+#BPM=128
+#SCALE=E3 minor
+
+#INCLUDE "include/drums.mmn"
+#INCLUDE "include/bass.mmn"
+#INCLUDE "include/progressions.mmn"
+#INCLUDE "include/random.mmn"
+
+// T4 (Atmosphere) - Massive stadium chord stabs
+// A slow, heavy progression that anchors the chaos
+T4 up 1 slow 4 seed 303 t_every 4:
+  [ 4: $PHRASE_B | 2: $PHRASE_C ]
+
+// T2 (Bass) - Aggressive, relentless 16th-note drive
+// Dropped down 2 octaves for maximum sub-bass impact
+!T2 down 2 slow 4 seed 101:
+  [ 3: $BASS_A | 1: $BASS_B ]*2
+
+// T1 (Melody) - High-octane lead
+// Randomly selects between a ratcheted arpeggio and a heavy, stuttering lead line
+T1 up 1 slow 2 seed 202 t_every 8:
+  [ 
+    3: [ 0 3 4 7 ] arp(updown) ratchet(2) | 
+    1: $LEAD_POOL*2 stut(4, 0.6, 0.25) 
+  ]
+
+// T10 (Drums) - 4-on-the-floor banger 
+// Big kicks, snappy claps on the off-beat, and a massive snare riser every 8 cycles
+T10:
+  {
+    [ 4: bd*4 | 1: $DRUM_MAIN ] |
+    cp ~> 0.05 if(2, 1) |
+    [ _ _ _ sn*8 ] if(8) 
+  }
