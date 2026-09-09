@@ -15,6 +15,50 @@ fn calculate_lfo_phase(ctx: &RenderContext, speed: f64) -> f64 {
     (virtual_time % lfo_duration) / lfo_duration
 }
 
+/// Helper function to dry up phase-wrapping logic used by Polymeter, Stut, PhaseShift, and SpeedModifier.
+fn render_phase_chunks<F>(
+    ctx: &RenderContext,
+    wrap_duration: f64,
+    shift_ms: f64,
+    new_master_duration: Option<f64>,
+    mut render_fn: F,
+) -> Vec<usize>
+where
+    F: FnMut(&mut RenderContext),
+{
+    let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
+    let offset_in_cycle = ctx.start_ms - ctx.cycle_start_ms;
+    let virtual_start_ms = theoretical_cycle_start + offset_in_cycle - shift_ms;
+
+    let phase_offset = (virtual_start_ms + 1e-9).rem_euclid(wrap_duration);
+    let chunk_start_ms = ctx.start_ms - phase_offset;
+    let chunks_to_render = (ctx.duration_ms / wrap_duration).ceil() as usize + 2;
+
+    let master_dur = new_master_duration.unwrap_or(ctx.master_duration_ms);
+    let mut all_indices = Vec::new();
+
+    for i in 0..chunks_to_render {
+        let absolute_chunk_start = chunk_start_ms + (i as f64 * wrap_duration);
+        let mut chunk_ctx = ctx.clone();
+        chunk_ctx.start_ms = absolute_chunk_start;
+        chunk_ctx.duration_ms = wrap_duration;
+
+        chunk_ctx.window_start_ms = ctx.window_start_ms.max(absolute_chunk_start);
+        chunk_ctx.window_end_ms = ctx.window_end_ms.min(absolute_chunk_start + wrap_duration);
+
+        chunk_ctx.master_duration_ms = master_dur;
+        chunk_ctx.cycle_start_ms = absolute_chunk_start;
+
+        let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * wrap_duration);
+        chunk_ctx.cycle_count = (virtual_chunk_start / master_dur).floor().max(0.0) as usize;
+
+        render_fn(&mut chunk_ctx);
+        all_indices.extend_from_slice(&chunk_ctx.active_chord_indices);
+    }
+    
+    all_indices
+}
+
 pub fn traverse_ast(
     node: &Node,
     ctx: &mut RenderContext,
@@ -236,51 +280,25 @@ pub fn traverse_ast(
                 let mut sub_ctx = ctx.clone();
                 sub_ctx.active_chord_indices = orig_indices.clone();
 
-                if layer.is_empty() {
-                    sub_ctx.active_chord_indices.clear();
-                } else {
+                if !layer.is_empty() {
                     let li = layer.len() as f64;
                     let speed = l0 / li;
                     let local_duration = sub_ctx.duration_ms / speed;
                     
-                    let theoretical_cycle_start = sub_ctx.cycle_count as f64 * sub_ctx.master_duration_ms;
-                    let offset_in_cycle = sub_ctx.start_ms - sub_ctx.cycle_start_ms;
-                    let virtual_start_ms = theoretical_cycle_start + offset_in_cycle;
-
-                    let phase_offset = (virtual_start_ms + 1e-9).rem_euclid(local_duration);
-                    let chunk_start_ms = sub_ctx.start_ms - phase_offset;
-                    let chunks_to_render = (sub_ctx.duration_ms / local_duration).ceil() as usize + 2;
-
-                    for i in 0..chunks_to_render {
-                        let absolute_chunk_start = chunk_start_ms + (i as f64 * local_duration);
-                        let mut chunk_ctx = sub_ctx.clone();
-                        chunk_ctx.start_ms = absolute_chunk_start;
-                        chunk_ctx.duration_ms = local_duration;
-                        
-                        // Bounding the inner evaluation window prevents duplicate notes across phase chunk boundaries
-                        chunk_ctx.window_start_ms = sub_ctx.window_start_ms.max(absolute_chunk_start);
-                        chunk_ctx.window_end_ms = sub_ctx.window_end_ms.min(absolute_chunk_start + local_duration);
-                        
-                        chunk_ctx.master_duration_ms = local_duration;
-                        chunk_ctx.cycle_start_ms = absolute_chunk_start;
-                        
-                        let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * local_duration);
-                        chunk_ctx.cycle_count = (virtual_chunk_start / local_duration).floor().max(0.0) as usize;
-
+                    let layer_indices = render_phase_chunks(&sub_ctx, local_duration, 0.0, Some(local_duration), |chunk_ctx| {
                         let step_duration = local_duration / li;
                         for (step_idx, el) in layer.iter().enumerate() {
                             let mut step_ctx = chunk_ctx.clone();
                             step_ctx.start_ms = chunk_ctx.start_ms + (step_idx as f64 * step_duration);
                             step_ctx.duration_ms = step_duration;
-                            step_ctx.window_start_ms = sub_ctx.window_start_ms.max(step_ctx.start_ms);
-                            step_ctx.window_end_ms = sub_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
+                            step_ctx.window_start_ms = chunk_ctx.window_start_ms.max(step_ctx.start_ms);
+                            step_ctx.window_end_ms = chunk_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
 
                             traverse_ast(el, &mut step_ctx, out_events, rng);
                             chunk_ctx.active_chord_indices = step_ctx.active_chord_indices;
                         }
-                        
-                        sub_ctx.active_chord_indices = chunk_ctx.active_chord_indices;
-                    }
+                    });
+                    sub_ctx.active_chord_indices = layer_indices;
                 }
                 all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
             }
@@ -316,7 +334,6 @@ pub fn traverse_ast(
             }
         }
         Node::Ratchet(child, splits) => {
-            // Ratchet passes the multiplier down instead of re-evaluating the AST
             let mut sub_ctx = ctx.clone();
             sub_ctx.ratchet_splits *= *splits as usize;
             traverse_ast(child, &mut sub_ctx, out_events, rng);
@@ -337,31 +354,10 @@ pub fn traverse_ast(
                 } else {
                     let shift_ms = (*shift_amount * i as f32) as f64 * sub_ctx.duration_ms;
 
-                    let theoretical_cycle_start = sub_ctx.cycle_count as f64 * sub_ctx.master_duration_ms;
-                    let offset_in_cycle = sub_ctx.start_ms - sub_ctx.cycle_start_ms;
-                    let virtual_start_ms = theoretical_cycle_start + offset_in_cycle - shift_ms;
-
-                    let phase_offset = (virtual_start_ms + 1e-9).rem_euclid(sub_ctx.duration_ms);
-                    let chunk_start_ms = sub_ctx.start_ms - phase_offset;
-
-                    let chunks_to_render = 2;
-
-                    for c in 0..chunks_to_render {
-                        let absolute_chunk_start = chunk_start_ms + (c as f64 * sub_ctx.duration_ms);
-                        let mut chunk_ctx = sub_ctx.clone();
-                        chunk_ctx.start_ms = absolute_chunk_start;
-
-                        // Constrain logical window so inner sequence modifiers don't over-evaluate
-                        chunk_ctx.window_start_ms = sub_ctx.window_start_ms.max(absolute_chunk_start);
-                        chunk_ctx.window_end_ms = sub_ctx.window_end_ms.min(absolute_chunk_start + sub_ctx.duration_ms);
-                        chunk_ctx.cycle_start_ms = absolute_chunk_start;
-
-                        let virtual_chunk_start = virtual_start_ms - phase_offset + (c as f64 * sub_ctx.duration_ms);
-                        chunk_ctx.cycle_count = (virtual_chunk_start / sub_ctx.master_duration_ms).floor().max(0.0) as usize;
-
-                        traverse_ast(child, &mut chunk_ctx, out_events, rng);
-                        all_indices.extend_from_slice(&chunk_ctx.active_chord_indices);
-                    }
+                    let stut_indices = render_phase_chunks(&sub_ctx, sub_ctx.duration_ms, shift_ms, None, |chunk_ctx| {
+                        traverse_ast(child, chunk_ctx, out_events, rng);
+                    });
+                    all_indices.extend_from_slice(&stut_indices);
                 }
             }
             ctx.active_chord_indices = all_indices;
@@ -381,14 +377,12 @@ pub fn traverse_ast(
                 let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
                 for i in start_idx..out_events.len() {
                     if let ScheduledEvent::Note { start_ms, .. } = out_events[i] {
-                        // Group simultaneous events using a millisecond-precision key
                         let time_key = (start_ms * 1000.0).round() as i64;
                         notes_by_time.entry(time_key).or_default().push(i);
                     }
                 }
                 
                 for (_, mut indices) in notes_by_time {
-                    // Sort indices from lowest pitch to highest
                     indices.sort_by_key(|&i| {
                         if let ScheduledEvent::Note { pitch, .. } = out_events[i] {
                             pitch
@@ -402,7 +396,6 @@ pub fn traverse_ast(
                     
                     let amt = *amount;
                     if amt > 0 {
-                        // Upward inversions: grab the lowest notes and raise them an octave
                         for inv in 0..amt as usize {
                             let target_idx = indices[inv % num_notes];
                             if let ScheduledEvent::Note { pitch, .. } = &mut out_events[target_idx] {
@@ -410,7 +403,6 @@ pub fn traverse_ast(
                             }
                         }
                     } else {
-                        // Downward inversions: grab the highest notes and drop them an octave
                         let abs_amt = amt.unsigned_abs() as usize;
                         for inv in 0..abs_amt {
                             let target_idx = indices[num_notes - 1 - (inv % num_notes)];
@@ -447,9 +439,7 @@ pub fn traverse_ast(
                     let num_notes = indices.len();
                     let v = *voice as usize;
                     
-                    // A Drop 2 needs at least 2 notes. Drop 3 needs at least 3.
                     if num_notes >= v {
-                        // e.g. If length is 4 and voice is 2 (Drop 2), we want index 2.
                         let target_idx = indices[num_notes - v];
                         if let ScheduledEvent::Note { pitch, .. } = &mut out_events[target_idx] {
                             *pitch = (*pitch as i32 - 12).clamp(0, 127) as u8;
@@ -476,14 +466,12 @@ pub fn traverse_ast(
                 let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
                 for i in start_idx..out_events.len() {
                     if let ScheduledEvent::Note { start_ms, .. } = out_events[i] {
-                        // Group simultaneous events using a millisecond-precision key
                         let time_key = (start_ms * 1000.0).round() as i64;
                         notes_by_time.entry(time_key).or_default().push(i);
                     }
                 }
                 
                 for (_, mut indices) in notes_by_time {
-                    // Sort indices from lowest pitch to highest
                     indices.sort_by_key(|&i| {
                         if let ScheduledEvent::Note { pitch, .. } = out_events[i] {
                             pitch
@@ -517,8 +505,7 @@ pub fn traverse_ast(
                 ctx.cycle_count % max_end
             } else {
                 ctx.cycle_count
-            }
-            ;
+            };
 
             let orig_indices = ctx.active_chord_indices.clone();
             let mut all_indices = Vec::new();
@@ -594,65 +581,16 @@ pub fn traverse_ast(
             let m = *multiplier as f64;
             let local_duration = ctx.duration_ms / m;
             
-            let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
-            let offset_in_cycle = ctx.start_ms - ctx.cycle_start_ms;
-            let virtual_start_ms = theoretical_cycle_start + offset_in_cycle;
-
-            let phase_offset = (virtual_start_ms + 1e-9).rem_euclid(local_duration);
-            let chunk_start_ms = ctx.start_ms - phase_offset;
-            let chunks_to_render = (ctx.duration_ms / local_duration).ceil() as usize + 2;
-
-            for i in 0..chunks_to_render {
-                let absolute_chunk_start = chunk_start_ms + (i as f64 * local_duration);
-                let mut sub_ctx = ctx.clone();
-                sub_ctx.start_ms = absolute_chunk_start;
-                sub_ctx.duration_ms = local_duration;
-                
-                // Enforce logical window bounds for inner multipliers
-                sub_ctx.window_start_ms = ctx.window_start_ms.max(absolute_chunk_start);
-                sub_ctx.window_end_ms = ctx.window_end_ms.min(absolute_chunk_start + local_duration);
-                
-                sub_ctx.master_duration_ms = local_duration;
-                sub_ctx.cycle_start_ms = absolute_chunk_start;
-
-                let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * local_duration);
-                sub_ctx.cycle_count = (virtual_chunk_start / local_duration).floor().max(0.0) as usize;
-
-                traverse_ast(child, &mut sub_ctx, out_events, rng);
-                ctx.active_chord_indices = sub_ctx.active_chord_indices;
-            }
+            ctx.active_chord_indices = render_phase_chunks(ctx, local_duration, 0.0, Some(local_duration), |chunk_ctx| {
+                traverse_ast(child, chunk_ctx, out_events, rng);
+            });
         }
         Node::PhaseShift(child, shift_amount) => {
             let shift_ms = *shift_amount as f64 * ctx.duration_ms;
             
-            let theoretical_cycle_start = ctx.cycle_count as f64 * ctx.master_duration_ms;
-            let offset_in_cycle = ctx.start_ms - ctx.cycle_start_ms;
-            
-            let virtual_start_ms = theoretical_cycle_start + offset_in_cycle - shift_ms;
-
-            let phase_offset = (virtual_start_ms + 1e-9).rem_euclid(ctx.duration_ms);
-            let chunk_start_ms = ctx.start_ms - phase_offset;
-            
-            let chunks_to_render = 2; 
-            let mut all_indices = Vec::new();
-
-            for i in 0..chunks_to_render {
-                let absolute_chunk_start = chunk_start_ms + (i as f64 * ctx.duration_ms);
-                let mut sub_ctx = ctx.clone();
-                sub_ctx.start_ms = absolute_chunk_start;
-                
-                // Enforce logical window bounds for phase-shifted chunks
-                sub_ctx.window_start_ms = ctx.window_start_ms.max(absolute_chunk_start);
-                sub_ctx.window_end_ms = ctx.window_end_ms.min(absolute_chunk_start + ctx.duration_ms);
-                sub_ctx.cycle_start_ms = absolute_chunk_start;
-                
-                let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * ctx.duration_ms);
-                sub_ctx.cycle_count = (virtual_chunk_start / ctx.master_duration_ms).floor().max(0.0) as usize;
-
-                traverse_ast(child, &mut sub_ctx, out_events, rng);
-                all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
-            }
-            ctx.active_chord_indices = all_indices;
+            ctx.active_chord_indices = render_phase_chunks(ctx, ctx.duration_ms, shift_ms, None, |chunk_ctx| {
+                traverse_ast(child, chunk_ctx, out_events, rng);
+            });
         }
         Node::Arp(child, style) => {
             let mut temp_events = Vec::new();
