@@ -1,15 +1,18 @@
 #BPM=80
-#SCALE=C4 major
+#SCALE_SEQ { (0,8): C3 major | (8,16): G3 major | (16,24): D3 major | (24,32): A2 major }
 #QUANTIZE=auto
 
 #INCLUDE "include/drums.mmn"
 #INCLUDE "include/progressions.mmn"
+#INCLUDE "include/bass.mmn"
 
 T10:
-  $DRUM_3
+  $DRUM_1
 
 T1:
   seqPLoop {
       (0, 4): $PHRASE_A / 4 |
       (4, 8): $PHRASE_B / 4
     }
+T2 down 1:
+  $BASS_A
