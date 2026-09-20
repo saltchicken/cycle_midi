@@ -1,0 +1,22 @@
+#BPM=80
+#SCALE=C4 major
+#QUANTIZE=auto
+
+#INCLUDE "include/drums.mmn"
+
+T10:
+  $DRUM_MAIN
+
+T1:
+  seqPLoop {
+    (0, 2): [0 2 4 7 9 4 7 9] |
+    (2, 4): [0 1 5 8 10 5 8 10] |
+    (4, 6): [-1 1 4 8 10 4 8 10] |
+    (6, 8): [0 2 4 7 9 4 7 9]
+  }
+
+T2 slow 8 down 2:
+  0 0 -1 0
+
+T3 slow 8 down 1:
+  [4+7+9] [5+8+10] [4+8+10] [4+7+9]

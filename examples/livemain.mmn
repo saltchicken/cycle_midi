@@ -1,0 +1,18 @@
+#BPM=80
+#SCALE=C4 major
+#SCALE_SEQ { (0,4): E3 dorian | (4,8): B3 dorian | (8,12): F#3 dorian | (12,16): C#3 dorian }
+#QUANTIZE=auto
+
+#INCLUDE "include/drums.mmn"
+
+T10:
+  $DRUM_MAIN
+
+// --- Chords ---
+T2:
+  seqPLoop {
+    (0, 2): [0 2 4 7 9 4 7 9] |
+    (2, 4): [0 1 5 8 10 5 8 10] |
+    (4, 6): [-1 1 4 8 10 4 8 10] |
+    (6, 8): [0 2 4 7 9 4 7 9]
+  }

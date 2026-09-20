@@ -1,0 +1,57 @@
+#BPM=80
+#SCALE=C4 major
+#QUANTIZE=auto
+
+// --- TODO Implemented: Circle of 5ths Scale Progression ---
+// Progresses through E -> B -> F# -> C# Dorian every 4 cycles
+#SCALE_SEQ { (0,4): E3 dorian | (4,8): B3 dorian | (8,12): F#3 dorian | (12,16): C#3 dorian }
+
+// --- Missing Aliases / Pattern Pool ---
+
+// The main drum groove (can also be saved inside include/drums.mmn)
+$DRUM_MAIN = [ bd ch sn ch . ch sn bd ]
+
+// A rhythmic bassline using diatonic scale degrees (0 is root, -2 is a diatonic 7th below)
+$BASS_A = [ 0 . 0 -2 0 . 3 4 ]
+
+// A 4-chord progression using the diatonic chord primitive syntax
+$PAD_A = [ 0_7th 3_7th 4_7th 2_7th ]
+
+// A pool of diatonic intervals to randomly choose from using the [ | ] syntax
+$LEAD_POOL = [ 0 | 2 | 4 | 7 ]
+
+// A pool of intervals for the euclidean texture to pluck
+$RANDOM_INTERVAL = [ 0 | 4 | 7 | 9 ]
+
+
+// ==========================================
+// SCENE TRACKS
+// ==========================================
+
+T10:
+  { $DRUM_MAIN }
+
+// --- Bass ---
+T1 down 1:
+  $BASS_A
+
+// --- Chords ---
+T2:
+  seqPLoop {
+    (0, 2): [0 2 4 7 9 4 7 9] |
+    (2, 4): [0 1 5 8 10 5 8 10] |
+    (4, 6): [-1 1 4 8 10 4 8 10] |
+    (6, 8): [0 2 4 7 9 4 7 9]
+  }
+
+
+// --- Generative Lead (MIDI Channel 3) ---
+// Selects a random note from the pool, speeds it up 4x, arpeggiates it, 
+// and only plays every 2nd macro-cycle (A/B phrasing).
+T3 up 2:
+  $LEAD_POOL *4 arp(updown) m_if(2,1)
+
+// --- Euclidean Texture (MIDI Channel 4) ---
+// Plucks a random interval 3 times over 8 steps, applying a fading stutter delay.
+T4 up 1:
+  $RANDOM_INTERVAL (3,8) stut(4, 0.6, 0.25)
