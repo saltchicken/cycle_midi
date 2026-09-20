@@ -24,6 +24,7 @@ pub fn scale_name() -> impl Parser<char, Vec<u8>, Error = Simple<char>> + Clone 
         just("mixolydian").to(vec![0, 2, 4, 5, 7, 9, 10]),
         just("locrian").to(vec![0, 1, 3, 5, 6, 8, 10]),
         just("pentatonic").to(vec![0, 2, 4, 7, 9]),
+        just("chromatic").to(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
     ))
 }
 
