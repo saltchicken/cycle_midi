@@ -1,22 +1,25 @@
-$BASE = [ bd ch sn ch . ch sn bd ]
-$FILL = [ sn sn bd bd sn sn bd bd ]
+$KICK_1 = bd*2
+$KICK_2 = bd*2 stut(2, 0.5, 0.33)
 
-$DRUM_MAIN = seqPLoop{
-    (0, 7): $BASE |
-    (7, 8): $FILL
-}
+$SNARE_1 = sn(3,8)
 
-$DRUM_GLITCH = cp stut(4, 0.5, 0.125)
-$DRUM_SNARE = sn(3,8)
-$DRUM_KICK = { bd*2 | [ . lt . lt*2 ] }
+$CLAP_1 = cp*2
+$CLAP_2 = cp stut(4, 0.5, 0.125)
 
-$DRUM_1 = 
+$TOM_1 = lt*2
+$TOM_2 = [ . lt . lt*2 ] 
+
+
+$DRUM_1 =
   {
-    bd*2 |
-    sn(3,8)
+    $KICK_1 |
+    $SNARE_1
   }
 
-$DRUM_2 = bd*2 stut(2, 0.5, 0.33)
+$DRUM_2 = { $KICK_1 | $TOM_2 }
 
-$DRUM_3 = sn(3,8)
-$DRUM_4 = bd*2
+$DRUM_3 = seqPLoop{
+    (0, 7): [ bd ch sn ch . ch sn bd ] |
+    (7, 8): [ sn sn bd bd sn sn bd bd ]
+}
+
