@@ -49,7 +49,7 @@ pub fn initialize_config() -> (AppConfig, PathBuf, PathBuf) {
              # default_quantize = \"auto\"\n\
              # Optional: Maximum macro-cycles to wait for a transition when quantize is AUTO\n\
              # max_auto_quantize = 16\n",
-            default_workspace.display()
+            default_workspace.display().to_string().replace('\\', "\\\\")
         );
         fs::write(&config_path, default_config_content)
             .expect("Failed to write default config.toml");

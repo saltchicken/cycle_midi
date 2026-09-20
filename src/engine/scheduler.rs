@@ -36,6 +36,8 @@ pub fn run_scheduler(
     max_auto_quantize: usize,
 ) {
     let thread_id = thread_native_id();
+    
+    #[cfg(unix)]
     if let Err(e) = set_thread_priority_and_policy(
         thread_id,
         ThreadPriority::Max,
@@ -47,6 +49,13 @@ pub fn run_scheduler(
         );
     } else {
         println!("Main timing loop elevated to SCHED_FIFO Real-Time priority!");
+    }
+
+    #[cfg(windows)]
+    if let Err(e) = set_thread_priority(thread_id, ThreadPriority::Max) {
+        eprintln!("Notice: Could not set Max thread priority. Jitter may occur: {:?}", e);
+    } else {
+        println!("Main timing loop elevated to Max priority!");
     }
 
     let mut bpm = 120.0;

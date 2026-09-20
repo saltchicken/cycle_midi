@@ -1,10 +1,12 @@
 use midir::MidiOutput;
+#[cfg(unix)]
 use midir::os::unix::VirtualOutput;
 use rtrb::{Producer, RingBuffer};
 use std::thread;
 use std::time::Duration;
 use thread_priority::*;
 
+#[allow(unused_assignments)]
 pub fn setup_midi(
     target_port: &Option<String>,
 ) -> Result<Producer<Vec<u8>>, Box<dyn std::error::Error>> {
@@ -40,21 +42,33 @@ pub fn setup_midi(
             }
         }
 
-        println!("Falling back to Virtual MIDI Port.");
-        let conn = midi_out.create_virtual("MMN Live Port")?;
-        println!("Virtual MIDI Port 'MMN Live Port' created. Route it to your synth!");
-        conn
+        #[cfg(unix)]
+        {
+            println!("Falling back to Virtual MIDI Port.");
+            let conn = midi_out.create_virtual("MMN Live Port")?;
+            println!("Virtual MIDI Port 'MMN Live Port' created. Route it to your synth!");
+            conn
+        }
+        #[cfg(windows)]
+        {
+            return Err("No matching MIDI port found! Windows does not support virtual ports. Please start loopMIDI, ensure the port name matches your config.toml exactly, and try again.".into());
+        }
     };
 
     let (midi_tx, mut midi_rx) = RingBuffer::<Vec<u8>>::new(4096);
 
     thread::spawn(move || {
         let thread_id = thread_native_id();
+        
+        #[cfg(unix)]
         let _ = set_thread_priority_and_policy(
             thread_id,
             ThreadPriority::Max,
             ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo),
         );
+
+        #[cfg(windows)]
+        let _ = set_thread_priority(thread_id, ThreadPriority::Max);
 
         let mut shutdown = false;
         loop {
