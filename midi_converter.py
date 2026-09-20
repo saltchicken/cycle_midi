@@ -1,7 +1,7 @@
 import mido
 import re
+import argparse
 
-# The exact interval definitions from your src/parser/directives.rs
 SCALES = {
     "major": [0, 2, 4, 5, 7, 9, 11],
     "minor": [0, 2, 3, 5, 7, 8, 10],
@@ -16,14 +16,13 @@ SCALES = {
 }
 
 def parse_root_pitch(note_name):
-    """Converts a pitch literal like C4 or D#3 to a raw MIDI note number."""
     notes = {"C": 0, "C#": 1, "DB": 1, "D": 2, "D#": 3, "EB": 3, 
              "E": 4, "F": 5, "F#": 6, "GB": 6, "G": 7, "G#": 8, 
              "AB": 8, "A": 9, "A#": 10, "BB": 10, "B": 11}
     
     match = re.match(r"([A-Ga-g][#bB]?)(-?\d+)", note_name)
     if not match:
-        return 60  # Default to C4 if unparseable
+        return 60
         
     note_str = match.group(1).upper()
     octave = int(match.group(2))
@@ -32,21 +31,17 @@ def parse_root_pitch(note_name):
     return (octave + 1) * 12 + base
 
 def midi_to_scale_degree(midi_note, root_midi, scale_intervals):
-    """Reverses the logic in your resolve_pitch function."""
     diff = midi_note - root_midi
     
-    # Python's // and % operate identically to Rust's div_euclid / rem_euclid
     octave_diff = diff // 12
     pc_diff = diff % 12
     scale_len = len(scale_intervals)
     
-    # 1. Exact match in the scale
     if pc_diff in scale_intervals:
         degree_index = scale_intervals.index(pc_diff)
         numeric_degree = (octave_diff * scale_len) + degree_index
         return str(numeric_degree)
         
-    # 2. Out of scale: Find the closest interval below it and add a sharp
     closest_idx = 0
     for i, interval in enumerate(scale_intervals):
         if interval < pc_diff:
@@ -57,10 +52,13 @@ def midi_to_scale_degree(midi_note, root_midi, scale_intervals):
     
     return f"{numeric_degree}{'#' * accidental}"
 
-def convert_midi_to_intervals(filepath, target_scale="C4 major"):
-    mid = mido.MidiFile(filepath)
-    
-    # Setup the scale definitions
+def convert_midi_to_intervals(filepath, target_scale, output_format, notes_per_cycle):
+    try:
+        mid = mido.MidiFile(filepath)
+    except Exception as e:
+        print(f"Error loading MIDI file: {e}")
+        return
+
     parts = target_scale.split()
     root_name = parts[0]
     scale_name = parts[1] if len(parts) > 1 else "major"
@@ -75,11 +73,64 @@ def convert_midi_to_intervals(filepath, target_scale="C4 major"):
                 degree_str = midi_to_scale_degree(msg.note, root_midi, scale_intervals)
                 notes.append(degree_str)
 
-    # Output your MMN format
+    if not notes:
+        print("No Note On events found in the MIDI file.")
+        return
+
+    # Render Output
     print(f"#SCALE={target_scale}")
     print("T1:")
-    print("  " + " ".join(notes))
+    
+    if output_format == "raw":
+        print("  " + " ".join(notes))
+        
+    elif output_format == "seqploop":
+        print("  seqPLoop {")
+        
+        # Split notes into chunks of 'notes_per_cycle'
+        chunks = [notes[i:i + notes_per_cycle] for i in range(0, len(notes), notes_per_cycle)]
+        max_chunk = len(chunks) - 1
+        
+        for i, chunk in enumerate(chunks):
+            seq_str = " ".join(chunk)
+            separator = " |" if i < max_chunk else ""
+            print(f"    ({i}, {i + 1}): [{seq_str}]{separator}")
+            
+        print("  }")
 
 if __name__ == "__main__":
-    # Just update this to the scale you want to lock the intervals to
-    convert_midi_to_intervals("PreludeCMajor.mid", "C4 major")
+    parser = argparse.ArgumentParser(description="Convert a MIDI file to MMN format.")
+    
+    parser.add_argument(
+        "filepath", 
+        type=str, 
+        help="Path to the input .mid file"
+    )
+    parser.add_argument(
+        "-s", "--scale", 
+        type=str, 
+        default="C4 major", 
+        help="Target scale (e.g., 'C4 major', 'G3 minor'). Default: 'C4 major'"
+    )
+    parser.add_argument(
+        "-f", "--format", 
+        type=str, 
+        choices=["raw", "seqploop"], 
+        default="seqploop", 
+        help="Output format: 'raw' for a flat list, or 'seqploop' for chunked cycles. Default: 'seqploop'"
+    )
+    parser.add_argument(
+        "-n", "--notes", 
+        type=int, 
+        default=8, 
+        help="Notes per cycle when using 'seqploop' format. Default: 8"
+    )
+
+    args = parser.parse_args()
+
+    convert_midi_to_intervals(
+        filepath=args.filepath, 
+        target_scale=args.scale, 
+        output_format=args.format, 
+        notes_per_cycle=args.notes
+    )
