@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
+use std::io::Write;
 use thread_priority::*;
 
 // MIDI Status Byte Constants
@@ -143,7 +144,7 @@ pub fn run_scheduler(
             Ok((filename, new_prog)) => {
                 let staged_macro_len = new_prog.pattern_length_cycles();
                 println!(
-                    "AST staged from {}! Macro-cycle length is {} cycles. Waiting for phrase boundary...",
+                    "\nAST staged from {}! Macro-cycle length is {} cycles. Waiting for phrase boundary...",
                     filename, staged_macro_len
                 );
                 staged_program = Some((filename, new_prog));
@@ -175,12 +176,12 @@ pub fn run_scheduler(
                     
                     if is_hot_reload {
                         println!(
-                            "Hot reloaded {}! (Sequence loop length: {} cycles)",
+                            "\nHot reloaded {}! (Sequence loop length: {} cycles)",
                             current_filename, calculated_len
                         );
                     } else {
                         println!(
-                            "Swapped to new pattern: {}! (Sequence loop length: {} cycles)",
+                            "\nSwapped to new pattern: {}! (Sequence loop length: {} cycles)",
                             current_filename, calculated_len
                         );
                         // THE DROP: Reset Expression/Volume to max on the new phrase!
@@ -208,7 +209,7 @@ pub fn run_scheduler(
                     if let Some(new_bpm) = current_program.bpm {
                         if (new_bpm - bpm).abs() > f64::EPSILON {
                             bpm = new_bpm;
-                            println!("BPM updated to: {}", bpm);
+                            println!("\nBPM updated to: {}", bpm);
                         }
                     }
                     let (num, den) = current_program.signature.unwrap_or((4, 4));
@@ -229,12 +230,12 @@ pub fn run_scheduler(
                         }
 
                         println!(
-                            "Transitioning to {}... {} cycles left (Fade: {})",
+                            "\nTransitioning to {}... {} cycles left (Fade: {})",
                             staged_filename, cycles_left, sweep_val
                         );
                     } else {
                         println!(
-                            "Hot reloading {} in {} cycles... (Waiting for full phrase length of {})",
+                            "\nHot reloading {} in {} cycles... (Waiting for full phrase length of {})",
                             staged_filename, cycles_left, target_q_cycles
                         );
                     }
@@ -256,6 +257,12 @@ pub fn run_scheduler(
             upcoming_events = new_events;
 
             next_cycle_start_ms += cycle_duration_ms;
+
+            // In-place terminal visualizer tracker
+            let display_cycle = (cycle_count % pattern_len.max(1)) + 1;
+            print!("\r▶ Playing: {} | Cycle: {} / {} \x1B[K", current_filename, display_cycle, pattern_len);
+            let _ = std::io::stdout().flush();
+
             cycle_count += 1;
         }
 
@@ -338,7 +345,7 @@ pub fn run_scheduler(
         }
     }
 
-    println!("Stopping playback and clearing active notes...");
+    println!("\nStopping playback and clearing active notes...");
 
     for &(_, channel, pitch) in &active_notes {
         send_midi!(midi_tx, vec![MIDI_NOTE_OFF | channel, pitch, 0]);
