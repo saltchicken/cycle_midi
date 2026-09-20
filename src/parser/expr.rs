@@ -115,10 +115,21 @@ fn diatonic_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + 
 }
 
 fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
+    let accidental = choice((
+        just('#').to(1),
+        just('b').to(-1),
+    ))
+    .repeated()
+    .map(|accs| accs.into_iter().sum::<i32>());
+
+    let numeric_pitch = int_i32()
+        .then(accidental.clone())
+        .map(|(degree, acc)| Pitch::Numeric(degree, acc));
+
     let single_pitch = pitch_val()
         .or(drum_val())
         .map(Pitch::Absolute)
-        .or(int_i32().map(Pitch::Numeric))
+        .or(numeric_pitch)
         .map(|p| vec![p]);
 
     let absolute_named_chord = pitch_val()
@@ -132,12 +143,13 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         });
 
     let numeric_named_chord = int_i32()
+        .then(accidental.clone())
         .then_ignore(just('_'))
         .then(diatonic_chord_type())
-        .map(|(root_degree, intervals)| {
+        .map(|((root_degree, acc), intervals)| {
             intervals
                 .into_iter()
-                .map(|interval| Pitch::Numeric(root_degree + interval))
+                .map(|interval| Pitch::Numeric(root_degree + interval, acc))
                 .collect::<Vec<_>>()
         });
 
@@ -546,7 +558,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .map(|(p, s)| {
                 Node::Euclidean(
                     Box::new(Node::Note {
-                        pitch: Pitch::Numeric(0),
+                        pitch: Pitch::Numeric(0, 0),
                         velocity: 100,
                         gate: 100,
                     }),

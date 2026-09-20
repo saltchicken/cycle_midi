@@ -19,7 +19,7 @@ pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>, octave_offset: i32
     let shift = octave_offset * 12;
     match pitch {
         Pitch::Absolute(p) => (*p as i32 + shift).clamp(0, 127) as u8,
-        Pitch::Numeric(val) => {
+        Pitch::Numeric(val, accidental) => {
             let val = *val;
             if let Some(scale) = scale {
                 let scale_len = scale.intervals.len() as i32;
@@ -28,10 +28,11 @@ pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>, octave_offset: i32
                 let note = scale.root_pitch as i32
                     + (octave * 12)
                     + scale.intervals[degree] as i32
+                    + *accidental
                     + shift;
                 note.clamp(0, 127) as u8
             } else {
-                (val + shift).clamp(0, 127) as u8
+                (val + *accidental + shift).clamp(0, 127) as u8
             }
         }
     }

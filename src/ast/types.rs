@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pitch {
     Absolute(u8),
-    Numeric(i32),
+    Numeric(i32, i32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
