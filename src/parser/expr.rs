@@ -541,6 +541,34 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             )
             .map(|segments| Node::SeqP(segments, true));
 
+        let chain_segment = text::int::<char, Simple<char>>(10)
+            .try_map(|s, span| {
+                s.parse::<usize>()
+                    .map_err(|e| Simple::custom(span, format!("Invalid duration: {}", e)))
+            })
+            .then_ignore(pad_char(':'))
+            .then(expr.clone());
+
+        let chain_loop = kw("chain")
+            .ignore_then(
+                chain_segment
+                    .padded_by(padding())
+                    .repeated() // Removes the need for separated_by('|')
+                    .delimited_by(pad_char('{'), pad_char('}'))
+            )
+            .map(|segments| {
+                let mut current_start = 0;
+                let mut seqp_segments = Vec::new();
+                
+                for (duration, node) in segments {
+                    let end = current_start + duration;
+                    seqp_segments.push((current_start, end, Box::new(node)));
+                    current_start = end;
+                }
+                
+                Node::SeqP(seqp_segments, true)
+            });
+
         let struct_group = kw("struct")
             .ignore_then(pad_char('('))
             .ignore_then(expr.clone())
@@ -580,6 +608,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             choice((
                 parallel_group,
                 polymeter_group,
+                chain_loop,
                 seqploop,
                 seqp,      
                 cc_parser(),
