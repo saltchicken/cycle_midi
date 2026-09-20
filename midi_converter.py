@@ -139,6 +139,32 @@ def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_c
             
         print("  }")
 
+    elif output_format == "chain":
+        print("  chain {")
+        
+        chunks = [grid[i:i + steps_per_cycle] for i in range(0, len(grid), steps_per_cycle)]
+        
+        if chunks:
+            # Run-length encode the chunks to take advantage of chain's relative durations
+            rle_chunks = []
+            current_chunk = chunks[0]
+            count = 1
+            
+            for chunk in chunks[1:]:
+                if chunk == current_chunk:
+                    count += 1
+                else:
+                    rle_chunks.append((count, current_chunk))
+                    current_chunk = chunk
+                    count = 1
+            rle_chunks.append((count, current_chunk))
+            
+            for count, chunk in rle_chunks:
+                seq_str = " ".join(chunk)
+                print(f"    {count}: [{seq_str}]")
+            
+        print("  }")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Quantize a MIDI file into MMN sequence syntax.")
     
@@ -156,9 +182,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "-f", "--format", 
         type=str, 
-        choices=["raw", "seqploop"], 
-        default="seqploop", 
-        help="Output format. 'raw' for flat list, 'seqploop' for chunked cycles. Default: 'seqploop'"
+        choices=["raw", "seqploop", "chain"], 
+        default="chain", 
+        help="Output format. 'raw' for flat list, 'seqploop' for chunked cycles, 'chain' for relative duration sequence. Default: 'chain'"
     )
     parser.add_argument(
         "-g", "--grid", 
