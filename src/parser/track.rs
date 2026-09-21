@@ -1,6 +1,6 @@
 use super::directives::scale_def;
 use super::primitives::{int_i32, kw, padding};
-use crate::ast::{Node, ScaleDef, SeedDef, SeedInterval, Track};
+use crate::ast::{Modifier, Node, ScaleDef, SeedDef, SeedInterval, Track};
 use chumsky::prelude::*;
 
 #[derive(Clone)]
@@ -94,7 +94,7 @@ pub fn track_parser<'a>(
             }
 
             if let Some(s) = track_span {
-                root_node = Node::Span(Box::new(root_node), s);
+                root_node = Node::Modified(Box::new(root_node), vec![Modifier::Span(s)]);
             }
 
             Track {

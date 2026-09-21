@@ -1,7 +1,7 @@
 use super::directives::global_directives;
 use super::primitives::{float_f32, float_f64, int_i32, int_u8, kw, pad_char, padding};
 use super::track::track_parser;
-use crate::ast::{ArpStyle, DynamicValue, Node, Pitch, Program};
+use crate::ast::{ArpStyle, DynamicValue, Modifier, Node, Pitch, Program};
 use chumsky::prelude::*;
 use std::collections::HashMap;
 
@@ -71,7 +71,6 @@ fn cc_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         })
 }
 
-// Scale degree offsets for numeric diatonic chords (e.g., 0'triad)
 fn diatonic_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + Clone {
     choice((
         just("triad").or(just("t")).to(vec![0, 2, 4]),
@@ -97,7 +96,7 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
 
     let numeric_named_chord = int_i32()
         .then(accidental.clone())
-        .then_ignore(just('\'')) // FIX: Use apostrophe to avoid '_' hold clash
+        .then_ignore(just('\'')) 
         .then(diatonic_chord_type())
         .map(|((root_degree, acc), intervals)| {
             intervals
@@ -111,13 +110,12 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
     let velocity = pad_char('@').ignore_then(int_u8());
     let gate = pad_char('%').ignore_then(int_u8());
 
-    // Allow velocities and gates on each individual pitch component within the chord
     let modified_pitch_group = pitch_group
         .then(velocity.clone().or_not())
         .then(gate.clone().or_not());
 
     modified_pitch_group
-        .separated_by(pad_char('&')) // FIX: Use '&' to avoid mathematical '+' clash
+        .separated_by(pad_char('&')) 
         .at_least(1)
         .then(velocity.or_not())
         .then(gate.or_not())
@@ -153,7 +151,6 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             .then_ignore(pad_char(')'))
             .map(|(p, s)| PostfixOp::Euclidean(p, s));
 
-        // DX FIX: Shorthand multiplier for span (e.g., /2 instead of span(2))
         let shorthand_span = pad_char('/')
             .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<usize>()
@@ -187,7 +184,6 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Arp);
 
-        // DX FIX: Shorthand multiplier for ratchets (e.g., *4 instead of ratchet(4))
         let shorthand_ratchet = pad_char('*')
             .ignore_then(int_u8())
             .map(PostfixOp::Ratchet);
@@ -330,33 +326,42 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
     })
 }
 
-fn apply_postfix(acc: Node, post: PostfixOp) -> Node {
+fn apply_postfix(mut acc: Node, post: PostfixOp) -> Node {
     match post {
-        PostfixOp::Euclidean(p, s) => Node::Euclidean(Box::new(acc), p, s),
-        PostfixOp::Span(val) => Node::Span(Box::new(acc), val),
-        PostfixOp::Arp(style) => Node::Arp(Box::new(acc), style),
-        PostfixOp::Ratchet(splits) => Node::Ratchet(Box::new(acc), splits),
-        PostfixOp::Stut(d, f, t) => Node::Stut(Box::new(acc), d, f, t),
-        PostfixOp::Humanize(vel, time) => Node::Humanize(Box::new(acc), vel, time),
-        PostfixOp::PhaseShift(val) => Node::PhaseShift(Box::new(acc), val),
-        PostfixOp::Invert(amount) => Node::Invert(Box::new(acc), amount),
-        PostfixOp::Drop(voice) => Node::Drop(Box::new(acc), voice),
-        PostfixOp::Prob(p) => Node::Probability(Box::new(acc), p),
-        PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc), amt),
-        PostfixOp::Strum(amt) => Node::Strum(Box::new(acc), amt),
-        PostfixOp::ExtractPitch(ext_type, limit, offset) => {
-            Node::ExtractPitch(Box::new(acc), ext_type, limit, offset)
-        }
-        PostfixOp::Chordify(limit, offset) => Node::Chordify(Box::new(acc), limit, offset),
-        PostfixOp::VelocityOverride(v) => Node::VelocityOverride(Box::new(acc), v),
-
         PostfixOp::Off(shift, mods) => {
             let mut shifted = acc.clone();
             for m in mods {
                 shifted = apply_postfix(shifted, m);
             }
-            shifted = Node::PhaseShift(Box::new(shifted), shift);
+            shifted = Node::Modified(Box::new(shifted), vec![Modifier::PhaseShift(shift)]);
             Node::Parallel(vec![vec![acc], vec![shifted]])
+        }
+        other => {
+            let modifier = match other {
+                PostfixOp::Euclidean(p, s) => Modifier::Euclidean(p, s),
+                PostfixOp::Span(val) => Modifier::Span(val),
+                PostfixOp::Arp(style) => Modifier::Arp(style),
+                PostfixOp::Ratchet(splits) => Modifier::Ratchet(splits),
+                PostfixOp::Stut(d, f, t) => Modifier::Stut(d, f, t),
+                PostfixOp::Humanize(vel, time) => Modifier::Humanize(vel, time),
+                PostfixOp::Prob(p) => Modifier::Probability(p),
+                PostfixOp::PhaseShift(val) => Modifier::PhaseShift(val),
+                PostfixOp::Invert(amount) => Modifier::Invert(amount),
+                PostfixOp::Drop(voice) => Modifier::Drop(voice),
+                PostfixOp::Transpose(amt) => Modifier::Transpose(amt),
+                PostfixOp::Strum(amt) => Modifier::Strum(amt),
+                PostfixOp::ExtractPitch(ext_type, limit, offset) => Modifier::ExtractPitch(ext_type, limit, offset),
+                PostfixOp::Chordify(limit, offset) => Modifier::Chordify(limit, offset),
+                PostfixOp::VelocityOverride(v) => Modifier::VelocityOverride(v),
+                PostfixOp::Off(..) => unreachable!(),
+            };
+            match acc {
+                Node::Modified(_, ref mut mods) => {
+                    mods.push(modifier);
+                    acc
+                }
+                _ => Node::Modified(Box::new(acc), vec![modifier])
+            }
         }
     }
 }
@@ -365,7 +370,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let pad_expr = padding();
     let expr = recursive(move |expr| {
         let rest = just('.').to(Node::Rest);
-        let hold = just('_').to(Node::Hold); // FIX: Now completely decoupled from chords
+        let hold = just('_').to(Node::Hold); 
 
         let alias_ref = just('$')
             .ignore_then(text::ident())
@@ -379,7 +384,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then(expr.clone())
             .map(|(scale, child)| Node::WithScale(scale, Box::new(child)));
 
-        // FIX: Unified Random Choice & Sequence to prevent parsing overlaps inside `[` `]`
         let choice_branch = int_u8()
             .padded_by(pad_expr.clone())
             .then_ignore(pad_char(':'))
@@ -403,7 +407,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .delimited_by(pad_char('['), pad_char(']'))
             .map(|choices| {
                 if choices.len() == 1 && choices[0].0.is_none() {
-                    choices.into_iter().next().unwrap().1 // Plain Sequence
+                    choices.into_iter().next().unwrap().1 
                 } else {
                     Node::RandomChoice(
                         choices
@@ -423,7 +427,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             )
             .map(Node::ShuffledSequence);
 
-        // FIX: Unambiguous < > syntax for Alternator
         let alt_group = expr
             .clone()
             .padded_by(pad_expr.clone())
@@ -433,17 +436,15 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
         let parallel_layer = expr.clone().padded_by(pad_expr.clone()).repeated();
 
-        // FIX: Strict {| |} for Parallel removes `{ }` Polymeter clash completely
         let parallel_group = parallel_layer
             .clone()
             .separated_by(pad_char('|'))
             .delimited_by(just("{|").padded_by(padding()), just("|}").padded_by(padding()))
             .map(Node::Parallel);
 
-        // FIX: Regular { , } reserved safely for Polymeter
         let polymeter_group = parallel_layer
             .separated_by(pad_char(','))
-            .delimited_by(pad_char('{'), pad_char('}'))
+            .delimited_by(pad_char('}'), pad_char('}'))
             .map(Node::Polymeter);
 
         let arrange_segment = pad_char('(')
@@ -540,14 +541,13 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then(int_u8())
             .then_ignore(pad_char(')'))
             .map(|(p, s)| {
-                Node::Euclidean(
+                Node::Modified(
                     Box::new(Node::Note {
                         pitch: Pitch::Numeric(0, 0),
                         velocity: 100,
                         gate: 100,
                     }),
-                    p,
-                    s,
+                    vec![Modifier::Euclidean(p, s)],
                 )
             });
 

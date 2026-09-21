@@ -3,6 +3,25 @@ use crate::engine::render::math::lcm;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum Modifier {
+    Euclidean(u8, u8),
+    Span(usize),
+    Arp(ArpStyle),
+    Ratchet(u8),
+    Stut(u8, f32, f32),
+    Humanize(u8, f64),
+    Probability(u8),
+    Invert(i32),
+    Drop(u8),
+    Transpose(i32),
+    Strum(f64),
+    ExtractPitch(ExtractType, Option<i32>, i32),
+    Chordify(Option<i32>, i32),
+    VelocityOverride(u8),
+    PhaseShift(f32),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Note {
         pitch: Pitch,
@@ -22,25 +41,11 @@ pub enum Node {
     Parallel(Vec<Vec<Node>>),
     Polymeter(Vec<Vec<Node>>),
     Arrange(Vec<(usize, usize, Box<Node>)>),
-    Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
     RandomChoice(Vec<(u32, Node)>),
-    Span(Box<Node>, usize),
-    Arp(Box<Node>, ArpStyle),
-    Ratchet(Box<Node>, u8),
-    Stut(Box<Node>, u8, f32, f32),
-    Humanize(Box<Node>, u8, f64),
-    Probability(Box<Node>, u8),
-    Invert(Box<Node>, i32),
-    Drop(Box<Node>, u8),
-    Transpose(Box<Node>, i32),
-    Strum(Box<Node>, f64),
-    ExtractPitch(Box<Node>, ExtractType, Option<i32>, i32),
-    Chordify(Box<Node>, Option<i32>, i32),
-    VelocityOverride(Box<Node>, u8),
-    PhaseShift(Box<Node>, f32),
     WithScale(ScaleDef, Box<Node>),
     Struct(Box<Node>, Box<Node>),
+    Modified(Box<Node>, Vec<Modifier>),
 }
 
 impl Node {
@@ -83,27 +88,15 @@ impl Node {
                     child.expand_refs(env, depth)?;
                 }
             }
-            Node::Euclidean(child, _, _)
-            | Node::Arp(child, _)
-            | Node::Probability(child, _)
-            | Node::PhaseShift(child, _)
-            | Node::Span(child, _)
-            | Node::Ratchet(child, _)
-            | Node::Stut(child, ..)
-            | Node::Humanize(child, _, _)
-            | Node::Invert(child, _)
-            | Node::Drop(child, _)
-            | Node::Transpose(child, _)
-            | Node::Strum(child, _)
-            | Node::WithScale(_, child)
-            | Node::ExtractPitch(child, _, _, _)
-            | Node::Chordify(child, _, _)
-            | Node::VelocityOverride(child, _) => {
+            Node::WithScale(_, child) => {
                 child.expand_refs(env, depth)?;
             }
             Node::Struct(structure, content) => {
                 structure.expand_refs(env, depth)?;
                 content.expand_refs(env, depth)?;
+            }
+            Node::Modified(child, _) => {
+                child.expand_refs(env, depth)?;
             }
             _ => {}
         }
@@ -141,25 +134,19 @@ impl Node {
                 })
             }
             Node::Arrange(segments) => segments.iter().map(|s| s.1).max().unwrap_or(1).max(1),
-            Node::Euclidean(child, _, _)
-            | Node::Arp(child, _)
-            | Node::Probability(child, _)
-            | Node::PhaseShift(child, _)
-            | Node::Ratchet(child, _)
-            | Node::Stut(child, ..)
-            | Node::Humanize(child, _, _)
-            | Node::Invert(child, _)
-            | Node::Drop(child, _)
-            | Node::Transpose(child, _)
-            | Node::Strum(child, _)
-            | Node::WithScale(_, child)
-            | Node::ExtractPitch(child, _, _, _)
-            | Node::Chordify(child, _, _)
-            | Node::VelocityOverride(child, _) => child.cycle_length(),
+            Node::WithScale(_, child) => child.cycle_length(),
             Node::Struct(structure, content) => {
                 lcm(structure.cycle_length(), content.cycle_length())
             }
-            Node::Span(_, span) => (*span).max(1),
+            Node::Modified(child, mods) => {
+                let mut len = child.cycle_length();
+                for m in mods {
+                    if let Modifier::Span(span) = m {
+                        len = (*span).max(1);
+                    }
+                }
+                len
+            }
         }
     }
 }
