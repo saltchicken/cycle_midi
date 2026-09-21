@@ -21,7 +21,7 @@ pub enum Node {
     ShuffledSequence(Vec<Node>),
     Parallel(Vec<Vec<Node>>),
     Polymeter(Vec<Vec<Node>>),
-    SeqP(Vec<(usize, usize, Box<Node>)>, bool),
+    Arrange(Vec<(usize, usize, Box<Node>)>),
     Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
     RandomChoice(Vec<(u32, Node)>),
@@ -35,7 +35,7 @@ pub enum Node {
     Drop(Box<Node>, u8),
     Transpose(Box<Node>, i32),
     Strum(Box<Node>, f64),
-    ExtractPitch(Box<Node>, ExtractType, Option<i32>, i32), // <--- Updated to limit/offset
+    ExtractPitch(Box<Node>, ExtractType, Option<i32>, i32),
     Chordify(Box<Node>, Option<i32>, i32),
     VelocityOverride(Box<Node>, u8),
     Condition {
@@ -88,7 +88,7 @@ impl Node {
                     }
                 }
             }
-            Node::SeqP(segments, _) => {
+            Node::Arrange(segments) => {
                 for (_, _, child) in segments {
                     child.expand_refs(env, depth)?;
                 }
@@ -139,7 +139,7 @@ impl Node {
                     lcm(acc, sync_macro_cycles)
                 })
             }
-            Node::SeqP(segments, _) => {
+            Node::Arrange(segments) => {
                 segments.iter().map(|s| s.1).max().unwrap_or(1).max(1)
             }
             Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) | Node::ExtractPitch(child, _, _, _) | Node::Chordify(child, _, _) | Node::VelocityOverride(child, _) => {

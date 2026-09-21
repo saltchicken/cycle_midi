@@ -667,13 +667,9 @@ pub fn traverse_ast(
             
             ctx.active_chord_indices = new_chord_indices;
         }
-        Node::SeqP(segments, is_loop) => {
+        Node::Arrange(segments) => {
             let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
-            let current_cycle = if *is_loop {
-                ctx.cycle_count % max_end
-            } else {
-                ctx.cycle_count
-            };
+            let current_cycle = ctx.cycle_count % max_end;
 
             let orig_indices = ctx.active_chord_indices.clone();
             let mut all_indices = Vec::new();

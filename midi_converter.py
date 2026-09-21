@@ -123,8 +123,8 @@ def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_c
     if output_format == "raw":
         print(" ".join(grid))
         
-    elif output_format == "seqploop":
-        print("seqPLoop [")
+    elif output_format == "arrange":
+        print("arrange [")
         
         chunks = [grid[i:i + steps_per_cycle] for i in range(0, len(grid), steps_per_cycle)]
         max_chunk = len(chunks) - 1
@@ -181,9 +181,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "-f", "--format", 
         type=str, 
-        choices=["raw", "seqploop", "chain"], 
+        choices=["raw", "arrange", "chain"], 
         default="chain", 
-        help="Output format. 'raw' for flat list, 'seqploop' for chunked cycles, 'chain' for relative duration sequence. Default: 'chain'"
+        help="Output format. 'raw' for flat list, 'arrange' for chunked cycles, 'chain' for relative duration sequence. Default: 'chain'"
     )
     parser.add_argument(
         "-g", "--grid", 

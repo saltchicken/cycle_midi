@@ -25,7 +25,7 @@ enum PostfixOp {
     Transpose(i32),
     Off(f32, Vec<Postfix>),
     Strum(f64),
-    ExtractPitch(crate::ast::ExtractType, Option<i32>, i32), // <--- Updated to limit/offset
+    ExtractPitch(crate::ast::ExtractType, Option<i32>, i32), 
     Chordify(Option<i32>, i32),
     VelocityOverride(u8),
 }
@@ -357,7 +357,6 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Strum);
 
-        // Helper to parse arguments like `(limit, offset)` or `(limit)`
         let extract_args = pad_char('(')
             .ignore_then(int_i32())
             .then(
@@ -487,7 +486,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .map(|(scale, child)| Node::WithScale(scale, Box::new(child)));
 
         let seq_group = expr.clone().padded_by(pad_expr.clone()).repeated()
-            .delimited_by(just('['), just(']'))
+            .delimited_by(pad_char('['), pad_char(']'))
             .map(|seq| {
                 if seq.len() == 1 { seq.into_iter().next().unwrap() } else { Node::Sequence(seq) }
             });
@@ -503,7 +502,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let random_choice = choice_branch
             .separated_by(pad_char('|'))
             .at_least(2)
-            .delimited_by(just('<'), just('>'))
+            .delimited_by(pad_char('<'), pad_char('>'))
             .map(|choices| {
                 Node::RandomChoice(
                     choices.into_iter().map(|(w, node)| {
@@ -517,7 +516,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 expr.clone()
                     .padded_by(pad_expr.clone())
                     .repeated()
-                    .delimited_by(just('['), just(']'))
+                    .delimited_by(pad_char('['), pad_char(']'))
             )
             .map(Node::ShuffledSequence);
 
@@ -525,7 +524,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .clone()
             .padded_by(pad_expr.clone())
             .repeated()
-            .delimited_by(just('<'), just('>'))
+            .delimited_by(pad_char('<'), pad_char('>'))
             .map(Node::Alternator);
 
         let parallel_layer = expr.clone().padded_by(pad_expr.clone()).repeated();
@@ -533,15 +532,15 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let parallel_group = parallel_layer
             .clone()
             .separated_by(pad_char('|'))
-            .delimited_by(just('{'), just('}'))
+            .delimited_by(pad_char('{'), pad_char('}'))
             .map(Node::Parallel);
 
         let polymeter_group = parallel_layer
             .separated_by(pad_char(','))
-            .delimited_by(just('{'), just('}'))
+            .delimited_by(pad_char('{'), pad_char('}'))
             .map(Node::Polymeter);
             
-        let seqp_segment = pad_char('(')
+        let arrange_segment = pad_char('(')
             .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<usize>()
                     .map_err(|e| Simple::custom(span, format!("Invalid start: {}", e)))
@@ -553,29 +552,21 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             }))
             .then_ignore(pad_char(')'))
             .then_ignore(pad_char(':'))
-            .then(expr.clone())
+            .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| {
+                if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }
+            }))
             .map(|((start, end), node)| (start, end, Box::new(node)));
 
-        let seqp = kw("seqP")
+        let arrange = kw("arrange")
             .ignore_then(
-                seqp_segment
+                arrange_segment
                     .clone()
                     .padded_by(padding())
                     .then_ignore(pad_char(',').or_not())
                     .repeated()
-                    .delimited_by(just('['), just(']'))
+                    .delimited_by(pad_char('['), pad_char(']'))
             )
-            .map(|segments| Node::SeqP(segments, false));
-
-        let seqploop = kw("seqPLoop")
-            .ignore_then(
-                seqp_segment
-                    .padded_by(padding())
-                    .then_ignore(pad_char(',').or_not())
-                    .repeated()
-                    .delimited_by(just('['), just(']'))
-            )
-            .map(|segments| Node::SeqP(segments, true));
+            .map(|segments| Node::Arrange(segments));
 
         let chain_segment = text::int::<char, Simple<char>>(10)
             .try_map(|s, span| {
@@ -583,7 +574,9 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .map_err(|e| Simple::custom(span, format!("Invalid duration: {}", e)))
             })
             .then_ignore(pad_char(':'))
-            .then(expr.clone());
+            .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| {
+                if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }
+            }));
 
         let chain_loop = kw("chain")
             .ignore_then(
@@ -591,19 +584,19 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .padded_by(padding())
                     .then_ignore(pad_char(',').or_not())
                     .repeated()
-                    .delimited_by(just('['), just(']'))
+                    .delimited_by(pad_char('['), pad_char(']'))
             )
             .map(|segments| {
                 let mut current_start = 0;
-                let mut seqp_segments = Vec::new();
+                let mut arrange_segments = Vec::new();
                 
                 for (duration, node) in segments {
                     let end = current_start + duration;
-                    seqp_segments.push((current_start, end, Box::new(node)));
+                    arrange_segments.push((current_start, end, Box::new(node)));
                     current_start = end;
                 }
                 
-                Node::SeqP(seqp_segments, true)
+                Node::Arrange(arrange_segments)
             });
 
         let struct_group = kw("struct")
@@ -647,8 +640,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 parallel_group,
                 polymeter_group,
                 chain_loop,
-                seqploop,
-                seqp,      
+                arrange,      
                 cc_parser(),
                 chord_or_note(),
             ))
@@ -663,7 +655,13 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let alias_def = just('$')
         .ignore_then(text::ident())
         .then_ignore(pad_char('='))
-        .then(expr.clone())
+        .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| {
+            if seq.len() == 1 {
+                seq.remove(0)
+            } else {
+                Node::Sequence(seq)
+            }
+        }))
         .map(|(name, node)| TopLevelItem::Alias(name, node));
 
     let track_def = track_parser(expr)
