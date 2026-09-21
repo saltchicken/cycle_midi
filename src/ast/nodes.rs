@@ -36,7 +36,8 @@ pub enum Node {
     Transpose(Box<Node>, i32),
     Strum(Box<Node>, f64),
     ExtractPitch(Box<Node>, ExtractType),
-    Chordify(Box<Node>),
+    Chordify(Box<Node>, Option<i32>, i32), // <--- Updated to limit/offset
+    VelocityOverride(Box<Node>, u8),
     Condition {
         interval: usize,
         offset: usize,
@@ -92,7 +93,7 @@ impl Node {
                     child.expand_refs(env, depth)?;
                 }
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) | Node::ExtractPitch(child, _) | Node::Chordify(child) => {
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) | Node::ExtractPitch(child, _) | Node::Chordify(child, _, _) | Node::VelocityOverride(child, _) => {
                 child.expand_refs(env, depth)?;
             }
             Node::Condition { true_branch, false_branch, .. } | Node::MacroCondition { true_branch, false_branch, .. } => {
@@ -141,7 +142,7 @@ impl Node {
             Node::SeqP(segments, _) => {
                 segments.iter().map(|s| s.1).max().unwrap_or(1).max(1)
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) | Node::ExtractPitch(child, _) | Node::Chordify(child) => {
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) | Node::ExtractPitch(child, _) | Node::Chordify(child, _, _) | Node::VelocityOverride(child, _) => {
                 child.cycle_length()
             }
             Node::Condition {

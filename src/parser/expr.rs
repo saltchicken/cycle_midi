@@ -26,7 +26,8 @@ enum PostfixOp {
     Off(f32, Vec<Postfix>),
     Strum(f64),
     ExtractPitch(crate::ast::ExtractType),
-    Chordify,
+    Chordify(Option<i32>, i32), // <--- Updated to limit/offset
+    VelocityOverride(u8),
 }
 
 #[derive(Clone)]
@@ -173,7 +174,6 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         .map(|((pitch_groups, global_v), global_g)| {
             let mut notes = Vec::new();
             for ((pitches, local_v), local_g) in pitch_groups {
-                // Outer/Global modifiers override the local modifiers if provided, otherwise fallback to 100
                 let v = global_v.unwrap_or_else(|| local_v.unwrap_or(100));
                 let g = global_g.unwrap_or_else(|| local_g.unwrap_or(100));
                 
@@ -359,10 +359,28 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
 
         let highest_mod = kw("highest").to(PostfixOp::ExtractPitch(crate::ast::ExtractType::Highest));
         let lowest_mod = kw("lowest").to(PostfixOp::ExtractPitch(crate::ast::ExtractType::Lowest));
-        let chordify_mod = kw("chordify").to(PostfixOp::Chordify);
+        
+        let chordify_mod = kw("chordify")
+            .ignore_then(
+                pad_char('(')
+                    .ignore_then(int_i32())
+                    .then(
+                        pad_char(',')
+                            .ignore_then(int_i32())
+                            .or_not()
+                    )
+                    .then_ignore(pad_char(')'))
+                    .or_not()
+            )
+            .map(|args| match args {
+                Some((limit, offset)) => PostfixOp::Chordify(Some(limit), offset.unwrap_or(0)),
+                None => PostfixOp::Chordify(None, 0),
+            });
+            
+        let velocity_mod = pad_char('@').ignore_then(int_u8()).map(PostfixOp::VelocityOverride);
 
         let postfix_op = choice((
-            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, stut_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod, strum_mod, highest_mod, lowest_mod, chordify_mod
+            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, stut_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod, strum_mod, highest_mod, lowest_mod, chordify_mod, velocity_mod
         ))
         .padded_by(padding());
 
@@ -389,7 +407,8 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
         PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc.clone()), amt),
         PostfixOp::Strum(amt) => Node::Strum(Box::new(acc.clone()), amt),
         PostfixOp::ExtractPitch(ext_type) => Node::ExtractPitch(Box::new(acc.clone()), ext_type),
-        PostfixOp::Chordify => Node::Chordify(Box::new(acc.clone())),
+        PostfixOp::Chordify(limit, offset) => Node::Chordify(Box::new(acc.clone()), limit, offset),
+        PostfixOp::VelocityOverride(v) => Node::VelocityOverride(Box::new(acc.clone()), v),
         
         PostfixOp::Off(shift, mods) => {
             let mut shifted = acc.clone();
@@ -442,8 +461,10 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let rest = just('.').to(Node::Rest);
         let hold = just('_').to(Node::Hold);
 
+        // Prevents the previous track from accidentally swallowing alias definitions
         let alias_ref = just('$')
             .ignore_then(text::ident())
+            .then_ignore(just('=').padded_by(padding()).not())
             .map(Node::Ref);
             
         let with_scale = kw("scale")
@@ -561,7 +582,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .ignore_then(
                 chain_segment
                     .padded_by(padding())
-                    .repeated() // Removes the need for separated_by('|')
+                    .repeated() 
                     .delimited_by(pad_char('{'), pad_char('}'))
             )
             .map(|segments| {

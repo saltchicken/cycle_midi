@@ -78,7 +78,8 @@ pub fn traverse_ast(
                 let sub_step = ctx.duration_ms / splits as f64;
                 let actual_duration = sub_step * (*gate as f64 / 100.0);
 
-                let mut final_vel = (*velocity as f32 * ctx.velocity_modifier).clamp(0.0, 127.0) as u8;
+                let base_vel = ctx.override_velocity.unwrap_or(*velocity);
+                let mut final_vel = (base_vel as f32 * ctx.velocity_modifier).clamp(0.0, 127.0) as u8;
                 let mut play_note = true;
 
                 // TRANSITION DISSOLVE EFFECT
@@ -118,6 +119,12 @@ pub fn traverse_ast(
             } else {
                 ctx.active_chord_indices.clear();
             }
+        }
+        Node::VelocityOverride(child, vel) => {
+            let mut sub_ctx = ctx.clone();
+            sub_ctx.override_velocity = Some(*vel);
+            traverse_ast(child, &mut sub_ctx, out_events, rng);
+            ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
         Node::CC { controller, value } => {
             if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
@@ -528,9 +535,9 @@ pub fn traverse_ast(
 
                 if !indices.is_empty() {
                     match ext_type {
-                        crate::ast::ExtractType::Lowest => keep_indices.insert(indices[0]),
-                        crate::ast::ExtractType::Highest => keep_indices.insert(*indices.last().unwrap()),
-                    };
+                        crate::ast::ExtractType::Lowest => { keep_indices.insert(indices[0]); },
+                        crate::ast::ExtractType::Highest => { keep_indices.insert(*indices.last().unwrap()); },
+                    }
                 }
             }
 
@@ -552,7 +559,7 @@ pub fn traverse_ast(
             }
             ctx.active_chord_indices = new_chord_indices;
         }
-        Node::Chordify(child) => {
+        Node::Chordify(child, limit, offset) => {
             let start_idx = out_events.len();
             
             // Traverse child to capture all its generated notes
@@ -579,14 +586,45 @@ pub fn traverse_ast(
             let mut sorted_pitches: Vec<u8> = unique_pitches.into_iter().collect();
             sorted_pitches.sort_unstable();
 
+            let len = sorted_pitches.len();
+            if len > 0 {
+                let off = *offset;
+                if off > 0 {
+                    let o = (off as usize).min(sorted_pitches.len());
+                    sorted_pitches = sorted_pitches[o..].to_vec();
+                } else if off < 0 {
+                    let o = (off.unsigned_abs() as usize).min(sorted_pitches.len());
+                    let new_len = sorted_pitches.len() - o;
+                    sorted_pitches.truncate(new_len);
+                }
+
+                if let Some(l) = limit {
+                    let current_len = sorted_pitches.len();
+                    if *l > 0 {
+                        sorted_pitches.truncate((*l as usize).min(current_len));
+                    } else if *l < 0 {
+                        let take = l.unsigned_abs() as usize;
+                        if take < current_len {
+                            sorted_pitches = sorted_pitches[(current_len - take)..].to_vec();
+                        }
+                    } else {
+                        // limit == 0
+                        sorted_pitches.clear();
+                    }
+                }
+            }
+
             let mut new_chord_indices = Vec::new();
             
-            // Re-emit all unique pitches simultaneously as a block chord
+            // Re-emit pitches simultaneously as a block chord
             for pitch in sorted_pitches {
+                let base_vel = if max_vel > 0 { max_vel } else { 100 };
+                let final_vel = ctx.override_velocity.unwrap_or(base_vel);
+                
                 out_events.push(ScheduledEvent::Note {
                     channel: ctx.channel,
                     pitch,
-                    velocity: max_vel.max(100),
+                    velocity: final_vel,
                     start_ms: ctx.start_ms,
                     duration_ms: ctx.duration_ms, // Hold for the full rendering window
                 });
@@ -936,7 +974,8 @@ pub fn traverse_ast(
                         // Map the rhythm timing to ALL matched pitches (reconstructing the chord)
                         for (pitch, c_vel, matched_channel) in matched_notes {
                             // Merge structural accents with underlying content velocities
-                            let final_vel = ((s_vel as f32 * c_vel as f32) / 127.0).clamp(1.0, 127.0) as u8;
+                            let mixed_vel = ((s_vel as f32 * c_vel as f32) / 127.0).clamp(1.0, 127.0) as u8;
+                            let final_vel = ctx.override_velocity.unwrap_or(mixed_vel);
                             
                             out_events.push(ScheduledEvent::Note {
                                 channel: matched_channel,
