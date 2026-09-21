@@ -1,4 +1,4 @@
-use super::types::{ArpStyle, DynamicValue, Pitch, QuantizeMode, ScaleDef, SeedDef};
+use super::types::{ArpStyle, DynamicValue, ExtractType, Pitch, QuantizeMode, ScaleDef, SeedDef};
 use crate::engine::render::math::lcm;
 use std::collections::HashMap;
 
@@ -35,6 +35,8 @@ pub enum Node {
     Drop(Box<Node>, u8),
     Transpose(Box<Node>, i32),
     Strum(Box<Node>, f64),
+    ExtractPitch(Box<Node>, ExtractType),
+    Chordify(Box<Node>),
     Condition {
         interval: usize,
         offset: usize,
@@ -90,7 +92,7 @@ impl Node {
                     child.expand_refs(env, depth)?;
                 }
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) => {
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) | Node::ExtractPitch(child, _) | Node::Chordify(child) => {
                 child.expand_refs(env, depth)?;
             }
             Node::Condition { true_branch, false_branch, .. } | Node::MacroCondition { true_branch, false_branch, .. } => {
@@ -139,7 +141,7 @@ impl Node {
             Node::SeqP(segments, _) => {
                 segments.iter().map(|s| s.1).max().unwrap_or(1).max(1)
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) => {
+            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) | Node::ExtractPitch(child, _) | Node::Chordify(child) => {
                 child.cycle_length()
             }
             Node::Condition {

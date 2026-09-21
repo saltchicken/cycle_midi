@@ -25,6 +25,8 @@ enum PostfixOp {
     Transpose(i32),
     Off(f32, Vec<Postfix>),
     Strum(f64),
+    ExtractPitch(crate::ast::ExtractType),
+    Chordify,
 }
 
 #[derive(Clone)]
@@ -355,8 +357,12 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Strum);
 
+        let highest_mod = kw("highest").to(PostfixOp::ExtractPitch(crate::ast::ExtractType::Highest));
+        let lowest_mod = kw("lowest").to(PostfixOp::ExtractPitch(crate::ast::ExtractType::Lowest));
+        let chordify_mod = kw("chordify").to(PostfixOp::Chordify);
+
         let postfix_op = choice((
-            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, stut_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod, strum_mod
+            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, stut_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod, strum_mod, highest_mod, lowest_mod, chordify_mod
         ))
         .padded_by(padding());
 
@@ -382,6 +388,8 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
         PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p), 
         PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc.clone()), amt),
         PostfixOp::Strum(amt) => Node::Strum(Box::new(acc.clone()), amt),
+        PostfixOp::ExtractPitch(ext_type) => Node::ExtractPitch(Box::new(acc.clone()), ext_type),
+        PostfixOp::Chordify => Node::Chordify(Box::new(acc.clone())),
         
         PostfixOp::Off(shift, mods) => {
             let mut shifted = acc.clone();

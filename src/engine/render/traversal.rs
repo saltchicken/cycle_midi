@@ -499,6 +499,106 @@ pub fn traverse_ast(
                 }
             }
         }
+        Node::ExtractPitch(child, ext_type) => {
+            let start_idx = out_events.len();
+            traverse_ast(child, ctx, out_events, rng);
+
+            // Group notes by exact start time
+            let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
+            let mut cc_indices = Vec::new();
+
+            for i in start_idx..out_events.len() {
+                match &out_events[i] {
+                    ScheduledEvent::Note { start_ms, .. } => {
+                        let time_key = (start_ms * 1000.0).round() as i64;
+                        notes_by_time.entry(time_key).or_default().push(i);
+                    }
+                    ScheduledEvent::CC { .. } => {
+                        cc_indices.push(i);
+                    }
+                }
+            }
+
+            let mut keep_indices = std::collections::HashSet::new();
+            
+            for (_, mut indices) in notes_by_time {
+                indices.sort_by_key(|&i| {
+                    if let ScheduledEvent::Note { pitch, .. } = out_events[i] { pitch } else { 0 }
+                });
+
+                if !indices.is_empty() {
+                    match ext_type {
+                        crate::ast::ExtractType::Lowest => keep_indices.insert(indices[0]),
+                        crate::ast::ExtractType::Highest => keep_indices.insert(*indices.last().unwrap()),
+                    };
+                }
+            }
+
+            // Extract kept events
+            let mut new_events = Vec::new();
+            for i in start_idx..out_events.len() {
+                if keep_indices.contains(&i) || cc_indices.contains(&i) {
+                    new_events.push(out_events[i].clone());
+                }
+            }
+
+            // Replace events
+            out_events.truncate(start_idx);
+            out_events.extend(new_events);
+            
+            let mut new_chord_indices = Vec::new();
+            for i in start_idx..out_events.len() {
+                new_chord_indices.push(i);
+            }
+            ctx.active_chord_indices = new_chord_indices;
+        }
+        Node::Chordify(child) => {
+            let start_idx = out_events.len();
+            
+            // Traverse child to capture all its generated notes
+            traverse_ast(child, ctx, out_events, rng);
+
+            let mut max_vel = 0;
+            let mut unique_pitches = std::collections::HashSet::new();
+            let mut cc_events = Vec::new();
+
+            for i in start_idx..out_events.len() {
+                match &out_events[i] {
+                    ScheduledEvent::Note { pitch, velocity, .. } => {
+                        unique_pitches.insert(*pitch);
+                        if *velocity > max_vel { max_vel = *velocity; }
+                    }
+                    cc @ ScheduledEvent::CC { .. } => {
+                        cc_events.push(cc.clone());
+                    }
+                }
+            }
+
+            out_events.truncate(start_idx);
+            
+            let mut sorted_pitches: Vec<u8> = unique_pitches.into_iter().collect();
+            sorted_pitches.sort_unstable();
+
+            let mut new_chord_indices = Vec::new();
+            
+            // Re-emit all unique pitches simultaneously as a block chord
+            for pitch in sorted_pitches {
+                out_events.push(ScheduledEvent::Note {
+                    channel: ctx.channel,
+                    pitch,
+                    velocity: max_vel.max(100),
+                    start_ms: ctx.start_ms,
+                    duration_ms: ctx.duration_ms, // Hold for the full rendering window
+                });
+                new_chord_indices.push(out_events.len() - 1);
+            }
+            
+            for cc in cc_events {
+                out_events.push(cc);
+            }
+            
+            ctx.active_chord_indices = new_chord_indices;
+        }
         Node::SeqP(segments, is_loop) => {
             let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
             let current_cycle = if *is_loop {
