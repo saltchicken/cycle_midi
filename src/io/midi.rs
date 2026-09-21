@@ -59,7 +59,7 @@ pub fn setup_midi(
 
     thread::spawn(move || {
         let thread_id = thread_native_id();
-        
+
         #[cfg(unix)]
         let _ = set_thread_priority_and_policy(
             thread_id,

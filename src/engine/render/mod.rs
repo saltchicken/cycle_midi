@@ -75,11 +75,11 @@ pub fn generate_next_cycle(
     let macro_cycle_count = cycle_count / macro_cycle_length.max(1);
 
     let mut active_global_scale = program.scale.clone();
-    
+
     if let Some(seq) = &program.scale_seq {
         let max_end = seq.iter().map(|s| s.1).max().unwrap_or(1).max(1);
         let loop_cycle = cycle_count % max_end;
-        
+
         for (start, end, scale) in seq {
             if loop_cycle >= *start && loop_cycle < *end {
                 active_global_scale = Some(scale.clone());
@@ -107,7 +107,7 @@ pub fn generate_next_cycle(
                     SeedInterval::Track(t) => {
                         let track_len = track.root_node.cycle_length().max(1);
                         ((cycle_count / track_len) / *t) as u64
-                    },
+                    }
                     SeedInterval::Micro(m) => (cycle_count / *m) as u64,
                 };
                 final_seed = final_seed.wrapping_add(seed_bump);
@@ -131,14 +131,14 @@ pub fn generate_next_cycle(
             active_chord_indices: vec![],
             octave_offset: track.octave_offset,
             alternator_stride: 1,
-            transition_fade, 
+            transition_fade,
             velocity_modifier: 1.0,
             override_velocity: None,
-            ratchet_splits: 1, 
+            ratchet_splits: 1,
             humanize_velocity_range: 0,
             humanize_timing_range_ms: 0.0,
         };
-        
+
         traverse_ast(&track.root_node, &mut ctx, &mut events, &mut rng);
     }
 

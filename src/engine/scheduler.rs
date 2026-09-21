@@ -1,12 +1,12 @@
-use crate::ast::{self, Program};
 use super::render::{ScheduledEvent, generate_next_cycle};
+use crate::ast::{self, Program};
 use rtrb::Producer;
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::io::Write;
 use thread_priority::*;
 
 // MIDI Status Byte Constants
@@ -37,7 +37,7 @@ pub fn run_scheduler(
     max_auto_quantize: usize,
 ) {
     let thread_id = thread_native_id();
-    
+
     #[cfg(unix)]
     if let Err(e) = set_thread_priority_and_policy(
         thread_id,
@@ -54,7 +54,10 @@ pub fn run_scheduler(
 
     #[cfg(windows)]
     if let Err(e) = set_thread_priority(thread_id, ThreadPriority::Max) {
-        eprintln!("Notice: Could not set Max thread priority. Jitter may occur: {:?}", e);
+        eprintln!(
+            "Notice: Could not set Max thread priority. Jitter may occur: {:?}",
+            e
+        );
     } else {
         println!("Main timing loop elevated to Max priority!");
     }
@@ -75,10 +78,10 @@ pub fn run_scheduler(
         aliases: std::collections::HashMap::new(),
         tracks: vec![],
     };
-    
+
     let mut staged_program: Option<(String, Program)> = None;
     let mut cycle_count = 0;
-    
+
     // State machine to track which tracks are active and their active PC value
     let mut track_was_playing = [false; 16];
     let mut active_pcs: [Option<u8>; 16] = [None; 16];
@@ -87,7 +90,7 @@ pub fn run_scheduler(
     if let Ok((filename, initial_prog)) = rx.recv() {
         current_filename = filename;
         current_program = initial_prog;
-        
+
         if let Some(new_bpm) = current_program.bpm {
             bpm = new_bpm;
         }
@@ -123,7 +126,7 @@ pub fn run_scheduler(
     let mut active_notes: Vec<(f64, u8, u8)> = Vec::new();
 
     println!("Starting Scheduler Loop...");
-    
+
     // Send MIDI Start message to sync external sequencers/drum machines
     send_midi!(midi_tx, vec![MIDI_START]);
 
@@ -162,7 +165,9 @@ pub fn run_scheduler(
 
                 let target_q_cycles = match q_mode {
                     ast::QuantizeMode::Fixed(n) => n,
-                    ast::QuantizeMode::Auto => current_program.pattern_length_cycles().min(max_auto_quantize),
+                    ast::QuantizeMode::Auto => current_program
+                        .pattern_length_cycles()
+                        .min(max_auto_quantize),
                 };
 
                 let position_in_phrase = cycle_count % target_q_cycles;
@@ -173,7 +178,7 @@ pub fn run_scheduler(
                     current_filename = filename;
 
                     let calculated_len = current_program.pattern_length_cycles();
-                    
+
                     if is_hot_reload {
                         println!(
                             "\nHot reloaded {}! (Sequence loop length: {} cycles)",
@@ -260,7 +265,10 @@ pub fn run_scheduler(
 
             // In-place terminal visualizer tracker
             let display_cycle = (cycle_count % pattern_len.max(1)) + 1;
-            print!("\r▶ Playing: {} | Cycle: {} / {} \x1B[K", current_filename, display_cycle, pattern_len);
+            print!(
+                "\r▶ Playing: {} | Cycle: {} / {} \x1B[K",
+                current_filename, display_cycle, pattern_len
+            );
             let _ = std::io::stdout().flush();
 
             cycle_count += 1;
@@ -328,7 +336,7 @@ pub fn run_scheduler(
                 next_wakeup_ms = off_time;
             }
         }
-        
+
         // Ensure the thread wakes up in time to fire the next clock pulse
         if next_clock_ms < next_wakeup_ms {
             next_wakeup_ms = next_clock_ms;

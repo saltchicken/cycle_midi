@@ -1,5 +1,7 @@
 use super::directives::global_directives;
-use super::primitives::{drum_val, float_f32, float_f64, int_i32, int_u8, kw, pad_char, padding, pitch_val};
+use super::primitives::{
+    drum_val, float_f32, float_f64, int_i32, int_u8, kw, pad_char, padding, pitch_val,
+};
 use super::track::track_parser;
 use crate::ast::{ArpStyle, DynamicValue, Node, Pitch, Program};
 use chumsky::prelude::*;
@@ -8,8 +10,7 @@ use std::collections::HashMap;
 #[derive(Clone)]
 enum PostfixOp {
     Euclidean(u8, u8),
-    Mul(f32),
-    Div(f32),
+    Span(usize),
     Arp(ArpStyle),
     Ratchet(u8),
     Stut(u8, f32, f32),
@@ -25,7 +26,7 @@ enum PostfixOp {
     Transpose(i32),
     Off(f32, Vec<Postfix>),
     Strum(f64),
-    ExtractPitch(crate::ast::ExtractType, Option<i32>, i32), 
+    ExtractPitch(crate::ast::ExtractType, Option<i32>, i32),
     Chordify(Option<i32>, i32),
     VelocityOverride(u8),
 }
@@ -118,12 +119,9 @@ fn diatonic_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + 
 }
 
 fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
-    let accidental = choice((
-        just('#').to(1),
-        just('b').to(-1),
-    ))
-    .repeated()
-    .map(|accs| accs.into_iter().sum::<i32>());
+    let accidental = choice((just('#').to(1), just('b').to(-1)))
+        .repeated()
+        .map(|accs| accs.into_iter().sum::<i32>());
 
     let numeric_pitch = int_i32()
         .then(accidental.clone())
@@ -176,7 +174,7 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
             for ((pitches, local_v), local_g) in pitch_groups {
                 let v = global_v.unwrap_or_else(|| local_v.unwrap_or(100));
                 let g = global_g.unwrap_or_else(|| local_g.unwrap_or(100));
-                
+
                 for p in pitches {
                     notes.push(Node::Note {
                         pitch: p,
@@ -198,66 +196,68 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
     recursive(|postfix| {
         let condition_clause = just("if(")
             .ignore_then(int_u8())
-            .then(
-                pad_char(',')
-                    .ignore_then(int_u8())
-                    .or_not(),
-            )
+            .then(pad_char(',').ignore_then(int_u8()).or_not())
             .then_ignore(just(')'))
-            .map(|(interval, offset)| (interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
+            .map(|(interval, offset)| {
+                (
+                    interval as usize,
+                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
+                )
+            });
 
         let m_condition_clause = just("m_if(")
             .ignore_then(int_u8())
-            .then(
-                pad_char(',')
-                    .ignore_then(int_u8())
-                    .or_not(),
-            )
+            .then(pad_char(',').ignore_then(int_u8()).or_not())
             .then_ignore(just(')'))
-            .map(|(interval, offset)| (interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
+            .map(|(interval, offset)| {
+                (
+                    interval as usize,
+                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
+                )
+            });
 
         let only_mod = just("only(")
             .ignore_then(int_u8())
-            .then(
-                pad_char(',')
-                    .ignore_then(int_u8())
-                    .or_not(),
-            )
+            .then(pad_char(',').ignore_then(int_u8()).or_not())
             .then_ignore(just(')'))
-            .map(|(interval, offset)| PostfixOp::Only(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
+            .map(|(interval, offset)| {
+                PostfixOp::Only(
+                    interval as usize,
+                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
+                )
+            });
 
         let m_only_mod = just("m_only(")
             .ignore_then(int_u8())
-            .then(
-                pad_char(',')
-                    .ignore_then(int_u8())
-                    .or_not(),
-            )
+            .then(pad_char(',').ignore_then(int_u8()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| {
-                PostfixOp::MacroOnly(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize)
+                PostfixOp::MacroOnly(
+                    interval as usize,
+                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
+                )
             });
 
         let if_mod = just("if(")
             .ignore_then(int_u8())
-            .then(
-                pad_char(',')
-                    .ignore_then(int_u8())
-                    .or_not(),
-            )
+            .then(pad_char(',').ignore_then(int_u8()).or_not())
             .then_ignore(just(')'))
-            .map(|(interval, offset)| PostfixOp::If(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize));
+            .map(|(interval, offset)| {
+                PostfixOp::If(
+                    interval as usize,
+                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
+                )
+            });
 
         let m_if_mod = just("m_if(")
             .ignore_then(int_u8())
-            .then(
-                pad_char(',')
-                    .ignore_then(int_u8())
-                    .or_not(),
-            )
+            .then(pad_char(',').ignore_then(int_u8()).or_not())
             .then_ignore(just(')'))
             .map(|(interval, offset)| {
-                PostfixOp::MacroIf(interval as usize, offset.unwrap_or(interval.saturating_sub(1)) as usize)
+                PostfixOp::MacroIf(
+                    interval as usize,
+                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
+                )
             });
 
         let euclidean = pad_char('(')
@@ -267,8 +267,14 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             .then_ignore(pad_char(')'))
             .map(|(p, s)| PostfixOp::Euclidean(p, s));
 
-        let speed_mul = pad_char('*').ignore_then(float_f32()).map(PostfixOp::Mul);
-        let speed_div = pad_char('/').ignore_then(float_f32()).map(PostfixOp::Div);
+        let span_mod = kw("span")
+            .ignore_then(pad_char('('))
+            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<usize>()
+                    .map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
+            }))
+            .then_ignore(pad_char(')'))
+            .map(PostfixOp::Span);
 
         let arp_style = choice((
             just("updown").to(ArpStyle::UpDown),
@@ -304,27 +310,34 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             .map(|((d, f), t)| PostfixOp::Stut(d, f, t));
 
         let prob_mod = pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob);
-        
+
         let invert_mod = pad_char('^').ignore_then(int_i32()).map(PostfixOp::Invert);
-        
+
         let drop_mod = kw("drop")
             .ignore_then(pad_char('('))
             .ignore_then(int_u8())
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Drop);
-        
+
         let phase_shift = choice((
             just("~>").padded_by(padding()).ignore_then(float_f32()),
-            just("<~").padded_by(padding()).ignore_then(float_f32()).map(|v| -v),
-            kw("shift").ignore_then(pad_char('(')).ignore_then(float_f32()).then_ignore(pad_char(')'))
-        )).map(PostfixOp::PhaseShift);
+            just("<~")
+                .padded_by(padding())
+                .ignore_then(float_f32())
+                .map(|v| -v),
+            kw("shift")
+                .ignore_then(pad_char('('))
+                .ignore_then(float_f32())
+                .then_ignore(pad_char(')')),
+        ))
+        .map(PostfixOp::PhaseShift);
 
         let humanize_args = int_u8()
             .then(
                 pad_char(',')
                     .ignore_then(float_f64())
                     .then_ignore(just("ms").padded_by(padding()).or_not())
-                    .or_not()
+                    .or_not(),
             )
             .or_not();
 
@@ -341,7 +354,9 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             });
 
         let transpose_mod = kw("up").ignore_then(int_i32()).map(PostfixOp::Transpose);
-        let transpose_down_mod = kw("down").ignore_then(int_i32()).map(|v| PostfixOp::Transpose(-v));
+        let transpose_down_mod = kw("down")
+            .ignore_then(int_i32())
+            .map(|v| PostfixOp::Transpose(-v));
 
         let off_mod = kw("off")
             .ignore_then(pad_char('('))
@@ -359,39 +374,66 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
 
         let extract_args = pad_char('(')
             .ignore_then(int_i32())
-            .then(
-                pad_char(',')
-                    .ignore_then(int_i32())
-                    .or_not()
-            )
+            .then(pad_char(',').ignore_then(int_i32()).or_not())
             .then_ignore(pad_char(')'))
             .or_not();
 
         let highest_mod = kw("highest")
             .ignore_then(extract_args.clone())
             .map(|args| match args {
-                Some((limit, offset)) => PostfixOp::ExtractPitch(crate::ast::ExtractType::Highest, Some(limit), offset.unwrap_or(0)),
+                Some((limit, offset)) => PostfixOp::ExtractPitch(
+                    crate::ast::ExtractType::Highest,
+                    Some(limit),
+                    offset.unwrap_or(0),
+                ),
                 None => PostfixOp::ExtractPitch(crate::ast::ExtractType::Highest, Some(1), 0),
             });
 
         let lowest_mod = kw("lowest")
             .ignore_then(extract_args.clone())
             .map(|args| match args {
-                Some((limit, offset)) => PostfixOp::ExtractPitch(crate::ast::ExtractType::Lowest, Some(limit), offset.unwrap_or(0)),
+                Some((limit, offset)) => PostfixOp::ExtractPitch(
+                    crate::ast::ExtractType::Lowest,
+                    Some(limit),
+                    offset.unwrap_or(0),
+                ),
                 None => PostfixOp::ExtractPitch(crate::ast::ExtractType::Lowest, Some(1), 0),
             });
-            
+
         let chordify_mod = kw("chordify")
             .ignore_then(extract_args)
             .map(|args| match args {
                 Some((limit, offset)) => PostfixOp::Chordify(Some(limit), offset.unwrap_or(0)),
                 None => PostfixOp::Chordify(None, 0),
             });
-            
-        let velocity_mod = pad_char('@').ignore_then(int_u8()).map(PostfixOp::VelocityOverride);
+
+        let velocity_mod = pad_char('@')
+            .ignore_then(int_u8())
+            .map(PostfixOp::VelocityOverride);
 
         let postfix_op = choice((
-            euclidean, speed_mul, speed_div, arp_mod, ratchet_mod, stut_mod, invert_mod, drop_mod, only_mod, m_only_mod, if_mod, m_if_mod, prob_mod, phase_shift, humanize_mod, transpose_mod, transpose_down_mod, off_mod, strum_mod, highest_mod, lowest_mod, chordify_mod, velocity_mod
+            euclidean,
+            span_mod,
+            arp_mod,
+            ratchet_mod,
+            stut_mod,
+            invert_mod,
+            drop_mod,
+            only_mod,
+            m_only_mod,
+            if_mod,
+            m_if_mod,
+            prob_mod,
+            phase_shift,
+            humanize_mod,
+            transpose_mod,
+            transpose_down_mod,
+            off_mod,
+            strum_mod,
+            highest_mod,
+            lowest_mod,
+            chordify_mod,
+            velocity_mod,
         ))
         .padded_by(padding());
 
@@ -405,8 +447,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
 fn apply_postfix(acc: Node, post: Postfix) -> Node {
     let true_branch = match post.op {
         PostfixOp::Euclidean(p, s) => Node::Euclidean(Box::new(acc.clone()), p, s),
-        PostfixOp::Mul(val) => Node::SpeedModifier(Box::new(acc.clone()), val),
-        PostfixOp::Div(val) => Node::SpeedModifier(Box::new(acc.clone()), 1.0 / val),
+        PostfixOp::Span(val) => Node::Span(Box::new(acc.clone()), val),
         PostfixOp::Arp(style) => Node::Arp(Box::new(acc.clone()), style),
         PostfixOp::Ratchet(splits) => Node::Ratchet(Box::new(acc.clone()), splits),
         PostfixOp::Stut(d, f, t) => Node::Stut(Box::new(acc.clone()), d, f, t),
@@ -414,13 +455,15 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
         PostfixOp::PhaseShift(val) => Node::PhaseShift(Box::new(acc.clone()), val),
         PostfixOp::Invert(amount) => Node::Invert(Box::new(acc.clone()), amount),
         PostfixOp::Drop(voice) => Node::Drop(Box::new(acc.clone()), voice),
-        PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p), 
+        PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p),
         PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc.clone()), amt),
         PostfixOp::Strum(amt) => Node::Strum(Box::new(acc.clone()), amt),
-        PostfixOp::ExtractPitch(ext_type, limit, offset) => Node::ExtractPitch(Box::new(acc.clone()), ext_type, limit, offset),
+        PostfixOp::ExtractPitch(ext_type, limit, offset) => {
+            Node::ExtractPitch(Box::new(acc.clone()), ext_type, limit, offset)
+        }
         PostfixOp::Chordify(limit, offset) => Node::Chordify(Box::new(acc.clone()), limit, offset),
         PostfixOp::VelocityOverride(v) => Node::VelocityOverride(Box::new(acc.clone()), v),
-        
+
         PostfixOp::Off(shift, mods) => {
             let mut shifted = acc.clone();
             for m in mods {
@@ -429,19 +472,24 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
             shifted = Node::PhaseShift(Box::new(shifted), shift);
             Node::Parallel(vec![vec![acc.clone()], vec![shifted]])
         }
-        
+
         PostfixOp::Only(interval, offset) | PostfixOp::If(interval, offset) => Node::Condition {
-            interval, offset,
+            interval,
+            offset,
             true_branch: Box::new(acc.clone()),
             false_branch: Box::new(Node::Rest),
         },
         PostfixOp::MacroOnly(interval, offset) => Node::MacroCondition {
-            interval, offset, is_gate: true,
+            interval,
+            offset,
+            is_gate: true,
             true_branch: Box::new(acc.clone()),
             false_branch: Box::new(Node::Rest),
         },
         PostfixOp::MacroIf(interval, offset) => Node::MacroCondition {
-            interval, offset, is_gate: false,
+            interval,
+            offset,
+            is_gate: false,
             true_branch: Box::new(acc.clone()),
             false_branch: Box::new(Node::Rest),
         },
@@ -449,7 +497,8 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
 
     let micro_applied = match post.cond {
         Some((interval, offset)) => Node::Condition {
-            interval, offset,
+            interval,
+            offset,
             true_branch: Box::new(true_branch),
             false_branch: Box::new(acc.clone()),
         },
@@ -458,7 +507,9 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
 
     match post.m_cond {
         Some((interval, offset)) => Node::MacroCondition {
-            interval, offset, is_gate: false,
+            interval,
+            offset,
+            is_gate: false,
             true_branch: Box::new(micro_applied),
             false_branch: Box::new(acc),
         },
@@ -477,7 +528,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .ignore_then(text::ident())
             .then_ignore(just('=').padded_by(padding()).not())
             .map(Node::Ref);
-            
+
         let with_scale = kw("scale")
             .ignore_then(pad_char('('))
             .ignore_then(super::directives::scale_def())
@@ -485,19 +536,35 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then(expr.clone())
             .map(|(scale, child)| Node::WithScale(scale, Box::new(child)));
 
-        let seq_group = expr.clone().padded_by(pad_expr.clone()).repeated()
+        let seq_group = expr
+            .clone()
+            .padded_by(pad_expr.clone())
+            .repeated()
             .delimited_by(pad_char('['), pad_char(']'))
             .map(|seq| {
-                if seq.len() == 1 { seq.into_iter().next().unwrap() } else { Node::Sequence(seq) }
+                if seq.len() == 1 {
+                    seq.into_iter().next().unwrap()
+                } else {
+                    Node::Sequence(seq)
+                }
             });
 
         let choice_branch = int_u8()
             .padded_by(pad_expr.clone())
             .then_ignore(pad_char(':'))
             .or_not()
-            .then(expr.clone().padded_by(pad_expr.clone()).repeated().map(|seq| {
-                if seq.len() == 1 { seq.into_iter().next().unwrap() } else { Node::Sequence(seq) }
-            }));
+            .then(
+                expr.clone()
+                    .padded_by(pad_expr.clone())
+                    .repeated()
+                    .map(|seq| {
+                        if seq.len() == 1 {
+                            seq.into_iter().next().unwrap()
+                        } else {
+                            Node::Sequence(seq)
+                        }
+                    }),
+            );
 
         let random_choice = choice_branch
             .separated_by(pad_char('|'))
@@ -505,9 +572,10 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .delimited_by(pad_char('<'), pad_char('>'))
             .map(|choices| {
                 Node::RandomChoice(
-                    choices.into_iter().map(|(w, node)| {
-                        (w.unwrap_or(1) as u32, node)
-                    }).collect()
+                    choices
+                        .into_iter()
+                        .map(|(w, node)| (w.unwrap_or(1) as u32, node))
+                        .collect(),
                 )
             });
 
@@ -516,7 +584,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 expr.clone()
                     .padded_by(pad_expr.clone())
                     .repeated()
-                    .delimited_by(pad_char('['), pad_char(']'))
+                    .delimited_by(pad_char('['), pad_char(']')),
             )
             .map(Node::ShuffledSequence);
 
@@ -539,7 +607,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .separated_by(pad_char(','))
             .delimited_by(pad_char('{'), pad_char('}'))
             .map(Node::Polymeter);
-            
+
         let arrange_segment = pad_char('(')
             .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<usize>()
@@ -552,9 +620,19 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             }))
             .then_ignore(pad_char(')'))
             .then_ignore(pad_char(':'))
-            .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| {
-                if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }
-            }))
+            .then(
+                expr.clone()
+                    .padded_by(padding())
+                    .repeated()
+                    .at_least(1)
+                    .map(|mut seq| {
+                        if seq.len() == 1 {
+                            seq.remove(0)
+                        } else {
+                            Node::Sequence(seq)
+                        }
+                    }),
+            )
             .map(|((start, end), node)| (start, end, Box::new(node)));
 
         let arrange = kw("arrange")
@@ -564,7 +642,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .padded_by(padding())
                     .then_ignore(pad_char(',').or_not())
                     .repeated()
-                    .delimited_by(pad_char('['), pad_char(']'))
+                    .delimited_by(pad_char('['), pad_char(']')),
             )
             .map(|segments| Node::Arrange(segments));
 
@@ -574,9 +652,19 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .map_err(|e| Simple::custom(span, format!("Invalid duration: {}", e)))
             })
             .then_ignore(pad_char(':'))
-            .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| {
-                if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }
-            }));
+            .then(
+                expr.clone()
+                    .padded_by(padding())
+                    .repeated()
+                    .at_least(1)
+                    .map(|mut seq| {
+                        if seq.len() == 1 {
+                            seq.remove(0)
+                        } else {
+                            Node::Sequence(seq)
+                        }
+                    }),
+            );
 
         let chain_loop = kw("chain")
             .ignore_then(
@@ -584,18 +672,18 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .padded_by(padding())
                     .then_ignore(pad_char(',').or_not())
                     .repeated()
-                    .delimited_by(pad_char('['), pad_char(']'))
+                    .delimited_by(pad_char('['), pad_char(']')),
             )
             .map(|segments| {
                 let mut current_start = 0;
                 let mut arrange_segments = Vec::new();
-                
+
                 for (duration, node) in segments {
                     let end = current_start + duration;
                     arrange_segments.push((current_start, end, Box::new(node)));
                     current_start = end;
                 }
-                
+
                 Node::Arrange(arrange_segments)
             });
 
@@ -640,64 +728,69 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 parallel_group,
                 polymeter_group,
                 chain_loop,
-                arrange,      
+                arrange,
                 cc_parser(),
                 chord_or_note(),
-            ))
+            )),
         ));
 
         atom.then(postfix_parser().repeated())
-            .map(|(base, postfixes)| {
-                postfixes.into_iter().fold(base, apply_postfix)
-            })
+            .map(|(base, postfixes)| postfixes.into_iter().fold(base, apply_postfix))
     });
 
     let alias_def = just('$')
         .ignore_then(text::ident())
         .then_ignore(pad_char('='))
-        .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| {
-            if seq.len() == 1 {
-                seq.remove(0)
-            } else {
-                Node::Sequence(seq)
-            }
-        }))
+        .then(
+            expr.clone()
+                .padded_by(padding())
+                .repeated()
+                .at_least(1)
+                .map(|mut seq| {
+                    if seq.len() == 1 {
+                        seq.remove(0)
+                    } else {
+                        Node::Sequence(seq)
+                    }
+                }),
+        )
         .map(|(name, node)| TopLevelItem::Alias(name, node));
 
-    let track_def = track_parser(expr)
-        .map(TopLevelItem::Track);
+    let track_def = track_parser(expr).map(TopLevelItem::Track);
 
     let item = choice((alias_def, track_def)).padded_by(padding());
 
     global_directives()
         .then(item.repeated())
-        .map(|((bpm, signature, quantize, scale, scale_seq, global_silence, includes), items)| {
-            let mut aliases = HashMap::new();
-            let mut tracks = Vec::new();
+        .map(
+            |((bpm, signature, quantize, scale, scale_seq, global_silence, includes), items)| {
+                let mut aliases = HashMap::new();
+                let mut tracks = Vec::new();
 
-            for item in items {
-                match item {
-                    TopLevelItem::Alias(name, node) => {
-                        aliases.insert(name, node);
-                    }
-                    TopLevelItem::Track(track) => {
-                        tracks.push(track);
+                for item in items {
+                    match item {
+                        TopLevelItem::Alias(name, node) => {
+                            aliases.insert(name, node);
+                        }
+                        TopLevelItem::Track(track) => {
+                            tracks.push(track);
+                        }
                     }
                 }
-            }
 
-            Program {
-                bpm,
-                signature,
-                quantize,
-                scale,
-                scale_seq,
-                global_silence,
-                includes,
-                aliases,
-                tracks,
-            }
-        })
+                Program {
+                    bpm,
+                    signature,
+                    quantize,
+                    scale,
+                    scale_seq,
+                    global_silence,
+                    includes,
+                    aliases,
+                    tracks,
+                }
+            },
+        )
         .padded_by(padding())
         .then_ignore(end())
 }

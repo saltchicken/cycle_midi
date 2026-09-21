@@ -5,7 +5,7 @@ use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{Sender, channel};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -51,11 +51,7 @@ fn load_recursive(
                     println!("Syntax Error in {}!", path.display());
                     for e in errs {
                         let expected: Vec<_> = e.expected().cloned().collect();
-                        eprintln!(
-                            "Expected {:?} at char {}",
-                            expected,
-                            e.span().start
-                        );
+                        eprintln!("Expected {:?} at char {}", expected, e.span().start);
                     }
                     return Err("Syntax error".to_string());
                 }
@@ -66,7 +62,15 @@ fn load_recursive(
     // Recursively load includes first
     for inc in &prog.includes {
         let inc_path = base_dir.join(inc);
-        load_recursive(&inc_path, base_dir, parser, all_aliases, visited, cache, false)?;
+        load_recursive(
+            &inc_path,
+            base_dir,
+            parser,
+            all_aliases,
+            visited,
+            cache,
+            false,
+        )?;
     }
 
     // Merge this file's aliases into the master list
@@ -94,7 +98,10 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
             }
         };
 
-        if let Err(e) = debouncer.watcher().watch(&watch_dir, RecursiveMode::NonRecursive) {
+        if let Err(e) = debouncer
+            .watcher()
+            .watch(&watch_dir, RecursiveMode::NonRecursive)
+        {
             eprintln!("Failed to watch directory {}: {}", watch_dir.display(), e);
             return;
         }
@@ -109,11 +116,21 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
         let mut ast_cache: HashMap<PathBuf, (SystemTime, Program)> = HashMap::new();
 
         // Helper closure to process a file and its dependencies
-        let process_file = |active_file_path: &Path, cache: &mut HashMap<PathBuf, (SystemTime, Program)>| -> Result<Program, String> {
+        let process_file = |active_file_path: &Path,
+                            cache: &mut HashMap<PathBuf, (SystemTime, Program)>|
+         -> Result<Program, String> {
             let mut all_aliases = HashMap::new();
             let mut visited = HashSet::new();
 
-            match load_recursive(active_file_path, &watch_dir, &parser, &mut all_aliases, &mut visited, cache, true)? {
+            match load_recursive(
+                active_file_path,
+                &watch_dir,
+                &parser,
+                &mut all_aliases,
+                &mut visited,
+                cache,
+                true,
+            )? {
                 Some(mut main_prog) => {
                     main_prog.aliases = all_aliases;
                     main_prog.expand_all_refs().map(|_| main_prog)
@@ -125,7 +142,11 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
         // Initially load the default file (e.g., live.mmn)
         if file_path.exists() {
             if let Ok(initial_prog) = process_file(&file_path, &mut ast_cache) {
-                let filename = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let filename = file_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 let _ = tx.send((filename, initial_prog));
             }
         }
@@ -140,7 +161,11 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
                         .map(|e| &e.path);
 
                     if let Some(active_file) = saved_mmn_file {
-                        let filename = active_file.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        let filename = active_file
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
                         println!("Detected save in: {}", active_file.display());
 
                         if let Ok(contents) = fs::read_to_string(active_file) {
@@ -169,7 +194,10 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
                                 let _ = tx.send((filename, new_prog));
                             }
                             Err(e) => {
-                                println!("Compilation Error! Continuing to play old sequence. ({})", e);
+                                println!(
+                                    "Compilation Error! Continuing to play old sequence. ({})",
+                                    e
+                                );
                             }
                         }
                     }

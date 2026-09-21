@@ -1,11 +1,11 @@
 use super::directives::scale_def;
-use super::primitives::{float_f64, padding, kw};
+use super::primitives::{kw, padding};
 use crate::ast::{Node, ScaleDef, SeedDef, SeedInterval, Track};
 use chumsky::prelude::*;
 
 #[derive(Clone)]
 enum TrackModifier {
-    Speed(f32),
+    Span(usize),
     Scale(ScaleDef),
     Seed(SeedDef),
     Octave(i32),
@@ -14,12 +14,12 @@ enum TrackModifier {
 
 fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + Clone {
     choice((
-        kw("fast")
-            .ignore_then(float_f64())
-            .map(|v| TrackModifier::Speed(v as f32)),
-        kw("slow")
-            .ignore_then(float_f64())
-            .map(|v| TrackModifier::Speed(1.0 / (v as f32))),
+        kw("span")
+            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<usize>()
+                    .map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
+            }))
+            .map(TrackModifier::Span),
         kw("scale")
             .ignore_then(scale_def())
             .map(TrackModifier::Scale),
@@ -59,21 +59,19 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
                 choice((
                     kw("m_every").to(0u8),
                     kw("t_every").to(1u8),
-                    kw("every").to(2u8)
+                    kw("every").to(2u8),
                 ))
-                    .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                        s.parse::<usize>()
-                            .map_err(|e| Simple::custom(span, format!("Invalid interval: {}", e)))
-                    }))
-                    .or_not(),
+                .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                    s.parse::<usize>()
+                        .map_err(|e| Simple::custom(span, format!("Invalid interval: {}", e)))
+                }))
+                .or_not(),
             )
             .map(|(base, interval_data)| {
-                let interval = interval_data.map(|(interval_type, val)| {
-                    match interval_type {
-                        0 => SeedInterval::Macro(val),
-                        1 => SeedInterval::Track(val),
-                        _ => SeedInterval::Micro(val),
-                    }
+                let interval = interval_data.map(|(interval_type, val)| match interval_type {
+                    0 => SeedInterval::Macro(val),
+                    1 => SeedInterval::Track(val),
+                    _ => SeedInterval::Micro(val),
                 });
                 TrackModifier::Seed(SeedDef { base, interval })
             }),
@@ -97,14 +95,14 @@ pub fn track_parser<'a>(
         .then(expr.padded_by(padding()).repeated().map(Node::Sequence))
         .map(|(((is_muted, ch), modifiers), mut root_node)| {
             let mut track_scale = None;
-            let mut track_speed = None;
+            let mut track_span = None;
             let mut track_seed = None;
             let mut track_octave = 0;
             let mut track_pc = None;
 
             for m in modifiers {
                 match m {
-                    TrackModifier::Speed(s) => track_speed = Some(s),
+                    TrackModifier::Span(s) => track_span = Some(s),
                     TrackModifier::Scale(s) => track_scale = Some(s),
                     TrackModifier::Seed(s) => track_seed = Some(s),
                     TrackModifier::Octave(o) => track_octave += o,
@@ -112,8 +110,8 @@ pub fn track_parser<'a>(
                 }
             }
 
-            if let Some(s) = track_speed {
-                root_node = Node::SpeedModifier(Box::new(root_node), s);
+            if let Some(s) = track_span {
+                root_node = Node::Span(Box::new(root_node), s);
             }
 
             Track {

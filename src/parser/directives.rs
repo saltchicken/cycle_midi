@@ -38,14 +38,17 @@ pub fn scale_def() -> impl Parser<char, ScaleDef, Error = Simple<char>> + Clone 
         })
 }
 
-pub fn scale_seq_def() -> impl Parser<char, Vec<(usize, usize, ScaleDef)>, Error = Simple<char>> + Clone {
+pub fn scale_seq_def()
+-> impl Parser<char, Vec<(usize, usize, ScaleDef)>, Error = Simple<char>> + Clone {
     let segment = pad_char('(')
         .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-            s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid start: {}", e)))
+            s.parse::<usize>()
+                .map_err(|e| Simple::custom(span, format!("Invalid start: {}", e)))
         }))
         .then_ignore(pad_char(','))
         .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-            s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid end: {}", e)))
+            s.parse::<usize>()
+                .map_err(|e| Simple::custom(span, format!("Invalid end: {}", e)))
         }))
         .then_ignore(pad_char(')'))
         .then_ignore(pad_char(':'))
@@ -57,25 +60,31 @@ pub fn scale_seq_def() -> impl Parser<char, Vec<(usize, usize, ScaleDef)>, Error
         .delimited_by(pad_char('{'), pad_char('}'))
 }
 
-pub fn global_directives()
--> impl Parser<char, (Option<f64>, Option<(u8, u8)>, Option<QuantizeMode>, Option<ScaleDef>, Option<Vec<(usize, usize, ScaleDef)>>, bool, Vec<String>), Error = Simple<char>>
-+ Clone {
+pub fn global_directives() -> impl Parser<
+    char,
+    (
+        Option<f64>,
+        Option<(u8, u8)>,
+        Option<QuantizeMode>,
+        Option<ScaleDef>,
+        Option<Vec<(usize, usize, ScaleDef)>>,
+        bool,
+        Vec<String>,
+    ),
+    Error = Simple<char>,
+> + Clone {
     let directive = choice((
         just("#BPM=").ignore_then(float_f64()).map(Directive::Bpm),
         just("#SIG=")
-            .ignore_then(
-                text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                    s.parse::<u8>()
-                        .map_err(|e| Simple::custom(span, format!("Invalid numerator: {}", e)))
-                })
-            )
+            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<u8>()
+                    .map_err(|e| Simple::custom(span, format!("Invalid numerator: {}", e)))
+            }))
             .then_ignore(just('/'))
-            .then(
-                text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                    s.parse::<u8>()
-                        .map_err(|e| Simple::custom(span, format!("Invalid denominator: {}", e)))
-                })
-            )
+            .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<u8>()
+                    .map_err(|e| Simple::custom(span, format!("Invalid denominator: {}", e)))
+            }))
             .map(|(num, den)| Directive::Signature(num, den)),
         just("#QUANTIZE=")
             .ignore_then(choice((
@@ -91,11 +100,14 @@ pub fn global_directives()
         just("#SCALE=")
             .ignore_then(scale_def())
             .map(Directive::Scale),
-        just("#SCALE_SEQ=").or(just("#SCALE_SEQ")).padded_by(padding())
+        just("#SCALE_SEQ=")
+            .or(just("#SCALE_SEQ"))
+            .padded_by(padding())
             .ignore_then(scale_seq_def())
             .map(Directive::ScaleSeq),
         just("#SILENCE").to(Directive::Silence),
-        just("#INCLUDE").padded_by(padding())
+        just("#INCLUDE")
+            .padded_by(padding())
             .ignore_then(just('"'))
             .ignore_then(filter(|c: &char| *c != '"').repeated().collect::<String>())
             .then_ignore(just('"'))
@@ -124,6 +136,14 @@ pub fn global_directives()
             }
         }
 
-        (bpm, signature, quantize, scale, scale_seq, global_silence, includes)
+        (
+            bpm,
+            signature,
+            quantize,
+            scale,
+            scale_seq,
+            global_silence,
+            includes,
+        )
     })
 }

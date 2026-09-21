@@ -39,7 +39,7 @@ pub fn float_f32() -> impl Parser<char, f32, Error = Simple<char>> + Clone {
         .then(
             text::int::<char, Simple<char>>(10)
                 .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
-                .collect::<String>()
+                .collect::<String>(),
         )
         .try_map(|(sign, s), span| {
             s.parse::<f32>()
@@ -54,7 +54,7 @@ pub fn float_f64() -> impl Parser<char, f64, Error = Simple<char>> + Clone {
         .then(
             text::int::<char, Simple<char>>(10)
                 .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
-                .collect::<String>()
+                .collect::<String>(),
         )
         .try_map(|(sign, s), span| {
             s.parse::<f64>()

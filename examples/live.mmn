@@ -1,27 +1,6 @@
-#BPM=124
-#SCALE=F2 minor
-#QUANTIZE=16
+#BPM=120
+#SCALE=C4 major
 
-$kick = bd . . .
-$clap = . cp . .
-$hats = E(8, 8) * 2
+T1:
+  [0 1 2 3] span(2)
 
-// --- Drums ---
-T10: arrange [
-  (0, 4):   $kick,
-  (4, 8):   { $kick | $clap },
-  (8, 16):  { $kick | $clap | $hats }
-]
-
-// --- Bass ---
-T1 pc 40: arrange [
-  (0, 4):   .,
-  (4, 16):  [0 _ 3 _] [4 _ _ _]
-]
-
-// --- Arp / Keys ---
-T2 pc 90 up 1: arrange [
-  (0, 8):   .,
-  (8, 12):  0_min7 arp(up) * 4,
-  (12, 16): 0_min7 arp(updown) * 8
-]

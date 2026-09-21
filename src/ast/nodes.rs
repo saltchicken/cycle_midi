@@ -25,9 +25,9 @@ pub enum Node {
     Euclidean(Box<Node>, u8, u8),
     Alternator(Vec<Node>),
     RandomChoice(Vec<(u32, Node)>),
-    SpeedModifier(Box<Node>, f32),
+    Span(Box<Node>, usize),
     Arp(Box<Node>, ArpStyle),
-    Ratchet(Box<Node>, u8), 
+    Ratchet(Box<Node>, u8),
     Stut(Box<Node>, u8, f32, f32),
     Humanize(Box<Node>, u8, f64),
     Probability(Box<Node>, u8),
@@ -41,7 +41,7 @@ pub enum Node {
     Condition {
         interval: usize,
         offset: usize,
-        true_branch: Box<Node>, 
+        true_branch: Box<Node>,
         false_branch: Box<Node>,
     },
     MacroCondition {
@@ -71,7 +71,10 @@ impl Node {
                     return Err(format!("Unresolved alias: ${}", name));
                 }
             }
-            Node::Chord(elements) | Node::Sequence(elements) | Node::ShuffledSequence(elements) | Node::Alternator(elements) => {
+            Node::Chord(elements)
+            | Node::Sequence(elements)
+            | Node::ShuffledSequence(elements)
+            | Node::Alternator(elements) => {
                 for el in elements {
                     el.expand_refs(env, depth)?;
                 }
@@ -93,10 +96,34 @@ impl Node {
                     child.expand_refs(env, depth)?;
                 }
             }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::SpeedModifier(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) | Node::ExtractPitch(child, _, _, _) | Node::Chordify(child, _, _) | Node::VelocityOverride(child, _) => {
+            Node::Euclidean(child, _, _)
+            | Node::Arp(child, _)
+            | Node::Probability(child, _)
+            | Node::PhaseShift(child, _)
+            | Node::Span(child, _)
+            | Node::Ratchet(child, _)
+            | Node::Stut(child, ..)
+            | Node::Humanize(child, _, _)
+            | Node::Invert(child, _)
+            | Node::Drop(child, _)
+            | Node::Transpose(child, _)
+            | Node::Strum(child, _)
+            | Node::WithScale(_, child)
+            | Node::ExtractPitch(child, _, _, _)
+            | Node::Chordify(child, _, _)
+            | Node::VelocityOverride(child, _) => {
                 child.expand_refs(env, depth)?;
             }
-            Node::Condition { true_branch, false_branch, .. } | Node::MacroCondition { true_branch, false_branch, .. } => {
+            Node::Condition {
+                true_branch,
+                false_branch,
+                ..
+            }
+            | Node::MacroCondition {
+                true_branch,
+                false_branch,
+                ..
+            } => {
                 true_branch.expand_refs(env, depth)?;
                 false_branch.expand_refs(env, depth)?;
             }
@@ -115,9 +142,9 @@ impl Node {
             Node::Chord(elements) | Node::Sequence(elements) | Node::ShuffledSequence(elements) => {
                 elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()))
             }
-            Node::RandomChoice(elements) => {
-                elements.iter().fold(1, |acc, (_, n)| lcm(acc, n.cycle_length()))
-            }
+            Node::RandomChoice(elements) => elements
+                .iter()
+                .fold(1, |acc, (_, n)| lcm(acc, n.cycle_length())),
             Node::Alternator(elements) => {
                 let children_lcm = elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()));
                 children_lcm * elements.len()
@@ -134,17 +161,27 @@ impl Node {
                 layers.iter().fold(1, |acc, layer| {
                     let li = layer.len().max(1);
                     let layer_child_lcm = layer.iter().fold(1, |a, n| lcm(a, n.cycle_length()));
-                    
+
                     let sync_macro_cycles = lcm(l0, li * layer_child_lcm) / l0;
                     lcm(acc, sync_macro_cycles)
                 })
             }
-            Node::Arrange(segments) => {
-                segments.iter().map(|s| s.1).max().unwrap_or(1).max(1)
-            }
-            Node::Euclidean(child, _, _) | Node::Arp(child, _) | Node::Probability(child, _) | Node::PhaseShift(child, _) | Node::Ratchet(child, _) | Node::Stut(child, ..) | Node::Humanize(child, _, _) | Node::Invert(child, _) | Node::Drop(child, _) | Node::Transpose(child, _) | Node::Strum(child, _) | Node::WithScale(_, child) | Node::ExtractPitch(child, _, _, _) | Node::Chordify(child, _, _) | Node::VelocityOverride(child, _) => {
-                child.cycle_length()
-            }
+            Node::Arrange(segments) => segments.iter().map(|s| s.1).max().unwrap_or(1).max(1),
+            Node::Euclidean(child, _, _)
+            | Node::Arp(child, _)
+            | Node::Probability(child, _)
+            | Node::PhaseShift(child, _)
+            | Node::Ratchet(child, _)
+            | Node::Stut(child, ..)
+            | Node::Humanize(child, _, _)
+            | Node::Invert(child, _)
+            | Node::Drop(child, _)
+            | Node::Transpose(child, _)
+            | Node::Strum(child, _)
+            | Node::WithScale(_, child)
+            | Node::ExtractPitch(child, _, _, _)
+            | Node::Chordify(child, _, _)
+            | Node::VelocityOverride(child, _) => child.cycle_length(),
             Node::Condition {
                 interval,
                 true_branch,
@@ -162,27 +199,7 @@ impl Node {
             Node::Struct(structure, content) => {
                 lcm(structure.cycle_length(), content.cycle_length())
             }
-            Node::SpeedModifier(child, speed) => {
-                let child_len = child.cycle_length();
-
-                let mut num = speed.round() as usize;
-                let mut den = 1;
-
-                for d in 1..=128 {
-                    let n = *speed * (d as f32);
-                    if (n - n.round()).abs() < 0.005 {
-                        num = n.round() as usize;
-                        den = d;
-                        break;
-                    }
-                }
-
-                if num == 0 {
-                    return child_len;
-                }
-
-                lcm(num, child_len * den) / num
-            }
+            Node::Span(_, span) => (*span).max(1),
         }
     }
 }
@@ -213,7 +230,7 @@ pub struct Program {
 
 impl Program {
     pub fn expand_all_refs(&mut self) -> Result<(), String> {
-        let env = self.aliases.clone(); 
+        let env = self.aliases.clone();
         for track in &mut self.tracks {
             track.root_node.expand_refs(&env, 0)?;
         }
