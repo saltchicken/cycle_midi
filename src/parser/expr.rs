@@ -486,39 +486,30 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then(expr.clone())
             .map(|(scale, child)| Node::WithScale(scale, Box::new(child)));
 
+        let seq_group = expr.clone().padded_by(pad_expr.clone()).repeated()
+            .delimited_by(just('['), just(']'))
+            .map(|seq| {
+                if seq.len() == 1 { seq.into_iter().next().unwrap() } else { Node::Sequence(seq) }
+            });
+
         let choice_branch = int_u8()
             .padded_by(pad_expr.clone())
             .then_ignore(pad_char(':'))
             .or_not()
-            .then(expr.clone().padded_by(pad_expr.clone()).repeated());
+            .then(expr.clone().padded_by(pad_expr.clone()).repeated().map(|seq| {
+                if seq.len() == 1 { seq.into_iter().next().unwrap() } else { Node::Sequence(seq) }
+            }));
 
-        let seq_group = choice_branch
+        let random_choice = choice_branch
             .separated_by(pad_char('|'))
-            .delimited_by(just('['), just(']'))
+            .at_least(2)
+            .delimited_by(just('<'), just('>'))
             .map(|choices| {
-                if choices.len() == 1 {
-                    let (_, seq) = choices.into_iter().next().unwrap();
-                    if seq.len() == 1 {
-                        seq.into_iter().next().unwrap()
-                    } else {
-                        Node::Sequence(seq)
-                    }
-                } else {
-                    Node::RandomChoice(
-                        choices
-                            .into_iter()
-                            .map(|(w, seq)| {
-                                let node = if seq.len() == 1 {
-                                    seq.into_iter().next().unwrap()
-                                } else {
-                                    Node::Sequence(seq)
-                                }
-                                ;
-                                (w.unwrap_or(1) as u32, node)
-                            })
-                            .collect(),
-                    )
-                }
+                Node::RandomChoice(
+                    choices.into_iter().map(|(w, node)| {
+                        (w.unwrap_or(1) as u32, node)
+                    }).collect()
+                )
             });
 
         let shuf_group = kw("shuf")
@@ -569,16 +560,20 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .ignore_then(
                 seqp_segment
                     .clone()
-                    .separated_by(pad_char('|'))
-                    .delimited_by(pad_char('{'), pad_char('}'))
+                    .padded_by(padding())
+                    .then_ignore(pad_char(',').or_not())
+                    .repeated()
+                    .delimited_by(just('['), just(']'))
             )
             .map(|segments| Node::SeqP(segments, false));
 
         let seqploop = kw("seqPLoop")
             .ignore_then(
                 seqp_segment
-                    .separated_by(pad_char('|'))
-                    .delimited_by(pad_char('{'), pad_char('}'))
+                    .padded_by(padding())
+                    .then_ignore(pad_char(',').or_not())
+                    .repeated()
+                    .delimited_by(just('['), just(']'))
             )
             .map(|segments| Node::SeqP(segments, true));
 
@@ -594,8 +589,9 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .ignore_then(
                 chain_segment
                     .padded_by(padding())
-                    .repeated() 
-                    .delimited_by(pad_char('{'), pad_char('}'))
+                    .then_ignore(pad_char(',').or_not())
+                    .repeated()
+                    .delimited_by(just('['), just(']'))
             )
             .map(|segments| {
                 let mut current_start = 0;
@@ -647,6 +643,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             struct_group,
             euclid_group,
             choice((
+                random_choice,
                 parallel_group,
                 polymeter_group,
                 chain_loop,

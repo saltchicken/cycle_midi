@@ -124,20 +124,20 @@ def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_c
         print(" ".join(grid))
         
     elif output_format == "seqploop":
-        print("seqPLoop {")
+        print("seqPLoop [")
         
         chunks = [grid[i:i + steps_per_cycle] for i in range(0, len(grid), steps_per_cycle)]
         max_chunk = len(chunks) - 1
         
         for i, chunk in enumerate(chunks):
             seq_str = " ".join(chunk)
-            separator = " |" if i < max_chunk else ""
+            separator = "," if i < max_chunk else ""
             print(f"  ({i}, {i + 1}): [{seq_str}]{separator}")
             
-        print("}")
+        print("]")
 
     elif output_format == "chain":
-        print("chain {")
+        print("chain [")
         
         chunks = [grid[i:i + steps_per_cycle] for i in range(0, len(grid), steps_per_cycle)]
         
@@ -156,11 +156,13 @@ def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_c
                     count = 1
             rle_chunks.append((count, current_chunk))
             
-            for count, chunk in rle_chunks:
+            max_rle = len(rle_chunks) - 1
+            for i, (count, chunk) in enumerate(rle_chunks):
                 seq_str = " ".join(chunk)
-                print(f"  {count}: [{seq_str}]")
+                separator = "," if i < max_rle else ""
+                print(f"  {count}: [{seq_str}]{separator}")
             
-        print("}")
+        print("]")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Quantize a MIDI file into MMN sequence syntax.")
