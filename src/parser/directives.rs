@@ -29,7 +29,7 @@ pub fn scale_name() -> impl Parser<char, Vec<u8>, Error = Simple<char>> + Clone 
 }
 
 pub fn scale_def() -> impl Parser<char, ScaleDef, Error = Simple<char>> + Clone {
-    pitch_val()
+    pitch_val() // Swapped back to parsing string notation like C4
         .then_ignore(just(' ').repeated().at_least(1))
         .then(scale_name())
         .map(|(root, intervals)| ScaleDef {

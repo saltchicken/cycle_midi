@@ -78,7 +78,7 @@ pub fn initialize_config() -> (AppConfig, PathBuf, PathBuf) {
     if !file_path.exists() {
         fs::write(
             &file_path,
-            "#BPM=120\n#SCALE=C4 minor\nT1: 0 2 3 4 . 7 _\nT2(G3 minor_pentatonic): {-7 | 0}",
+            "#BPM=120\n#SCALE=C4 minor\nT1: 0 2 3 4 . 7 _",
         )
         .expect("Failed to create initial file");
     }

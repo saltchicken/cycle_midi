@@ -18,7 +18,6 @@ pub fn lcm(a: usize, b: usize) -> usize {
 pub fn resolve_pitch(pitch: &Pitch, scale: &Option<ScaleDef>, octave_offset: i32) -> u8 {
     let shift = octave_offset * 12;
     match pitch {
-        Pitch::Absolute(p) => (*p as i32 + shift).clamp(0, 127) as u8,
         Pitch::Numeric(val, accidental) => {
             let val = *val;
             if let Some(scale) = scale {

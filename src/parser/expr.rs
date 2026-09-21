@@ -1,6 +1,6 @@
 use super::directives::global_directives;
 use super::primitives::{
-    drum_val, float_f32, float_f64, int_i32, int_u8, kw, pad_char, padding, pitch_val,
+    float_f32, float_f64, int_i32, int_u8, kw, pad_char, padding,
 };
 use super::track::track_parser;
 use crate::ast::{ArpStyle, DynamicValue, Node, Pitch, Program};
@@ -84,29 +84,6 @@ fn cc_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         })
 }
 
-// Absolute semitone offsets for literal pitches (e.g., C4_maj)
-fn absolute_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + Clone {
-    choice((
-        just("maj7").or(just("M7")).to(vec![0, 4, 7, 11]),
-        just("min7").or(just("m7")).to(vec![0, 3, 7, 10]),
-        just("dom7").to(vec![0, 4, 7, 10]),
-        just("dim7").to(vec![0, 3, 6, 9]),
-        just("m7b5").or(just("halfdim")).to(vec![0, 3, 6, 10]),
-        just("aug7").to(vec![0, 4, 8, 10]),
-        just("sus2").to(vec![0, 2, 7]),
-        just("sus4").to(vec![0, 5, 7]),
-        just("power").to(vec![0, 7]),
-    ))
-    .or(choice((
-        just("maj").or(just("M")).to(vec![0, 4, 7]),
-        just("min").or(just("m")).to(vec![0, 3, 7]),
-        just("dim").to(vec![0, 3, 6]),
-        just("aug").to(vec![0, 4, 8]),
-        just("7").to(vec![0, 4, 7, 10]),
-        just("5").to(vec![0, 7]),
-    )))
-}
-
 // Scale degree offsets for numeric diatonic chords (e.g., 0_triad)
 fn diatonic_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + Clone {
     choice((
@@ -127,21 +104,9 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         .then(accidental.clone())
         .map(|(degree, acc)| Pitch::Numeric(degree, acc));
 
-    let single_pitch = pitch_val()
-        .or(drum_val())
-        .map(Pitch::Absolute)
-        .or(numeric_pitch)
+    let single_pitch = numeric_pitch
+        .clone()
         .map(|p| vec![p]);
-
-    let absolute_named_chord = pitch_val()
-        .then_ignore(just('_'))
-        .then(absolute_chord_type())
-        .map(|(root, intervals)| {
-            intervals
-                .into_iter()
-                .map(|interval| Pitch::Absolute((root as i32 + interval).clamp(0, 127) as u8))
-                .collect::<Vec<_>>()
-        });
 
     let numeric_named_chord = int_i32()
         .then(accidental.clone())
@@ -154,7 +119,7 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
                 .collect::<Vec<_>>()
         });
 
-    let pitch_group = choice((absolute_named_chord, numeric_named_chord, single_pitch));
+    let pitch_group = choice((numeric_named_chord, single_pitch));
 
     let velocity = pad_char('@').ignore_then(int_u8());
     let gate = pad_char('%').ignore_then(int_u8());
