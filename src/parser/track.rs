@@ -1,5 +1,5 @@
 use super::directives::scale_def;
-use super::primitives::{kw, padding};
+use super::primitives::{int_i32, kw, padding};
 use crate::ast::{Node, ScaleDef, SeedDef, SeedInterval, Track};
 use chumsky::prelude::*;
 
@@ -30,26 +30,9 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
                     .map_err(|e| Simple::custom(span, format!("Invalid PC: {}", e)))
             }))
             .map(TrackModifier::ProgramChange),
-        kw("up")
-            .ignore_then(
-                text::int::<char, Simple<char>>(10)
-                    .try_map(|s, span| {
-                        s.parse::<i32>()
-                            .map_err(|e| Simple::custom(span, format!("Invalid octave: {}", e)))
-                    })
-                    .or_not(),
-            )
+        kw("transpose")
+            .ignore_then(int_i32().or_not())
             .map(|v| TrackModifier::Octave(v.unwrap_or(1))),
-        kw("down")
-            .ignore_then(
-                text::int::<char, Simple<char>>(10)
-                    .try_map(|s, span| {
-                        s.parse::<i32>()
-                            .map_err(|e| Simple::custom(span, format!("Invalid octave: {}", e)))
-                    })
-                    .or_not(),
-            )
-            .map(|v| TrackModifier::Octave(-v.unwrap_or(1))),
         kw("seed")
             .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
                 s.parse::<u64>()

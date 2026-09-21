@@ -1,7 +1,5 @@
 use super::directives::global_directives;
-use super::primitives::{
-    float_f32, float_f64, int_i32, int_u8, kw, pad_char, padding,
-};
+use super::primitives::{float_f32, float_f64, int_i32, int_u8, kw, pad_char, padding};
 use super::track::track_parser;
 use crate::ast::{ArpStyle, DynamicValue, Node, Pitch, Program};
 use chumsky::prelude::*;
@@ -93,9 +91,7 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         .then(accidental.clone())
         .map(|(degree, acc)| Pitch::Numeric(degree, acc));
 
-    let single_pitch = numeric_pitch
-        .clone()
-        .map(|p| vec![p]);
+    let single_pitch = numeric_pitch.clone().map(|p| vec![p]);
 
     let numeric_named_chord = int_i32()
         .then(accidental.clone())
@@ -241,10 +237,9 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
                 PostfixOp::Humanize(vel, time)
             });
 
-        let transpose_mod = kw("up").ignore_then(int_i32()).map(PostfixOp::Transpose);
-        let transpose_down_mod = kw("down")
+        let transpose_mod = kw("transpose")
             .ignore_then(int_i32())
-            .map(|v| PostfixOp::Transpose(-v));
+            .map(PostfixOp::Transpose);
 
         let off_mod = kw("off")
             .ignore_then(pad_char('('))
@@ -311,7 +306,6 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             phase_shift,
             humanize_mod,
             transpose_mod,
-            transpose_down_mod,
             off_mod,
             strum_mod,
             highest_mod,

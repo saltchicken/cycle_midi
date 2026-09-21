@@ -76,11 +76,8 @@ pub fn initialize_config() -> (AppConfig, PathBuf, PathBuf) {
     let file_path = mmn_dir.join(startup_filename);
 
     if !file_path.exists() {
-        fs::write(
-            &file_path,
-            "#BPM=120\n#SCALE=C4 minor\nT1: 0 2 3 4 . 7 _",
-        )
-        .expect("Failed to create initial file");
+        fs::write(&file_path, "#BPM=120\n#SCALE=C4 minor\nT1: 0 2 3 4 . 7 _")
+            .expect("Failed to create initial file");
     }
 
     (config, mmn_dir, file_path)
