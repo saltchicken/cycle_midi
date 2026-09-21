@@ -237,9 +237,7 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
                 PostfixOp::Humanize(vel, time)
             });
 
-        let transpose_mod = kw("transpose")
-            .ignore_then(int_i32())
-            .map(PostfixOp::Transpose);
+        let octave_mod = kw("octave").ignore_then(int_i32()).map(PostfixOp::Transpose);
 
         let off_mod = kw("off")
             .ignore_then(pad_char('('))
@@ -305,7 +303,7 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             prob_mod,
             phase_shift,
             humanize_mod,
-            transpose_mod,
+            octave_mod,
             off_mod,
             strum_mod,
             highest_mod,

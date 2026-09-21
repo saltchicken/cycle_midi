@@ -51,15 +51,15 @@ $PRELUDE = chain [
 T1:
   $PRELUDE
 
-T2 transpose -2:
+T2 octave -2:
  $PRELUDE chordify lowest ratchet(4)
 
-T3 transpose -1:
+T3 octave -1:
 // Define your two effect states
 $CHORD_A = $PRELUDE chordify(-2, -1)
 $CHORD_B = $PRELUDE chordify(3, 1)
 
-T3 transpose -1:
+T3 octave -1:
   // Route 3 cycles to A, and 5 cycles to B. 
   // It repeats this 8-step sequence infinitely while $PRELUDE progresses normally.
   < $CHORD_A $CHORD_A $CHORD_A $CHORD_B $CHORD_B $CHORD_B $CHORD_B $CHORD_B >
