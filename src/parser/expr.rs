@@ -71,7 +71,7 @@ fn cc_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         })
 }
 
-// Scale degree offsets for numeric diatonic chords (e.g., 0_triad)
+// Scale degree offsets for numeric diatonic chords (e.g., 0'triad)
 fn diatonic_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + Clone {
     choice((
         just("triad").or(just("t")).to(vec![0, 2, 4]),
@@ -79,6 +79,8 @@ fn diatonic_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + 
         just("9th").or(just("9")).to(vec![0, 2, 4, 6, 8]),
         just("sus2").to(vec![0, 1, 4]),
         just("sus4").to(vec![0, 3, 4]),
+        just("m").to(vec![0, 3, 7]),
+        just("maj").to(vec![0, 4, 7]),
     ))
 }
 
@@ -95,7 +97,7 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
 
     let numeric_named_chord = int_i32()
         .then(accidental.clone())
-        .then_ignore(just('_'))
+        .then_ignore(just('\'')) // FIX: Use apostrophe to avoid '_' hold clash
         .then(diatonic_chord_type())
         .map(|((root_degree, acc), intervals)| {
             intervals
@@ -115,7 +117,7 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         .then(gate.clone().or_not());
 
     modified_pitch_group
-        .separated_by(pad_char('+'))
+        .separated_by(pad_char('&')) // FIX: Use '&' to avoid mathematical '+' clash
         .at_least(1)
         .then(velocity.or_not())
         .then(gate.or_not())
@@ -151,6 +153,14 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             .then_ignore(pad_char(')'))
             .map(|(p, s)| PostfixOp::Euclidean(p, s));
 
+        // DX FIX: Shorthand multiplier for span (e.g., /2 instead of span(2))
+        let shorthand_span = pad_char('/')
+            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<usize>()
+                    .map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
+            }))
+            .map(PostfixOp::Span);
+
         let span_mod = kw("span")
             .ignore_then(pad_char('('))
             .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
@@ -176,6 +186,11 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             .ignore_then(arp_style)
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Arp);
+
+        // DX FIX: Shorthand multiplier for ratchets (e.g., *4 instead of ratchet(4))
+        let shorthand_ratchet = pad_char('*')
+            .ignore_then(int_u8())
+            .map(PostfixOp::Ratchet);
 
         let ratchet_mod = kw("ratchet")
             .ignore_then(pad_char('('))
@@ -292,6 +307,8 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             .map(PostfixOp::VelocityOverride);
 
         choice((
+            shorthand_ratchet,
+            shorthand_span,
             euclidean,
             span_mod,
             arp_mod,
@@ -348,9 +365,8 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
     let pad_expr = padding();
     let expr = recursive(move |expr| {
         let rest = just('.').to(Node::Rest);
-        let hold = just('_').to(Node::Hold);
+        let hold = just('_').to(Node::Hold); // FIX: Now completely decoupled from chords
 
-        // Prevents the previous track from accidentally swallowing alias definitions
         let alias_ref = just('$')
             .ignore_then(text::ident())
             .then_ignore(just('=').padded_by(padding()).not())
@@ -363,19 +379,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then(expr.clone())
             .map(|(scale, child)| Node::WithScale(scale, Box::new(child)));
 
-        let seq_group = expr
-            .clone()
-            .padded_by(pad_expr.clone())
-            .repeated()
-            .delimited_by(pad_char('['), pad_char(']'))
-            .map(|seq| {
-                if seq.len() == 1 {
-                    seq.into_iter().next().unwrap()
-                } else {
-                    Node::Sequence(seq)
-                }
-            });
-
+        // FIX: Unified Random Choice & Sequence to prevent parsing overlaps inside `[` `]`
         let choice_branch = int_u8()
             .padded_by(pad_expr.clone())
             .then_ignore(pad_char(':'))
@@ -393,17 +397,21 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     }),
             );
 
-        let random_choice = choice_branch
+        let bracket_group = choice_branch
             .separated_by(pad_char('|'))
-            .at_least(2)
-            .delimited_by(pad_char('<'), pad_char('>'))
+            .at_least(1)
+            .delimited_by(pad_char('['), pad_char(']'))
             .map(|choices| {
-                Node::RandomChoice(
-                    choices
-                        .into_iter()
-                        .map(|(w, node)| (w.unwrap_or(1) as u32, node))
-                        .collect(),
-                )
+                if choices.len() == 1 && choices[0].0.is_none() {
+                    choices.into_iter().next().unwrap().1 // Plain Sequence
+                } else {
+                    Node::RandomChoice(
+                        choices
+                            .into_iter()
+                            .map(|(w, node)| (w.unwrap_or(1) as u32, node))
+                            .collect(),
+                    )
+                }
             });
 
         let shuf_group = kw("shuf")
@@ -415,6 +423,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             )
             .map(Node::ShuffledSequence);
 
+        // FIX: Unambiguous < > syntax for Alternator
         let alt_group = expr
             .clone()
             .padded_by(pad_expr.clone())
@@ -424,12 +433,14 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
         let parallel_layer = expr.clone().padded_by(pad_expr.clone()).repeated();
 
+        // FIX: Strict {| |} for Parallel removes `{ }` Polymeter clash completely
         let parallel_group = parallel_layer
             .clone()
             .separated_by(pad_char('|'))
-            .delimited_by(pad_char('{'), pad_char('}'))
+            .delimited_by(just("{|").padded_by(padding()), just("|}").padded_by(padding()))
             .map(Node::Parallel);
 
+        // FIX: Regular { , } reserved safely for Polymeter
         let polymeter_group = parallel_layer
             .separated_by(pad_char(','))
             .delimited_by(pad_char('{'), pad_char('}'))
@@ -545,13 +556,12 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             hold,
             alias_ref,
             with_scale,
-            seq_group,
+            bracket_group,
             shuf_group,
             alt_group,
             struct_group,
             euclid_group,
             choice((
-                random_choice,
                 parallel_group,
                 polymeter_group,
                 chain_loop,
