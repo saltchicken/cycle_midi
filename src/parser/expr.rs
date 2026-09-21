@@ -203,18 +203,11 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Drop);
 
-        let phase_shift = choice((
-            just("~>").padded_by(padding()).ignore_then(float_f32()),
-            just("<~")
-                .padded_by(padding())
-                .ignore_then(float_f32())
-                .map(|v| -v),
-            kw("shift")
-                .ignore_then(pad_char('('))
-                .ignore_then(float_f32())
-                .then_ignore(pad_char(')')),
-        ))
-        .map(PostfixOp::PhaseShift);
+        let phase_shift = kw("shift")
+            .ignore_then(pad_char('('))
+            .ignore_then(float_f32())
+            .then_ignore(pad_char(')'))
+            .map(PostfixOp::PhaseShift);
 
         let humanize_args = int_u8()
             .then(

@@ -2,21 +2,6 @@
 #SCALE=C4 major
 
 
-$PRELUDE = chain [
-  2: [0 2 4 7 9 4 7 9],
-  2: [0 1 5 8 10 5 8 10],
-]
-
-
 
 T1:
-  $PRELUDE
-
-T2 octave -2:
- $PRELUDE chordify extract(highest, 2) ratchet(4)
-
-$CHORD_A = $PRELUDE chordify(-2, -1)
-$CHORD_B = $PRELUDE chordify(3, 1)
-
-T3 octave -1:
-  < $CHORD_A $CHORD_A $CHORD_A $CHORD_B $CHORD_B $CHORD_B $CHORD_B $CHORD_B >
+  0 1 2 3
