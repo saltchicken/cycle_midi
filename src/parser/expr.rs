@@ -255,36 +255,40 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Strum);
 
+        let extract_type = choice((
+            kw("highest").to(crate::ast::ExtractType::Highest),
+            kw("high").to(crate::ast::ExtractType::Highest),
+            kw("lowest").to(crate::ast::ExtractType::Lowest),
+            kw("low").to(crate::ast::ExtractType::Lowest),
+        ));
+
         let extract_args = pad_char('(')
+            .ignore_then(extract_type)
+            .then(
+                pad_char(',')
+                    .ignore_then(int_i32())
+                    .then(pad_char(',').ignore_then(int_i32()).or_not())
+                    .or_not(),
+            )
+            .then_ignore(pad_char(')'));
+
+        let extract_mod = kw("extract")
+            .ignore_then(extract_args)
+            .map(|(ext_type, args)| match args {
+                Some((limit, offset)) => {
+                    PostfixOp::ExtractPitch(ext_type, Some(limit), offset.unwrap_or(0))
+                }
+                None => PostfixOp::ExtractPitch(ext_type, Some(1), 0),
+            });
+
+        let chordify_args = pad_char('(')
             .ignore_then(int_i32())
             .then(pad_char(',').ignore_then(int_i32()).or_not())
             .then_ignore(pad_char(')'))
             .or_not();
 
-        let highest_mod = kw("highest")
-            .ignore_then(extract_args.clone())
-            .map(|args| match args {
-                Some((limit, offset)) => PostfixOp::ExtractPitch(
-                    crate::ast::ExtractType::Highest,
-                    Some(limit),
-                    offset.unwrap_or(0),
-                ),
-                None => PostfixOp::ExtractPitch(crate::ast::ExtractType::Highest, Some(1), 0),
-            });
-
-        let lowest_mod = kw("lowest")
-            .ignore_then(extract_args.clone())
-            .map(|args| match args {
-                Some((limit, offset)) => PostfixOp::ExtractPitch(
-                    crate::ast::ExtractType::Lowest,
-                    Some(limit),
-                    offset.unwrap_or(0),
-                ),
-                None => PostfixOp::ExtractPitch(crate::ast::ExtractType::Lowest, Some(1), 0),
-            });
-
         let chordify_mod = kw("chordify")
-            .ignore_then(extract_args)
+            .ignore_then(chordify_args)
             .map(|args| match args {
                 Some((limit, offset)) => PostfixOp::Chordify(Some(limit), offset.unwrap_or(0)),
                 None => PostfixOp::Chordify(None, 0),
@@ -308,8 +312,7 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             octave_mod,
             off_mod,
             strum_mod,
-            highest_mod,
-            lowest_mod,
+            extract_mod,
             chordify_mod,
             velocity_mod,
         ))
