@@ -120,14 +120,11 @@ def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_c
         print("No Note On events found in the MIDI file.")
         return
 
-    print(f"#SCALE={target_scale}")
-    print("T1:")
-    
     if output_format == "raw":
-        print("  " + " ".join(grid))
+        print(" ".join(grid))
         
     elif output_format == "seqploop":
-        print("  seqPLoop {")
+        print("seqPLoop {")
         
         chunks = [grid[i:i + steps_per_cycle] for i in range(0, len(grid), steps_per_cycle)]
         max_chunk = len(chunks) - 1
@@ -135,12 +132,12 @@ def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_c
         for i, chunk in enumerate(chunks):
             seq_str = " ".join(chunk)
             separator = " |" if i < max_chunk else ""
-            print(f"    ({i}, {i + 1}): [{seq_str}]{separator}")
+            print(f"  ({i}, {i + 1}): [{seq_str}]{separator}")
             
-        print("  }")
+        print("}")
 
     elif output_format == "chain":
-        print("  chain {")
+        print("chain {")
         
         chunks = [grid[i:i + steps_per_cycle] for i in range(0, len(grid), steps_per_cycle)]
         
@@ -161,9 +158,9 @@ def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_c
             
             for count, chunk in rle_chunks:
                 seq_str = " ".join(chunk)
-                print(f"    {count}: [{seq_str}]")
+                print(f"  {count}: [{seq_str}]")
             
-        print("  }")
+        print("}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Quantize a MIDI file into MMN sequence syntax.")
