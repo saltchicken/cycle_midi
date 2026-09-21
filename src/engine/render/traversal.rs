@@ -728,34 +728,6 @@ pub fn traverse_ast(
             }
             ctx.active_chord_indices = all_indices;
         }
-        Node::Condition {
-            interval,
-            offset,
-            true_branch,
-            false_branch,
-        } => {
-            let target = if ctx.cycle_count % interval == *offset {
-                true_branch
-            } else {
-                false_branch
-            };
-            traverse_ast(target, ctx, out_events, rng);
-        }
-        Node::MacroCondition {
-            interval,
-            offset,
-            is_gate,
-            true_branch,
-            false_branch,
-        } => {
-            let m_len = ctx.macro_cycle_length.max(1);
-            let macro_cycle = ctx.cycle_count / m_len;
-            let is_active_macro = macro_cycle % interval == *offset;
-
-            let condition = is_active_macro && (!*is_gate || (ctx.cycle_count % m_len == 0));
-            let target = if condition { true_branch } else { false_branch };
-            traverse_ast(target, ctx, out_events, rng);
-        }
         Node::Probability(child, prob) => {
             if *prob < 100 && rng.random_range(0..100) >= *prob {
                 ctx.active_chord_indices.clear();

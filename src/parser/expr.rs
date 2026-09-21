@@ -15,27 +15,16 @@ enum PostfixOp {
     Ratchet(u8),
     Stut(u8, f32, f32),
     Humanize(u8, f64),
-    Only(usize, usize),
-    MacroOnly(usize, usize),
-    If(usize, usize),
-    MacroIf(usize, usize),
     Prob(u8),
     PhaseShift(f32),
     Invert(i32),
     Drop(u8),
     Transpose(i32),
-    Off(f32, Vec<Postfix>),
+    Off(f32, Vec<PostfixOp>),
     Strum(f64),
     ExtractPitch(crate::ast::ExtractType, Option<i32>, i32),
     Chordify(Option<i32>, i32),
     VelocityOverride(u8),
-}
-
-#[derive(Clone)]
-struct Postfix {
-    op: PostfixOp,
-    cond: Option<(usize, usize)>,
-    m_cond: Option<(usize, usize)>,
 }
 
 enum TopLevelItem {
@@ -157,74 +146,8 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         })
 }
 
-fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone {
+fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clone {
     recursive(|postfix| {
-        let condition_clause = just("if(")
-            .ignore_then(int_u8())
-            .then(pad_char(',').ignore_then(int_u8()).or_not())
-            .then_ignore(just(')'))
-            .map(|(interval, offset)| {
-                (
-                    interval as usize,
-                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
-                )
-            });
-
-        let m_condition_clause = just("m_if(")
-            .ignore_then(int_u8())
-            .then(pad_char(',').ignore_then(int_u8()).or_not())
-            .then_ignore(just(')'))
-            .map(|(interval, offset)| {
-                (
-                    interval as usize,
-                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
-                )
-            });
-
-        let only_mod = just("only(")
-            .ignore_then(int_u8())
-            .then(pad_char(',').ignore_then(int_u8()).or_not())
-            .then_ignore(just(')'))
-            .map(|(interval, offset)| {
-                PostfixOp::Only(
-                    interval as usize,
-                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
-                )
-            });
-
-        let m_only_mod = just("m_only(")
-            .ignore_then(int_u8())
-            .then(pad_char(',').ignore_then(int_u8()).or_not())
-            .then_ignore(just(')'))
-            .map(|(interval, offset)| {
-                PostfixOp::MacroOnly(
-                    interval as usize,
-                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
-                )
-            });
-
-        let if_mod = just("if(")
-            .ignore_then(int_u8())
-            .then(pad_char(',').ignore_then(int_u8()).or_not())
-            .then_ignore(just(')'))
-            .map(|(interval, offset)| {
-                PostfixOp::If(
-                    interval as usize,
-                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
-                )
-            });
-
-        let m_if_mod = just("m_if(")
-            .ignore_then(int_u8())
-            .then(pad_char(',').ignore_then(int_u8()).or_not())
-            .then_ignore(just(')'))
-            .map(|(interval, offset)| {
-                PostfixOp::MacroIf(
-                    interval as usize,
-                    offset.unwrap_or(interval.saturating_sub(1)) as usize,
-                )
-            });
-
         let euclidean = pad_char('(')
             .ignore_then(int_u8())
             .then_ignore(pad_char(','))
@@ -376,7 +299,7 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             .ignore_then(int_u8())
             .map(PostfixOp::VelocityOverride);
 
-        let postfix_op = choice((
+        choice((
             euclidean,
             span_mod,
             arp_mod,
@@ -384,10 +307,6 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             stut_mod,
             invert_mod,
             drop_mod,
-            only_mod,
-            m_only_mod,
-            if_mod,
-            m_if_mod,
             prob_mod,
             phase_shift,
             humanize_mod,
@@ -400,34 +319,29 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             chordify_mod,
             velocity_mod,
         ))
-        .padded_by(padding());
-
-        postfix_op
-            .then(condition_clause.padded_by(padding()).or_not())
-            .then(m_condition_clause.padded_by(padding()).or_not())
-            .map(|((op, cond), m_cond)| Postfix { op, cond, m_cond })
+        .padded_by(padding())
     })
 }
 
-fn apply_postfix(acc: Node, post: Postfix) -> Node {
-    let true_branch = match post.op {
-        PostfixOp::Euclidean(p, s) => Node::Euclidean(Box::new(acc.clone()), p, s),
-        PostfixOp::Span(val) => Node::Span(Box::new(acc.clone()), val),
-        PostfixOp::Arp(style) => Node::Arp(Box::new(acc.clone()), style),
-        PostfixOp::Ratchet(splits) => Node::Ratchet(Box::new(acc.clone()), splits),
-        PostfixOp::Stut(d, f, t) => Node::Stut(Box::new(acc.clone()), d, f, t),
-        PostfixOp::Humanize(vel, time) => Node::Humanize(Box::new(acc.clone()), vel, time),
-        PostfixOp::PhaseShift(val) => Node::PhaseShift(Box::new(acc.clone()), val),
-        PostfixOp::Invert(amount) => Node::Invert(Box::new(acc.clone()), amount),
-        PostfixOp::Drop(voice) => Node::Drop(Box::new(acc.clone()), voice),
-        PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p),
-        PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc.clone()), amt),
-        PostfixOp::Strum(amt) => Node::Strum(Box::new(acc.clone()), amt),
+fn apply_postfix(acc: Node, post: PostfixOp) -> Node {
+    match post {
+        PostfixOp::Euclidean(p, s) => Node::Euclidean(Box::new(acc), p, s),
+        PostfixOp::Span(val) => Node::Span(Box::new(acc), val),
+        PostfixOp::Arp(style) => Node::Arp(Box::new(acc), style),
+        PostfixOp::Ratchet(splits) => Node::Ratchet(Box::new(acc), splits),
+        PostfixOp::Stut(d, f, t) => Node::Stut(Box::new(acc), d, f, t),
+        PostfixOp::Humanize(vel, time) => Node::Humanize(Box::new(acc), vel, time),
+        PostfixOp::PhaseShift(val) => Node::PhaseShift(Box::new(acc), val),
+        PostfixOp::Invert(amount) => Node::Invert(Box::new(acc), amount),
+        PostfixOp::Drop(voice) => Node::Drop(Box::new(acc), voice),
+        PostfixOp::Prob(p) => Node::Probability(Box::new(acc), p),
+        PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc), amt),
+        PostfixOp::Strum(amt) => Node::Strum(Box::new(acc), amt),
         PostfixOp::ExtractPitch(ext_type, limit, offset) => {
-            Node::ExtractPitch(Box::new(acc.clone()), ext_type, limit, offset)
+            Node::ExtractPitch(Box::new(acc), ext_type, limit, offset)
         }
-        PostfixOp::Chordify(limit, offset) => Node::Chordify(Box::new(acc.clone()), limit, offset),
-        PostfixOp::VelocityOverride(v) => Node::VelocityOverride(Box::new(acc.clone()), v),
+        PostfixOp::Chordify(limit, offset) => Node::Chordify(Box::new(acc), limit, offset),
+        PostfixOp::VelocityOverride(v) => Node::VelocityOverride(Box::new(acc), v),
 
         PostfixOp::Off(shift, mods) => {
             let mut shifted = acc.clone();
@@ -435,50 +349,8 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
                 shifted = apply_postfix(shifted, m);
             }
             shifted = Node::PhaseShift(Box::new(shifted), shift);
-            Node::Parallel(vec![vec![acc.clone()], vec![shifted]])
+            Node::Parallel(vec![vec![acc], vec![shifted]])
         }
-
-        PostfixOp::Only(interval, offset) | PostfixOp::If(interval, offset) => Node::Condition {
-            interval,
-            offset,
-            true_branch: Box::new(acc.clone()),
-            false_branch: Box::new(Node::Rest),
-        },
-        PostfixOp::MacroOnly(interval, offset) => Node::MacroCondition {
-            interval,
-            offset,
-            is_gate: true,
-            true_branch: Box::new(acc.clone()),
-            false_branch: Box::new(Node::Rest),
-        },
-        PostfixOp::MacroIf(interval, offset) => Node::MacroCondition {
-            interval,
-            offset,
-            is_gate: false,
-            true_branch: Box::new(acc.clone()),
-            false_branch: Box::new(Node::Rest),
-        },
-    };
-
-    let micro_applied = match post.cond {
-        Some((interval, offset)) => Node::Condition {
-            interval,
-            offset,
-            true_branch: Box::new(true_branch),
-            false_branch: Box::new(acc.clone()),
-        },
-        None => true_branch,
-    };
-
-    match post.m_cond {
-        Some((interval, offset)) => Node::MacroCondition {
-            interval,
-            offset,
-            is_gate: false,
-            true_branch: Box::new(micro_applied),
-            false_branch: Box::new(acc),
-        },
-        None => micro_applied,
     }
 }
 

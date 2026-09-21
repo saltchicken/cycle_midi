@@ -38,19 +38,6 @@ pub enum Node {
     ExtractPitch(Box<Node>, ExtractType, Option<i32>, i32),
     Chordify(Box<Node>, Option<i32>, i32),
     VelocityOverride(Box<Node>, u8),
-    Condition {
-        interval: usize,
-        offset: usize,
-        true_branch: Box<Node>,
-        false_branch: Box<Node>,
-    },
-    MacroCondition {
-        interval: usize,
-        offset: usize,
-        is_gate: bool,
-        true_branch: Box<Node>,
-        false_branch: Box<Node>,
-    },
     PhaseShift(Box<Node>, f32),
     WithScale(ScaleDef, Box<Node>),
     Struct(Box<Node>, Box<Node>),
@@ -114,19 +101,6 @@ impl Node {
             | Node::VelocityOverride(child, _) => {
                 child.expand_refs(env, depth)?;
             }
-            Node::Condition {
-                true_branch,
-                false_branch,
-                ..
-            }
-            | Node::MacroCondition {
-                true_branch,
-                false_branch,
-                ..
-            } => {
-                true_branch.expand_refs(env, depth)?;
-                false_branch.expand_refs(env, depth)?;
-            }
             Node::Struct(structure, content) => {
                 structure.expand_refs(env, depth)?;
                 content.expand_refs(env, depth)?;
@@ -182,20 +156,6 @@ impl Node {
             | Node::ExtractPitch(child, _, _, _)
             | Node::Chordify(child, _, _)
             | Node::VelocityOverride(child, _) => child.cycle_length(),
-            Node::Condition {
-                interval,
-                true_branch,
-                false_branch,
-                ..
-            } => {
-                let branches_lcm = lcm(true_branch.cycle_length(), false_branch.cycle_length());
-                lcm(*interval, branches_lcm)
-            }
-            Node::MacroCondition {
-                true_branch,
-                false_branch,
-                ..
-            } => lcm(true_branch.cycle_length(), false_branch.cycle_length()),
             Node::Struct(structure, content) => {
                 lcm(structure.cycle_length(), content.cycle_length())
             }
