@@ -1,18 +1,32 @@
-#BPM=80
-#SCALE_SEQ { (0,8): C3 major | (8,16): G3 major | (16,24): D3 major | (24,32): A2 major }
+#BPM=120
+#SCALE=C4 major
 #QUANTIZE=auto
 
 #INCLUDE "include/drums.mmn"
-#INCLUDE "include/progressions.mmn"
-#INCLUDE "include/bass.mmn"
+
+$PRELUDE = 
+chain {
+  2: [0 2 4 6]
+  2: [3 5 3 2]
+}
+
 
 T10:
-  $DRUM_1
+  $DRUM_3
+
 
 T1:
-  seqPLoop {
-      (0, 4): $PHRASE_A / 4 |
-      (4, 8): $PHRASE_B / 4
-    }
-T2 down 1:
-  $BASS_A
+  $PRELUDE
+
+T2 down 2:
+chain {
+  3: $PRELUDE chordify lowest ratchet(4)
+  1: $PRELUDE chordify lowest(1, 1) ratchet(4)
+
+}
+
+T3 down 1:
+chain {
+  3: $PRELUDE chordify(-2, -1)
+  5: $PRELUDE chordify(3, 1)
+}
