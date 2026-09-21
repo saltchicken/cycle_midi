@@ -126,25 +126,6 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
 
 fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clone {
     recursive(|postfix| {
-        let euclid_mod = pad_char('.').ignore_then(kw("euclid").or(kw("E")))
-            .ignore_then(pad_char('('))
-            .ignore_then(int_u8())
-            .then_ignore(pad_char(','))
-            .then(int_u8())
-            .then_ignore(pad_char(')'))
-            .map(|(p, s)| PostfixOp::Euclidean(p, s));
-
-        let span_mod = pad_char('.').ignore_then(kw("span"))
-            .ignore_then(pad_char('('))
-            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
-            }))
-            .then_ignore(pad_char(')'))
-            .or(pad_char('.').ignore_then(pad_char('/')).ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
-            })))
-            .map(PostfixOp::Span);
-
         let arp_style = choice((
             just("updown").to(ArpStyle::UpDown),
             just("downup").to(ArpStyle::DownUp),
@@ -156,88 +137,6 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             just("down").to(ArpStyle::Down),
         ));
 
-        let arp_mod = pad_char('.').ignore_then(kw("arp"))
-            .ignore_then(pad_char('('))
-            .ignore_then(arp_style)
-            .then_ignore(pad_char(')'))
-            .map(PostfixOp::Arp);
-
-        let ratchet_mod = pad_char('.').ignore_then(kw("ratchet"))
-            .ignore_then(pad_char('('))
-            .ignore_then(int_u8())
-            .then_ignore(pad_char(')'))
-            .or(pad_char('.').ignore_then(pad_char('*')).ignore_then(int_u8()))
-            .map(PostfixOp::Ratchet);
-
-        let stut_mod = pad_char('.').ignore_then(kw("stut"))
-            .ignore_then(pad_char('('))
-            .ignore_then(int_u8())
-            .then_ignore(pad_char(','))
-            .then(float_f32())
-            .then_ignore(pad_char(','))
-            .then(float_f32())
-            .then_ignore(pad_char(')'))
-            .map(|((d, f), t)| PostfixOp::Stut(d, f, t));
-
-        let prob_mod = pad_char('.').ignore_then(kw("prob")).ignore_then(pad_char('(')).ignore_then(int_u8()).then_ignore(pad_char(')'))
-            .or(pad_char('?').ignore_then(int_u8()))
-            .map(PostfixOp::Prob);
-
-        let invert_mod = pad_char('.').ignore_then(kw("invert")).ignore_then(pad_char('(')).ignore_then(int_i32()).then_ignore(pad_char(')'))
-            .or(pad_char('^').ignore_then(int_i32()))
-            .map(PostfixOp::Invert);
-
-        let drop_mod = pad_char('.').ignore_then(kw("drop"))
-            .ignore_then(pad_char('('))
-            .ignore_then(int_u8())
-            .then_ignore(pad_char(')'))
-            .map(PostfixOp::Drop);
-
-        let phase_shift = pad_char('.').ignore_then(kw("shift"))
-            .ignore_then(pad_char('('))
-            .ignore_then(float_f32())
-            .then_ignore(pad_char(')'))
-            .map(PostfixOp::PhaseShift);
-
-        let humanize_args = int_u8()
-            .then(
-                pad_char(',')
-                    .ignore_then(float_f64())
-                    .then_ignore(just("ms").padded_by(padding()).or_not())
-                    .or_not(),
-            )
-            .or_not();
-
-        let humanize_mod = pad_char('.').ignore_then(kw("humanize"))
-            .ignore_then(pad_char('('))
-            .ignore_then(humanize_args)
-            .then_ignore(pad_char(')'))
-            .map(|args| {
-                let (vel, time) = match args {
-                    Some((v, t)) => (v, t.unwrap_or(0.0)),
-                    None => (0, 0.0),
-                };
-                PostfixOp::Humanize(vel, time)
-            });
-
-        let octave_mod = pad_char('.').ignore_then(kw("octave"))
-            .ignore_then(pad_char('(')).ignore_then(int_i32()).then_ignore(pad_char(')'))
-            .map(PostfixOp::Transpose);
-
-        let off_mod = pad_char('.').ignore_then(kw("off"))
-            .ignore_then(pad_char('('))
-            .ignore_then(float_f32())
-            .then_ignore(pad_char(','))
-            .then(postfix.repeated())
-            .then_ignore(pad_char(')'))
-            .map(|(shift, ops)| PostfixOp::Off(shift, ops));
-
-        let strum_mod = pad_char('.').ignore_then(kw("strum"))
-            .ignore_then(pad_char('('))
-            .ignore_then(float_f64())
-            .then_ignore(pad_char(')'))
-            .map(PostfixOp::Strum);
-
         let extract_type = choice((
             kw("highest").to(crate::ast::ExtractType::Highest),
             kw("high").to(crate::ast::ExtractType::Highest),
@@ -245,66 +144,160 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             kw("low").to(crate::ast::ExtractType::Lowest),
         ));
 
-        let extract_args = pad_char('(')
-            .ignore_then(extract_type)
-            .then(
-                pad_char(',')
-                    .ignore_then(int_i32())
-                    .then(pad_char(',').ignore_then(int_i32()).or_not())
-                    .or_not(),
-            )
-            .then_ignore(pad_char(')'));
+        // Alphabetic Pipeline Methods (Require a leading dot)
+        let method = pad_char('.').ignore_then(choice((
+            kw("euclid").or(kw("E"))
+                .ignore_then(pad_char('('))
+                .ignore_then(int_u8())
+                .then_ignore(pad_char(','))
+                .then(int_u8())
+                .then_ignore(pad_char(')'))
+                .map(|(p, s)| PostfixOp::Euclidean(p, s)),
 
-        let extract_mod = pad_char('.').ignore_then(kw("extract"))
-            .ignore_then(extract_args)
-            .map(|(ext_type, args)| match args {
-                Some((limit, offset)) => {
-                    PostfixOp::ExtractPitch(ext_type, Some(limit), offset.unwrap_or(0))
-                }
-                None => PostfixOp::ExtractPitch(ext_type, Some(1), 0),
-            });
+            kw("span")
+                .ignore_then(pad_char('('))
+                .ignore_then(text::int(10).try_map(|s: String, span| s.parse().map_err(|e| Simple::custom(span, e))))
+                .then_ignore(pad_char(')'))
+                .or(pad_char('/').ignore_then(text::int(10).try_map(|s: String, span| s.parse().map_err(|e| Simple::custom(span, e)))))
+                .map(PostfixOp::Span),
 
-        let chordify_args = pad_char('(')
-            .ignore_then(int_i32())
-            .then(pad_char(',').ignore_then(int_i32()).or_not())
-            .then_ignore(pad_char(')'))
-            .or_not();
+            kw("arp")
+                .ignore_then(pad_char('('))
+                .ignore_then(arp_style)
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::Arp),
 
-        let chordify_mod = pad_char('.').ignore_then(kw("chordify"))
-            .ignore_then(chordify_args)
-            .map(|args| match args {
-                Some((limit, offset)) => PostfixOp::Chordify(Some(limit), offset.unwrap_or(0)),
-                None => PostfixOp::Chordify(None, 0),
-            });
+            kw("ratchet")
+                .ignore_then(pad_char('('))
+                .ignore_then(int_u8())
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::Ratchet),
 
-        let velocity_mod = pad_char('.').ignore_then(kw("vel").or(kw("v")))
-            .ignore_then(pad_char('(')).ignore_then(int_u8()).then_ignore(pad_char(')'))
-            .map(PostfixOp::VelocityOverride);
+            kw("stut")
+                .ignore_then(pad_char('('))
+                .ignore_then(int_u8())
+                .then_ignore(pad_char(','))
+                .then(float_f32())
+                .then_ignore(pad_char(','))
+                .then(float_f32())
+                .then_ignore(pad_char(')'))
+                .map(|((d, f), t)| PostfixOp::Stut(d, f, t)),
 
-        let gate_mod = pad_char('.').ignore_then(kw("gate").or(kw("g")))
-            .ignore_then(pad_char('(')).ignore_then(int_u8()).then_ignore(pad_char(')'))
-            .map(PostfixOp::GateOverride);
+            kw("prob")
+                .ignore_then(pad_char('('))
+                .ignore_then(int_u8())
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::Prob),
 
-        choice((
-            ratchet_mod,
-            span_mod,
-            euclid_mod,
-            arp_mod,
-            stut_mod,
-            invert_mod,
-            drop_mod,
-            prob_mod,
-            phase_shift,
-            humanize_mod,
-            octave_mod,
-            off_mod,
-            strum_mod,
-            extract_mod,
-            chordify_mod,
-            velocity_mod,
-            gate_mod,
-        ))
-        .padded_by(padding())
+            kw("invert")
+                .ignore_then(pad_char('('))
+                .ignore_then(int_i32())
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::Invert),
+
+            kw("drop")
+                .ignore_then(pad_char('('))
+                .ignore_then(int_u8())
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::Drop),
+
+            kw("shift")
+                .ignore_then(pad_char('('))
+                .ignore_then(float_f32())
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::PhaseShift),
+
+            kw("humanize")
+                .ignore_then(
+                    pad_char('(')
+                        .ignore_then(
+                            int_u8()
+                                .then(pad_char(',').ignore_then(float_f64()).then_ignore(kw("ms").or_not()).or_not())
+                                .or_not()
+                        )
+                        .then_ignore(pad_char(')'))
+                        .or_not()
+                )
+                .map(|args_opt| {
+                    let (vel, time) = match args_opt.flatten() {
+                        Some((v, t)) => (v, t.unwrap_or(0.0)),
+                        None => (0, 0.0),
+                    };
+                    PostfixOp::Humanize(vel, time)
+                }),
+
+            kw("octave")
+                .ignore_then(pad_char('('))
+                .ignore_then(int_i32())
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::Transpose),
+
+            kw("off")
+                .ignore_then(pad_char('('))
+                .ignore_then(float_f32())
+                .then_ignore(pad_char(','))
+                .then(postfix.repeated())
+                .then_ignore(pad_char(')'))
+                .map(|(shift, ops)| PostfixOp::Off(shift, ops)),
+
+            kw("strum")
+                .ignore_then(pad_char('('))
+                .ignore_then(float_f64())
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::Strum),
+
+            kw("extract")
+                .ignore_then(
+                    pad_char('(')
+                        .ignore_then(extract_type)
+                        .then(
+                            pad_char(',')
+                                .ignore_then(int_i32().padded_by(padding()))
+                                .then(pad_char(',').ignore_then(int_i32().padded_by(padding())).or_not())
+                                .or_not(),
+                        )
+                        .then_ignore(pad_char(')'))
+                )
+                .map(|(ext_type, args)| match args {
+                    Some((limit, offset)) => PostfixOp::ExtractPitch(ext_type, Some(limit), offset.unwrap_or(0)),
+                    None => PostfixOp::ExtractPitch(ext_type, Some(1), 0),
+                }),
+
+            kw("chordify")
+                .ignore_then(
+                    pad_char('(')
+                        .ignore_then(int_i32().padded_by(padding()))
+                        .then(pad_char(',').ignore_then(int_i32().padded_by(padding())).or_not())
+                        .then_ignore(pad_char(')'))
+                        .or_not()
+                )
+                .map(|args| match args {
+                    Some((limit, offset)) => PostfixOp::Chordify(Some(limit), offset.unwrap_or(0)),
+                    None => PostfixOp::Chordify(None, 0),
+                }),
+
+            kw("vel").or(kw("v"))
+                .ignore_then(pad_char('('))
+                .ignore_then(int_u8())
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::VelocityOverride),
+
+            kw("gate").or(kw("g"))
+                .ignore_then(pad_char('('))
+                .ignore_then(int_u8())
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::GateOverride),
+        )));
+
+        // Symbolic Operators (Do not use leading dot)
+        let symbolic = choice((
+            pad_char('*').ignore_then(int_u8()).map(PostfixOp::Ratchet),
+            pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob),
+            pad_char('^').ignore_then(int_i32()).map(PostfixOp::Invert),
+            pad_char('/').ignore_then(text::int(10).try_map(|s: String, span| s.parse().map_err(|e| Simple::custom(span, e)))).map(PostfixOp::Span),
+        ));
+
+        choice((method, symbolic)).padded_by(padding())
     })
 }
 
@@ -356,7 +349,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
         let alias_ref = just('$')
             .ignore_then(text::ident())
-            .then_ignore(just('=').padded_by(padding()).not())
             .map(Node::Ref);
 
         let with_scale = kw("scale")
