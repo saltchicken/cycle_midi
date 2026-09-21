@@ -506,7 +506,7 @@ pub fn traverse_ast(
                 }
             }
         }
-        Node::ExtractPitch(child, ext_type) => {
+        Node::ExtractPitch(child, ext_type, limit, offset) => {
             let start_idx = out_events.len();
             traverse_ast(child, ctx, out_events, rng);
 
@@ -534,9 +534,39 @@ pub fn traverse_ast(
                 });
 
                 if !indices.is_empty() {
-                    match ext_type {
-                        crate::ast::ExtractType::Lowest => { keep_indices.insert(indices[0]); },
-                        crate::ast::ExtractType::Highest => { keep_indices.insert(*indices.last().unwrap()); },
+                    if *ext_type == crate::ast::ExtractType::Highest {
+                        indices.reverse();
+                    }
+
+                    let mut sliced_indices = indices.clone();
+                    let len = sliced_indices.len();
+                    
+                    let off = *offset;
+                    if off > 0 {
+                        let o = (off as usize).min(len);
+                        sliced_indices = sliced_indices[o..].to_vec();
+                    } else if off < 0 {
+                        let o = (off.unsigned_abs() as usize).min(len);
+                        let new_len = len.saturating_sub(o);
+                        sliced_indices.truncate(new_len);
+                    }
+
+                    if let Some(l) = limit {
+                        let current_len = sliced_indices.len();
+                        if *l > 0 {
+                            sliced_indices.truncate((*l as usize).min(current_len));
+                        } else if *l < 0 {
+                            let take = l.unsigned_abs() as usize;
+                            if take < current_len {
+                                sliced_indices = sliced_indices[(current_len - take)..].to_vec();
+                            }
+                        } else {
+                            sliced_indices.clear();
+                        }
+                    }
+
+                    for idx in sliced_indices {
+                        keep_indices.insert(idx);
                     }
                 }
             }

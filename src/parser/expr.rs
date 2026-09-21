@@ -25,8 +25,8 @@ enum PostfixOp {
     Transpose(i32),
     Off(f32, Vec<Postfix>),
     Strum(f64),
-    ExtractPitch(crate::ast::ExtractType),
-    Chordify(Option<i32>, i32), // <--- Updated to limit/offset
+    ExtractPitch(crate::ast::ExtractType, Option<i32>, i32), // <--- Updated to limit/offset
+    Chordify(Option<i32>, i32),
     VelocityOverride(u8),
 }
 
@@ -357,21 +357,33 @@ fn postfix_parser() -> impl Parser<char, Postfix, Error = Simple<char>> + Clone 
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Strum);
 
-        let highest_mod = kw("highest").to(PostfixOp::ExtractPitch(crate::ast::ExtractType::Highest));
-        let lowest_mod = kw("lowest").to(PostfixOp::ExtractPitch(crate::ast::ExtractType::Lowest));
-        
-        let chordify_mod = kw("chordify")
-            .ignore_then(
-                pad_char('(')
+        // Helper to parse arguments like `(limit, offset)` or `(limit)`
+        let extract_args = pad_char('(')
+            .ignore_then(int_i32())
+            .then(
+                pad_char(',')
                     .ignore_then(int_i32())
-                    .then(
-                        pad_char(',')
-                            .ignore_then(int_i32())
-                            .or_not()
-                    )
-                    .then_ignore(pad_char(')'))
                     .or_not()
             )
+            .then_ignore(pad_char(')'))
+            .or_not();
+
+        let highest_mod = kw("highest")
+            .ignore_then(extract_args.clone())
+            .map(|args| match args {
+                Some((limit, offset)) => PostfixOp::ExtractPitch(crate::ast::ExtractType::Highest, Some(limit), offset.unwrap_or(0)),
+                None => PostfixOp::ExtractPitch(crate::ast::ExtractType::Highest, Some(1), 0),
+            });
+
+        let lowest_mod = kw("lowest")
+            .ignore_then(extract_args.clone())
+            .map(|args| match args {
+                Some((limit, offset)) => PostfixOp::ExtractPitch(crate::ast::ExtractType::Lowest, Some(limit), offset.unwrap_or(0)),
+                None => PostfixOp::ExtractPitch(crate::ast::ExtractType::Lowest, Some(1), 0),
+            });
+            
+        let chordify_mod = kw("chordify")
+            .ignore_then(extract_args)
             .map(|args| match args {
                 Some((limit, offset)) => PostfixOp::Chordify(Some(limit), offset.unwrap_or(0)),
                 None => PostfixOp::Chordify(None, 0),
@@ -406,7 +418,7 @@ fn apply_postfix(acc: Node, post: Postfix) -> Node {
         PostfixOp::Prob(p) => Node::Probability(Box::new(acc.clone()), p), 
         PostfixOp::Transpose(amt) => Node::Transpose(Box::new(acc.clone()), amt),
         PostfixOp::Strum(amt) => Node::Strum(Box::new(acc.clone()), amt),
-        PostfixOp::ExtractPitch(ext_type) => Node::ExtractPitch(Box::new(acc.clone()), ext_type),
+        PostfixOp::ExtractPitch(ext_type, limit, offset) => Node::ExtractPitch(Box::new(acc.clone()), ext_type, limit, offset),
         PostfixOp::Chordify(limit, offset) => Node::Chordify(Box::new(acc.clone()), limit, offset),
         PostfixOp::VelocityOverride(v) => Node::VelocityOverride(Box::new(acc.clone()), v),
         
