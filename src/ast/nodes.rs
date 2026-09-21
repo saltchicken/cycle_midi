@@ -18,6 +18,7 @@ pub enum Modifier {
     ExtractPitch(ExtractType, Option<i32>, i32),
     Chordify(Option<i32>, i32),
     VelocityOverride(u8),
+    GateOverride(u8),
     PhaseShift(f32),
 }
 

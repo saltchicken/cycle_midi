@@ -1,24 +1,23 @@
-use super::helpers::render_phase_chunks;
+use super::helpers::{render_phase_chunks, get_positional_rng};
 use super::traverse_ast;
 use crate::ast::{Node, ScaleDef};
 use crate::engine::render::{RenderContext, ScheduledEvent};
 use rand::RngExt;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
-use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 
 pub(super) fn render_chord(
     elements: &[Node],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
+    if out_events.len() >= ctx.max_events { return; }
     let mut chord_indices = Vec::new();
     let orig_indices = ctx.active_chord_indices.clone();
     for el in elements {
         ctx.active_chord_indices = orig_indices.clone();
-        traverse_ast(el, ctx, out_events, rng);
+        traverse_ast(el, ctx, out_events);
         chord_indices.extend_from_slice(&ctx.active_chord_indices);
     }
     ctx.active_chord_indices = chord_indices;
@@ -28,7 +27,6 @@ pub(super) fn render_sequence(
     elements: &[Node],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
     if elements.is_empty() {
         ctx.active_chord_indices.clear();
@@ -41,7 +39,7 @@ pub(super) fn render_sequence(
         sub_ctx.duration_ms = step_duration;
         sub_ctx.window_start_ms = ctx.window_start_ms.max(sub_ctx.start_ms);
         sub_ctx.window_end_ms = ctx.window_end_ms.min(sub_ctx.start_ms + step_duration);
-        traverse_ast(el, &mut sub_ctx, out_events, rng);
+        traverse_ast(el, &mut sub_ctx, out_events);
         ctx.active_chord_indices = sub_ctx.active_chord_indices;
     }
 }
@@ -50,22 +48,21 @@ pub(super) fn render_shuffled_sequence(
     elements: &[Node],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
     if elements.is_empty() {
         ctx.active_chord_indices.clear();
         return;
     }
+    let mut rng = get_positional_rng(ctx);
     let mut shuffled = elements.to_vec();
-    shuffled.shuffle(rng);
-    render_sequence(&shuffled, ctx, out_events, rng);
+    shuffled.shuffle(&mut rng);
+    render_sequence(&shuffled, ctx, out_events);
 }
 
 pub(super) fn render_parallel(
     layers: &[Vec<Node>],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
     let orig_indices = ctx.active_chord_indices.clone();
     let mut all_indices = Vec::new();
@@ -85,7 +82,7 @@ pub(super) fn render_parallel(
                 step_ctx.window_start_ms = ctx.window_start_ms.max(step_ctx.start_ms);
                 step_ctx.window_end_ms = ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
 
-                traverse_ast(el, &mut step_ctx, out_events, rng);
+                traverse_ast(el, &mut step_ctx, out_events);
                 sub_ctx.active_chord_indices = step_ctx.active_chord_indices;
             }
         }
@@ -98,7 +95,6 @@ pub(super) fn render_polymeter(
     layers: &[Vec<Node>],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
     let orig_indices = ctx.active_chord_indices.clone();
     let mut all_indices = Vec::new();
@@ -132,7 +128,7 @@ pub(super) fn render_polymeter(
                         step_ctx.window_start_ms = chunk_ctx.window_start_ms.max(step_ctx.start_ms);
                         step_ctx.window_end_ms = chunk_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
 
-                        traverse_ast(el, &mut step_ctx, out_events, rng);
+                        traverse_ast(el, &mut step_ctx, out_events);
                         chunk_ctx.active_chord_indices = step_ctx.active_chord_indices;
                     }
                 },
@@ -148,7 +144,6 @@ pub(super) fn render_arrange(
     segments: &[(usize, usize, Box<Node>)],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
     let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
     let current_cycle = ctx.cycle_count % max_end;
@@ -161,7 +156,7 @@ pub(super) fn render_arrange(
             let mut sub_ctx = ctx.clone();
             sub_ctx.cycle_count = current_cycle;
             sub_ctx.active_chord_indices = orig_indices.clone();
-            traverse_ast(child, &mut sub_ctx, out_events, rng);
+            traverse_ast(child, &mut sub_ctx, out_events);
             all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
         }
     }
@@ -172,16 +167,19 @@ pub(super) fn render_alternator(
     elements: &[Node],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
     if elements.is_empty() {
         ctx.active_chord_indices.clear();
         return;
     }
-    let index = (ctx.cycle_count / ctx.alternator_stride) % elements.len();
+    // Fix: Alternator now steps through indices accurately based on the temporal position 
+    // in the macro cycle, preventing macro-loop desync!
+    let step_index = (ctx.start_ms / ctx.duration_ms).round() as usize;
+    let index = (step_index / ctx.alternator_stride) % elements.len();
+    
     let mut sub_ctx = ctx.clone();
     sub_ctx.alternator_stride *= elements.len();
-    traverse_ast(&elements[index], &mut sub_ctx, out_events, rng);
+    traverse_ast(&elements[index], &mut sub_ctx, out_events);
     ctx.active_chord_indices = sub_ctx.active_chord_indices;
 }
 
@@ -189,19 +187,19 @@ pub(super) fn render_random_choice(
     elements: &[(u32, Node)],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
     if elements.is_empty() {
         ctx.active_chord_indices.clear();
         return;
     }
+    let mut rng = get_positional_rng(ctx);
     let weights: Vec<u32> = elements.iter().map(|(w, _)| *w).collect();
     if let Ok(dist) = WeightedIndex::new(&weights) {
-        let index = dist.sample(rng);
-        traverse_ast(&elements[index].1, ctx, out_events, rng);
+        let index = dist.sample(&mut rng);
+        traverse_ast(&elements[index].1, ctx, out_events);
     } else {
         let index = rng.random_range(0..elements.len());
-        traverse_ast(&elements[index].1, ctx, out_events, rng);
+        traverse_ast(&elements[index].1, ctx, out_events);
     }
 }
 
@@ -210,11 +208,10 @@ pub(super) fn render_with_scale(
     child: &Node,
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
     let mut sub_ctx = ctx.clone();
     sub_ctx.scale = Some(scale.clone());
-    traverse_ast(child, &mut sub_ctx, out_events, rng);
+    traverse_ast(child, &mut sub_ctx, out_events);
     ctx.active_chord_indices = sub_ctx.active_chord_indices;
 }
 
@@ -223,10 +220,9 @@ pub(super) fn render_struct(
     content: &Node,
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
     let mut struct_events = Vec::new();
-    traverse_ast(structure, ctx, &mut struct_events, rng);
+    traverse_ast(structure, ctx, &mut struct_events);
 
     if struct_events.is_empty() {
         ctx.active_chord_indices.clear();
@@ -238,11 +234,12 @@ pub(super) fn render_struct(
     content_ctx.window_start_ms = f64::MIN;
     content_ctx.window_end_ms = f64::MAX;
     content_ctx.transition_fade = None;
-    traverse_ast(content, &mut content_ctx, &mut content_events, rng);
+    traverse_ast(content, &mut content_ctx, &mut content_events);
 
     let mut all_indices = Vec::new();
 
     for s_ev in struct_events {
+        if out_events.len() >= ctx.max_events { break; }
         match s_ev {
             ScheduledEvent::Note { start_ms, duration_ms, velocity: s_vel, .. } => {
                 let mut matched_notes = Vec::new();
@@ -273,6 +270,7 @@ pub(super) fn render_struct(
                 }
 
                 for (pitch, c_vel, matched_channel) in matched_notes {
+                    if out_events.len() >= ctx.max_events { break; }
                     let mixed_vel = ((s_vel as f32 * c_vel as f32) / 127.0).clamp(1.0, 127.0) as u8;
                     let final_vel = ctx.override_velocity.unwrap_or(mixed_vel);
 

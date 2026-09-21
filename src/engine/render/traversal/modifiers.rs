@@ -1,9 +1,8 @@
-use super::helpers::render_phase_chunks;
+use super::helpers::{render_phase_chunks, get_positional_rng};
 use super::traverse_ast;
 use crate::ast::{ArpStyle, ExtractType, Modifier, Node};
 use crate::engine::render::{RenderContext, ScheduledEvent};
 use rand::RngExt;
-use rand::rngs::StdRng;
 
 // Recursively processes the modifier pipeline from inner to outer
 pub(super) fn render_modified(
@@ -11,10 +10,11 @@ pub(super) fn render_modified(
     modifiers: &[Modifier],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
+    if out_events.len() >= ctx.max_events { return; }
+
     if modifiers.is_empty() {
-        traverse_ast(child, ctx, out_events, rng);
+        traverse_ast(child, ctx, out_events);
         return;
     }
 
@@ -24,33 +24,40 @@ pub(super) fn render_modified(
         Modifier::Ratchet(splits) => {
             let mut sub_ctx = ctx.clone();
             sub_ctx.ratchet_splits *= *splits as usize;
-            render_modified(child, rest, &mut sub_ctx, out_events, rng);
+            render_modified(child, rest, &mut sub_ctx, out_events);
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
         Modifier::VelocityOverride(vel) => {
             let mut sub_ctx = ctx.clone();
             sub_ctx.override_velocity = Some(*vel);
-            render_modified(child, rest, &mut sub_ctx, out_events, rng);
+            render_modified(child, rest, &mut sub_ctx, out_events);
+            ctx.active_chord_indices = sub_ctx.active_chord_indices;
+        }
+        Modifier::GateOverride(g) => {
+            let mut sub_ctx = ctx.clone();
+            sub_ctx.override_gate = Some(*g);
+            render_modified(child, rest, &mut sub_ctx, out_events);
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
         Modifier::Humanize(vel, time) => {
             let mut sub_ctx = ctx.clone();
             sub_ctx.humanize_velocity_range = *vel;
             sub_ctx.humanize_timing_range_ms = time.abs();
-            render_modified(child, rest, &mut sub_ctx, out_events, rng);
+            render_modified(child, rest, &mut sub_ctx, out_events);
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
         }
         Modifier::Probability(prob) => {
+            let mut rng = get_positional_rng(ctx);
             if *prob < 100 && rng.random_range(0..100) >= *prob {
                 ctx.active_chord_indices.clear();
             } else {
-                render_modified(child, rest, ctx, out_events, rng);
+                render_modified(child, rest, ctx, out_events);
             }
         }
         Modifier::PhaseShift(shift_amount) => {
             let shift_ms = *shift_amount as f64 * ctx.duration_ms;
             ctx.active_chord_indices = render_phase_chunks(ctx, ctx.duration_ms, shift_ms, None, |chunk_ctx| {
-                render_modified(child, rest, chunk_ctx, out_events, rng);
+                render_modified(child, rest, chunk_ctx, out_events);
             });
         }
         Modifier::Span(span_cycles) => {
@@ -61,7 +68,7 @@ pub(super) fn render_modified(
                 0.0,
                 Some(local_duration),
                 |chunk_ctx| {
-                    render_modified(child, rest, chunk_ctx, out_events, rng);
+                    render_modified(child, rest, chunk_ctx, out_events);
                 },
             );
         }
@@ -79,7 +86,7 @@ pub(super) fn render_modified(
                     sub_ctx.duration_ms = step_duration;
                     sub_ctx.window_start_ms = ctx.window_start_ms.max(sub_ctx.start_ms);
                     sub_ctx.window_end_ms = ctx.window_end_ms.min(sub_ctx.start_ms + step_duration);
-                    render_modified(child, rest, &mut sub_ctx, out_events, rng);
+                    render_modified(child, rest, &mut sub_ctx, out_events);
                     ctx.active_chord_indices = sub_ctx.active_chord_indices;
                 } else {
                     ctx.active_chord_indices.clear();
@@ -96,12 +103,12 @@ pub(super) fn render_modified(
                 sub_ctx.velocity_modifier *= feedback.powi(i as i32);
 
                 if i == 0 {
-                    render_modified(child, rest, &mut sub_ctx, out_events, rng);
+                    render_modified(child, rest, &mut sub_ctx, out_events);
                     all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
                 } else {
                     let shift_ms = (*shift_amount * i as f32) as f64 * sub_ctx.duration_ms;
                     let stut_indices = render_phase_chunks(&sub_ctx, sub_ctx.duration_ms, shift_ms, None, |chunk_ctx| {
-                        render_modified(child, rest, chunk_ctx, out_events, rng);
+                        render_modified(child, rest, chunk_ctx, out_events);
                     });
                     all_indices.extend_from_slice(&stut_indices);
                 }
@@ -110,7 +117,7 @@ pub(super) fn render_modified(
         }
         Modifier::Transpose(amt) => {
             let start_idx = out_events.len();
-            render_modified(child, rest, ctx, out_events, rng);
+            render_modified(child, rest, ctx, out_events);
             for i in start_idx..out_events.len() {
                 if let ScheduledEvent::Note { pitch, .. } = &mut out_events[i] {
                     *pitch = (*pitch as i32 + *amt).clamp(0, 127) as u8;
@@ -119,7 +126,7 @@ pub(super) fn render_modified(
         }
         Modifier::Invert(amount) => {
             let start_idx = out_events.len();
-            render_modified(child, rest, ctx, out_events, rng);
+            render_modified(child, rest, ctx, out_events);
 
             if *amount != 0 {
                 let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
@@ -160,7 +167,7 @@ pub(super) fn render_modified(
         }
         Modifier::Drop(voice) => {
             let start_idx = out_events.len();
-            render_modified(child, rest, ctx, out_events, rng);
+            render_modified(child, rest, ctx, out_events);
 
             if *voice > 0 {
                 let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
@@ -189,7 +196,7 @@ pub(super) fn render_modified(
         }
         Modifier::Strum(amt) => {
             let start_idx = out_events.len();
-            render_modified(child, rest, ctx, out_events, rng);
+            render_modified(child, rest, ctx, out_events);
 
             if *amt != 0.0 {
                 let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
@@ -222,7 +229,7 @@ pub(super) fn render_modified(
         }
         Modifier::ExtractPitch(ext_type, limit, offset) => {
             let start_idx = out_events.len();
-            render_modified(child, rest, ctx, out_events, rng);
+            render_modified(child, rest, ctx, out_events);
 
             let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
             let mut cc_indices = Vec::new();
@@ -245,7 +252,7 @@ pub(super) fn render_modified(
                 });
 
                 if !indices.is_empty() {
-                    if *ext_type == crate::ast::ExtractType::Highest {
+                    if *ext_type == ExtractType::Highest {
                         indices.reverse();
                     }
 
@@ -300,7 +307,7 @@ pub(super) fn render_modified(
         }
         Modifier::Chordify(limit, offset) => {
             let start_idx = out_events.len();
-            render_modified(child, rest, ctx, out_events, rng);
+            render_modified(child, rest, ctx, out_events);
 
             let mut max_vel = 0;
             let mut unique_pitches = std::collections::HashSet::new();
@@ -376,7 +383,7 @@ pub(super) fn render_modified(
             sub_ctx.window_start_ms = f64::MIN;
             sub_ctx.window_end_ms = f64::MAX;
 
-            render_modified(child, rest, &mut sub_ctx, &mut temp_events, rng);
+            render_modified(child, rest, &mut sub_ctx, &mut temp_events);
 
             let mut resolved_notes = Vec::new();
             for ev in temp_events {
@@ -480,10 +487,12 @@ pub(super) fn render_modified(
                 return;
             }
 
+            let mut rng = get_positional_rng(ctx);
             let step_duration = ctx.duration_ms / pattern.len() as f64;
             let mut all_indices = Vec::new();
 
             for (i, (pitch, vel)) in pattern.into_iter().enumerate() {
+                if out_events.len() >= ctx.max_events { break; }
                 let mut step_ctx = ctx.clone();
                 step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
                 step_ctx.duration_ms = step_duration;
@@ -504,6 +513,7 @@ pub(super) fn render_modified(
 
                     if play_note && final_vel > 0 {
                         for sub_i in 0..splits {
+                            if out_events.len() >= ctx.max_events { break; }
                             let mut jitter = 0.0;
                             if step_ctx.humanize_timing_range_ms > 0.0 {
                                 jitter = rng.random_range(-step_ctx.humanize_timing_range_ms..=step_ctx.humanize_timing_range_ms);

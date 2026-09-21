@@ -1,4 +1,16 @@
 use crate::engine::render::RenderContext;
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
+use rand::{SeedableRng, rngs::StdRng};
+
+pub(super) fn get_positional_rng(ctx: &RenderContext) -> StdRng {
+    let mut hasher = DefaultHasher::new();
+    ctx.track_seed.hash(&mut hasher);
+    ctx.channel.hash(&mut hasher);
+    ctx.cycle_count.hash(&mut hasher);
+    ((ctx.start_ms * 100_000.0) as i64).hash(&mut hasher); 
+    StdRng::seed_from_u64(hasher.finish())
+}
 
 pub(super) fn calculate_lfo_phase(ctx: &RenderContext, speed: f64) -> f64 {
     let lfo_duration = ctx.master_duration_ms / speed;

@@ -2,8 +2,8 @@ pub mod math;
 pub mod traversal;
 
 use crate::ast::{Program, ScaleDef, SeedInterval};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use traversal::traverse_ast;
 
 #[derive(Debug, Clone)]
@@ -34,6 +34,7 @@ impl ScheduledEvent {
 
 #[derive(Debug, Clone)]
 pub struct RenderContext {
+    pub track_seed: u64,
     pub channel: u8,
     pub start_ms: f64,
     pub duration_ms: f64,
@@ -49,9 +50,11 @@ pub struct RenderContext {
     pub transition_fade: Option<f64>,
     pub velocity_modifier: f32,
     pub override_velocity: Option<u8>,
+    pub override_gate: Option<u8>,
     pub ratchet_splits: usize,
     pub humanize_velocity_range: u8,
     pub humanize_timing_range_ms: f64,
+    pub max_events: usize,
 }
 
 pub fn generate_next_cycle(
@@ -98,8 +101,8 @@ pub fn generate_next_cycle(
             track.scale.clone().or(active_global_scale.clone())
         };
 
-        let mut rng = if let Some(seed_def) = &track.seed {
-            let mut final_seed = seed_def.base;
+        let final_seed = if let Some(seed_def) = &track.seed {
+            let mut s = seed_def.base;
             if let Some(interval) = &seed_def.interval {
                 let seed_bump = match interval {
                     SeedInterval::Macro(m) => (macro_cycle_count / *m) as u64,
@@ -109,14 +112,19 @@ pub fn generate_next_cycle(
                     }
                     SeedInterval::Micro(m) => (cycle_count / *m) as u64,
                 };
-                final_seed = final_seed.wrapping_add(seed_bump);
+                s = s.wrapping_add(seed_bump);
             }
-            StdRng::seed_from_u64(final_seed)
+            s
         } else {
-            StdRng::seed_from_u64(rand::random::<u64>())
+            // Derive a stable seed per track based on cycle and channel
+            let mut hasher = DefaultHasher::new();
+            track.channel.hash(&mut hasher);
+            cycle_count.hash(&mut hasher);
+            hasher.finish()
         };
 
         let mut ctx = RenderContext {
+            track_seed: final_seed,
             channel: track.channel,
             start_ms: cycle_start_time_ms,
             duration_ms: master_duration_ms,
@@ -132,12 +140,14 @@ pub fn generate_next_cycle(
             transition_fade,
             velocity_modifier: 1.0,
             override_velocity: None,
+            override_gate: None,
             ratchet_splits: 1,
             humanize_velocity_range: 0,
             humanize_timing_range_ms: 0.0,
+            max_events: 1024,
         };
 
-        traverse_ast(&track.root_node, &mut ctx, &mut events, &mut rng);
+        traverse_ast(&track.root_node, &mut ctx, &mut events);
     }
 
     events

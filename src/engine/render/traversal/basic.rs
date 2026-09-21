@@ -1,9 +1,8 @@
-use super::helpers::calculate_lfo_phase;
+use super::helpers::{calculate_lfo_phase, get_positional_rng};
 use crate::ast::{DynamicValue, Pitch};
 use crate::engine::render::math::resolve_pitch;
 use crate::engine::render::{RenderContext, ScheduledEvent};
 use rand::RngExt;
-use rand::rngs::StdRng;
 
 pub(super) fn render_note(
     pitch: &Pitch,
@@ -11,13 +10,16 @@ pub(super) fn render_note(
     gate: u8,
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
+    if out_events.len() >= ctx.max_events { return; }
+
     if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
+        let mut rng = get_positional_rng(ctx);
         let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
         let splits = ctx.ratchet_splits.max(1);
         let sub_step = ctx.duration_ms / splits as f64;
-        let actual_duration = sub_step * (gate as f64 / 100.0);
+        let actual_gate = ctx.override_gate.unwrap_or(gate);
+        let actual_duration = sub_step * (actual_gate as f64 / 100.0);
         let base_vel = ctx.override_velocity.unwrap_or(velocity);
         let mut final_vel = (base_vel as f32 * ctx.velocity_modifier).clamp(0.0, 127.0) as u8;
         let mut play_note = true;
@@ -32,6 +34,7 @@ pub(super) fn render_note(
         if play_note && final_vel > 0 {
             ctx.active_chord_indices.clear();
             for i in 0..splits {
+                if out_events.len() >= ctx.max_events { break; }
                 let mut jitter = 0.0;
                 if ctx.humanize_timing_range_ms > 0.0 {
                     jitter = rng.random_range(
@@ -70,14 +73,17 @@ pub(super) fn render_cc(
     value: &DynamicValue,
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
-    rng: &mut StdRng,
 ) {
+    if out_events.len() >= ctx.max_events { return; }
+
     if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
+        let mut rng = get_positional_rng(ctx);
         let splits = ctx.ratchet_splits.max(1);
         let sub_step = ctx.duration_ms / splits as f64;
         ctx.active_chord_indices.clear();
 
         for i in 0..splits {
+            if out_events.len() >= ctx.max_events { break; }
             let mut jitter = 0.0;
             if ctx.humanize_timing_range_ms > 0.0 {
                 jitter = rng.random_range(

@@ -23,6 +23,7 @@ enum PostfixOp {
     ExtractPitch(crate::ast::ExtractType, Option<i32>, i32),
     Chordify(Option<i32>, i32),
     VelocityOverride(u8),
+    GateOverride(u8),
 }
 
 enum TopLevelItem {
@@ -105,66 +106,43 @@ fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
                 .collect::<Vec<_>>()
         });
 
-    let pitch_group = choice((numeric_named_chord, single_pitch));
-
-    let velocity = pad_char('@').ignore_then(int_u8());
-    let gate = pad_char('%').ignore_then(int_u8());
-
-    let modified_pitch_group = pitch_group
-        .then(velocity.clone().or_not())
-        .then(gate.clone().or_not());
-
-    modified_pitch_group
-        .separated_by(pad_char('&')) 
-        .at_least(1)
-        .then(velocity.or_not())
-        .then(gate.or_not())
-        .map(|((pitch_groups, global_v), global_g)| {
-            let mut notes = Vec::new();
-            for ((pitches, local_v), local_g) in pitch_groups {
-                let v = global_v.unwrap_or_else(|| local_v.unwrap_or(100));
-                let g = global_g.unwrap_or_else(|| local_g.unwrap_or(100));
-
-                for p in pitches {
-                    notes.push(Node::Note {
-                        pitch: p,
-                        velocity: v,
-                        gate: g,
-                    });
-                }
+    choice((numeric_named_chord, single_pitch)).map(|pitches| {
+        if pitches.len() == 1 {
+            Node::Note {
+                pitch: pitches[0].clone(),
+                velocity: 100,
+                gate: 100,
             }
-
-            if notes.len() == 1 {
-                notes.into_iter().next().unwrap()
-            } else {
-                Node::Chord(notes)
-            }
-        })
+        } else {
+            let notes = pitches.into_iter().map(|p| Node::Note {
+                pitch: p,
+                velocity: 100,
+                gate: 100,
+            }).collect();
+            Node::Chord(notes)
+        }
+    })
 }
 
 fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clone {
     recursive(|postfix| {
-        let euclidean = pad_char('(')
+        let euclid_mod = pad_char('.').ignore_then(kw("euclid").or(kw("E")))
+            .ignore_then(pad_char('('))
             .ignore_then(int_u8())
             .then_ignore(pad_char(','))
             .then(int_u8())
             .then_ignore(pad_char(')'))
             .map(|(p, s)| PostfixOp::Euclidean(p, s));
 
-        let shorthand_span = pad_char('/')
-            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>()
-                    .map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
-            }))
-            .map(PostfixOp::Span);
-
-        let span_mod = kw("span")
+        let span_mod = pad_char('.').ignore_then(kw("span"))
             .ignore_then(pad_char('('))
             .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>()
-                    .map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
+                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
             }))
             .then_ignore(pad_char(')'))
+            .or(pad_char('.').ignore_then(pad_char('/')).ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
+            })))
             .map(PostfixOp::Span);
 
         let arp_style = choice((
@@ -178,43 +156,44 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             just("down").to(ArpStyle::Down),
         ));
 
-        let arp_mod = kw("arp")
+        let arp_mod = pad_char('.').ignore_then(kw("arp"))
             .ignore_then(pad_char('('))
             .ignore_then(arp_style)
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Arp);
 
-        let shorthand_ratchet = pad_char('*')
-            .ignore_then(int_u8())
-            .map(PostfixOp::Ratchet);
-
-        let ratchet_mod = kw("ratchet")
+        let ratchet_mod = pad_char('.').ignore_then(kw("ratchet"))
             .ignore_then(pad_char('('))
             .ignore_then(int_u8())
             .then_ignore(pad_char(')'))
+            .or(pad_char('.').ignore_then(pad_char('*')).ignore_then(int_u8()))
             .map(PostfixOp::Ratchet);
 
-        let stut_mod = kw("stut")
+        let stut_mod = pad_char('.').ignore_then(kw("stut"))
             .ignore_then(pad_char('('))
-            .ignore_then(int_u8()) // depth
+            .ignore_then(int_u8())
             .then_ignore(pad_char(','))
-            .then(float_f32()) // feedback multiplier
+            .then(float_f32())
             .then_ignore(pad_char(','))
-            .then(float_f32()) // time shift fraction
+            .then(float_f32())
             .then_ignore(pad_char(')'))
             .map(|((d, f), t)| PostfixOp::Stut(d, f, t));
 
-        let prob_mod = pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob);
+        let prob_mod = pad_char('.').ignore_then(kw("prob")).ignore_then(pad_char('(')).ignore_then(int_u8()).then_ignore(pad_char(')'))
+            .or(pad_char('?').ignore_then(int_u8()))
+            .map(PostfixOp::Prob);
 
-        let invert_mod = pad_char('^').ignore_then(int_i32()).map(PostfixOp::Invert);
+        let invert_mod = pad_char('.').ignore_then(kw("invert")).ignore_then(pad_char('(')).ignore_then(int_i32()).then_ignore(pad_char(')'))
+            .or(pad_char('^').ignore_then(int_i32()))
+            .map(PostfixOp::Invert);
 
-        let drop_mod = kw("drop")
+        let drop_mod = pad_char('.').ignore_then(kw("drop"))
             .ignore_then(pad_char('('))
             .ignore_then(int_u8())
             .then_ignore(pad_char(')'))
             .map(PostfixOp::Drop);
 
-        let phase_shift = kw("shift")
+        let phase_shift = pad_char('.').ignore_then(kw("shift"))
             .ignore_then(pad_char('('))
             .ignore_then(float_f32())
             .then_ignore(pad_char(')'))
@@ -229,7 +208,7 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             )
             .or_not();
 
-        let humanize_mod = kw("humanize")
+        let humanize_mod = pad_char('.').ignore_then(kw("humanize"))
             .ignore_then(pad_char('('))
             .ignore_then(humanize_args)
             .then_ignore(pad_char(')'))
@@ -241,11 +220,11 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
                 PostfixOp::Humanize(vel, time)
             });
 
-        let octave_mod = kw("octave")
-            .ignore_then(int_i32())
+        let octave_mod = pad_char('.').ignore_then(kw("octave"))
+            .ignore_then(pad_char('(')).ignore_then(int_i32()).then_ignore(pad_char(')'))
             .map(PostfixOp::Transpose);
 
-        let off_mod = kw("off")
+        let off_mod = pad_char('.').ignore_then(kw("off"))
             .ignore_then(pad_char('('))
             .ignore_then(float_f32())
             .then_ignore(pad_char(','))
@@ -253,7 +232,7 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             .then_ignore(pad_char(')'))
             .map(|(shift, ops)| PostfixOp::Off(shift, ops));
 
-        let strum_mod = kw("strum")
+        let strum_mod = pad_char('.').ignore_then(kw("strum"))
             .ignore_then(pad_char('('))
             .ignore_then(float_f64())
             .then_ignore(pad_char(')'))
@@ -276,7 +255,7 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             )
             .then_ignore(pad_char(')'));
 
-        let extract_mod = kw("extract")
+        let extract_mod = pad_char('.').ignore_then(kw("extract"))
             .ignore_then(extract_args)
             .map(|(ext_type, args)| match args {
                 Some((limit, offset)) => {
@@ -291,24 +270,26 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             .then_ignore(pad_char(')'))
             .or_not();
 
-        let chordify_mod = kw("chordify")
+        let chordify_mod = pad_char('.').ignore_then(kw("chordify"))
             .ignore_then(chordify_args)
             .map(|args| match args {
                 Some((limit, offset)) => PostfixOp::Chordify(Some(limit), offset.unwrap_or(0)),
                 None => PostfixOp::Chordify(None, 0),
             });
 
-        let velocity_mod = pad_char('@')
-            .ignore_then(int_u8())
+        let velocity_mod = pad_char('.').ignore_then(kw("vel").or(kw("v")))
+            .ignore_then(pad_char('(')).ignore_then(int_u8()).then_ignore(pad_char(')'))
             .map(PostfixOp::VelocityOverride);
 
+        let gate_mod = pad_char('.').ignore_then(kw("gate").or(kw("g")))
+            .ignore_then(pad_char('(')).ignore_then(int_u8()).then_ignore(pad_char(')'))
+            .map(PostfixOp::GateOverride);
+
         choice((
-            shorthand_ratchet,
-            shorthand_span,
-            euclidean,
-            span_mod,
-            arp_mod,
             ratchet_mod,
+            span_mod,
+            euclid_mod,
+            arp_mod,
             stut_mod,
             invert_mod,
             drop_mod,
@@ -321,6 +302,7 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             extract_mod,
             chordify_mod,
             velocity_mod,
+            gate_mod,
         ))
         .padded_by(padding())
     })
@@ -353,6 +335,7 @@ fn apply_postfix(mut acc: Node, post: PostfixOp) -> Node {
                 PostfixOp::ExtractPitch(ext_type, limit, offset) => Modifier::ExtractPitch(ext_type, limit, offset),
                 PostfixOp::Chordify(limit, offset) => Modifier::Chordify(limit, offset),
                 PostfixOp::VelocityOverride(v) => Modifier::VelocityOverride(v),
+                PostfixOp::GateOverride(g) => Modifier::GateOverride(g),
                 PostfixOp::Off(..) => unreachable!(),
             };
             match acc {
@@ -367,7 +350,6 @@ fn apply_postfix(mut acc: Node, post: PostfixOp) -> Node {
 }
 
 pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
-    let pad_expr = padding();
     let expr = recursive(move |expr| {
         let rest = just('.').to(Node::Rest);
         let hold = just('_').to(Node::Hold); 
@@ -384,135 +366,83 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then(expr.clone())
             .map(|(scale, child)| Node::WithScale(scale, Box::new(child)));
 
-        let choice_branch = int_u8()
-            .padded_by(pad_expr.clone())
-            .then_ignore(pad_char(':'))
-            .or_not()
-            .then(
-                expr.clone()
-                    .padded_by(pad_expr.clone())
-                    .repeated()
-                    .map(|seq| {
-                        if seq.len() == 1 {
-                            seq.into_iter().next().unwrap()
-                        } else {
-                            Node::Sequence(seq)
-                        }
-                    }),
-            );
+        let seq_group = kw("seq")
+            .ignore_then(pad_char('('))
+            .ignore_then(expr.clone().padded_by(padding()).repeated())
+            .then_ignore(pad_char(')'))
+            .map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) });
 
-        let bracket_group = choice_branch
-            .separated_by(pad_char('|'))
-            .at_least(1)
-            .delimited_by(pad_char('['), pad_char(']'))
-            .map(|choices| {
-                if choices.len() == 1 && choices[0].0.is_none() {
-                    choices.into_iter().next().unwrap().1 
-                } else {
-                    Node::RandomChoice(
-                        choices
-                            .into_iter()
-                            .map(|(w, node)| (w.unwrap_or(1) as u32, node))
-                            .collect(),
-                    )
-                }
-            });
-
-        let shuf_group = kw("shuf")
-            .ignore_then(
-                expr.clone()
-                    .padded_by(pad_expr.clone())
-                    .repeated()
-                    .delimited_by(pad_char('['), pad_char(']')),
-            )
-            .map(Node::ShuffledSequence);
-
-        let alt_group = expr
-            .clone()
-            .padded_by(pad_expr.clone())
-            .repeated()
-            .delimited_by(pad_char('<'), pad_char('>'))
+        let alt_group = kw("alt")
+            .ignore_then(pad_char('('))
+            .ignore_then(expr.clone().padded_by(padding()).repeated())
+            .then_ignore(pad_char(')'))
             .map(Node::Alternator);
 
-        let parallel_layer = expr.clone().padded_by(pad_expr.clone()).repeated();
+        let rnd_branch = int_u8().padded_by(padding()).then_ignore(pad_char(':')).or_not()
+            .then(expr.clone().padded_by(padding()).repeated().map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }));
+        let rnd_group = kw("rnd")
+            .ignore_then(pad_char('('))
+            .ignore_then(rnd_branch.separated_by(pad_char(',')))
+            .then_ignore(pad_char(')'))
+            .map(|choices| Node::RandomChoice(choices.into_iter().map(|(w, n)| (w.unwrap_or(1) as u32, n)).collect()));
 
-        let parallel_group = parallel_layer
-            .clone()
-            .separated_by(pad_char('|'))
-            .delimited_by(just("{|").padded_by(padding()), just("|}").padded_by(padding()))
+        let par_group = kw("par")
+            .ignore_then(pad_char('('))
+            .ignore_then(expr.clone().padded_by(padding()).repeated().separated_by(pad_char(',')))
+            .then_ignore(pad_char(')'))
             .map(Node::Parallel);
 
-        let polymeter_group = parallel_layer
-            .separated_by(pad_char(','))
-            .delimited_by(pad_char('}'), pad_char('}'))
+        let poly_group = kw("poly")
+            .ignore_then(pad_char('('))
+            .ignore_then(expr.clone().padded_by(padding()).repeated().separated_by(pad_char(',')))
+            .then_ignore(pad_char(')'))
             .map(Node::Polymeter);
+            
+        let shuf_group = kw("shuf")
+            .ignore_then(pad_char('('))
+            .ignore_then(expr.clone().padded_by(padding()).repeated())
+            .then_ignore(pad_char(')'))
+            .map(Node::ShuffledSequence);
+
+        let struct_group = kw("struct")
+            .ignore_then(pad_char('('))
+            .ignore_then(expr.clone())
+            .then_ignore(pad_char(','))
+            .then(expr.clone())
+            .then_ignore(pad_char(')'))
+            .map(|(mask, content)| Node::Struct(Box::new(mask), Box::new(content)));
+
+        // Default grouping (Implicit Sequence)
+        let implicit_seq = pad_char('[')
+            .ignore_then(expr.clone().padded_by(padding()).repeated())
+            .then_ignore(pad_char(']'))
+            .map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) });
 
         let arrange_segment = pad_char('(')
             .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>()
-                    .map_err(|e| Simple::custom(span, format!("Invalid start: {}", e)))
+                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid start: {}", e)))
             }))
             .then_ignore(pad_char(','))
             .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>()
-                    .map_err(|e| Simple::custom(span, format!("Invalid end: {}", e)))
+                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid end: {}", e)))
             }))
             .then_ignore(pad_char(')'))
             .then_ignore(pad_char(':'))
-            .then(
-                expr.clone()
-                    .padded_by(padding())
-                    .repeated()
-                    .at_least(1)
-                    .map(|mut seq| {
-                        if seq.len() == 1 {
-                            seq.remove(0)
-                        } else {
-                            Node::Sequence(seq)
-                        }
-                    }),
-            )
+            .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }))
             .map(|((start, end), node)| (start, end, Box::new(node)));
 
         let arrange = kw("arrange")
-            .ignore_then(
-                arrange_segment
-                    .clone()
-                    .padded_by(padding())
-                    .then_ignore(pad_char(',').or_not())
-                    .repeated()
-                    .delimited_by(pad_char('['), pad_char(']')),
-            )
+            .ignore_then(arrange_segment.padded_by(padding()).then_ignore(pad_char(',').or_not()).repeated().delimited_by(pad_char('['), pad_char(']')))
             .map(|segments| Node::Arrange(segments));
 
-        let chain_segment = text::int::<char, Simple<char>>(10)
-            .try_map(|s, span| {
-                s.parse::<usize>()
-                    .map_err(|e| Simple::custom(span, format!("Invalid duration: {}", e)))
+        let chain_segment = text::int::<char, Simple<char>>(10).try_map(|s, span| {
+                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid duration: {}", e)))
             })
             .then_ignore(pad_char(':'))
-            .then(
-                expr.clone()
-                    .padded_by(padding())
-                    .repeated()
-                    .at_least(1)
-                    .map(|mut seq| {
-                        if seq.len() == 1 {
-                            seq.remove(0)
-                        } else {
-                            Node::Sequence(seq)
-                        }
-                    }),
-            );
+            .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }));
 
         let chain_loop = kw("chain")
-            .ignore_then(
-                chain_segment
-                    .padded_by(padding())
-                    .then_ignore(pad_char(',').or_not())
-                    .repeated()
-                    .delimited_by(pad_char('['), pad_char(']')),
-            )
+            .ignore_then(chain_segment.padded_by(padding()).then_ignore(pad_char(',').or_not()).repeated().delimited_by(pad_char('['), pad_char(']')))
             .map(|segments| {
                 let mut current_start = 0;
                 let mut arrange_segments = Vec::new();
@@ -526,49 +456,23 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 Node::Arrange(arrange_segments)
             });
 
-        let struct_group = kw("struct")
-            .ignore_then(pad_char('('))
-            .ignore_then(expr.clone())
-            .then_ignore(pad_char(','))
-            .then(expr.clone())
-            .then_ignore(pad_char(')'))
-            .map(|(mask, content)| Node::Struct(Box::new(mask), Box::new(content)));
-
-        let euclid_group = just('E')
-            .ignore_then(pad_char('('))
-            .ignore_then(int_u8())
-            .then_ignore(pad_char(','))
-            .then(int_u8())
-            .then_ignore(pad_char(')'))
-            .map(|(p, s)| {
-                Node::Modified(
-                    Box::new(Node::Note {
-                        pitch: Pitch::Numeric(0, 0),
-                        velocity: 100,
-                        gate: 100,
-                    }),
-                    vec![Modifier::Euclidean(p, s)],
-                )
-            });
-
         let atom = choice((
             rest,
             hold,
             alias_ref,
             with_scale,
-            bracket_group,
-            shuf_group,
+            implicit_seq,
+            seq_group,
             alt_group,
+            rnd_group,
+            par_group,
+            poly_group,
+            shuf_group,
             struct_group,
-            euclid_group,
-            choice((
-                parallel_group,
-                polymeter_group,
-                chain_loop,
-                arrange,
-                cc_parser(),
-                chord_or_note(),
-            )),
+            chain_loop,
+            arrange,
+            cc_parser(),
+            chord_or_note(),
         ));
 
         atom.then(postfix_parser().repeated())
