@@ -94,13 +94,31 @@ pub fn generate_next_cycle(
     let mut active_global_scale = program.scale.clone();
 
     if let Some(seq) = &program.scale_seq {
-        let max_end = seq.iter().map(|s| s.1).max().unwrap_or(1).max(1);
-        let loop_cycle = cycle_count % max_end;
+        match seq {
+            crate::ast::ScaleSequence::Explicit(segments) => {
+                let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
+                let loop_cycle = cycle_count % max_end;
 
-        for (start, end, scale) in seq {
-            if loop_cycle >= *start && loop_cycle < *end {
-                active_global_scale = Some(scale.clone());
-                break;
+                for (start, end, scale) in segments {
+                    if loop_cycle >= *start && loop_cycle < *end {
+                        active_global_scale = Some(scale.clone());
+                        break;
+                    }
+                }
+            }
+            crate::ast::ScaleSequence::Algorithmic { base_scale, shift_semitones, macro_cycles_per_step } => {
+                let steps = (macro_cycle_count / macro_cycles_per_step.max(&1)) as i32;
+                let mut new_scale = base_scale.clone();
+                
+                // Keep the shifted pitch class pinned inside the original base octave.
+                // This ensures progressions don't infinitely walk off the keyboard over time.
+                let base_pc = base_scale.root_pitch as i32 % 12;
+                let base_oct = base_scale.root_pitch as i32 / 12;
+                
+                let new_pc = (base_pc + (steps * shift_semitones)).rem_euclid(12);
+                new_scale.root_pitch = (base_oct * 12 + new_pc) as u8;
+                
+                active_global_scale = Some(new_scale);
             }
         }
     }

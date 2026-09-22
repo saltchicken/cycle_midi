@@ -1,5 +1,5 @@
-use super::primitives::{float_f64, pad_char, padding, pitch_val, int_u8, int_usize};
-use crate::ast::{QuantizeMode, ScaleDef};
+use super::primitives::{float_f64, pad_char, padding, pitch_val, int_u8, int_usize, int_i32, kw};
+use crate::ast::{QuantizeMode, ScaleDef, ScaleSequence};
 use chumsky::prelude::*;
 
 #[derive(Clone)]
@@ -8,7 +8,7 @@ enum Directive {
     Signature(u8, u8),
     Quantize(QuantizeMode),
     Scale(ScaleDef),
-    ScaleSeq(Vec<(usize, usize, ScaleDef)>),
+    ScaleSeq(ScaleSequence),
     Silence,
     Include(String),
 }
@@ -38,20 +38,44 @@ pub fn scale_def() -> impl Parser<char, ScaleDef, Error = Simple<char>> + Clone 
         })
 }
 
-pub fn scale_seq_def()
--> impl Parser<char, Vec<(usize, usize, ScaleDef)>, Error = Simple<char>> + Clone {
-    let segment = pad_char('(')
+pub fn scale_seq_def() -> impl Parser<char, ScaleSequence, Error = Simple<char>> + Clone {
+    let explicit = pad_char('(')
         .ignore_then(int_usize())
         .then_ignore(pad_char(','))
         .then(int_usize())
         .then_ignore(pad_char(')'))
         .then_ignore(pad_char(':'))
         .then(scale_def())
-        .map(|((start, end), scale)| (start, end, scale));
-
-    segment
+        .map(|((start, end), scale)| (start, end, scale))
         .separated_by(pad_char('|'))
         .delimited_by(pad_char('{'), pad_char('}'))
+        .map(ScaleSequence::Explicit);
+
+    let shift_parser = kw("shift")
+        .ignore_then(pad_char('('))
+        .ignore_then(scale_def().padded_by(padding()))
+        .then_ignore(pad_char(','))
+        .then(int_i32().padded_by(padding()))
+        .then(pad_char(',').ignore_then(int_usize().padded_by(padding())).or_not())
+        .then_ignore(pad_char(')'))
+        .map(|((base_scale, shift_semitones), cycles)| ScaleSequence::Algorithmic {
+            base_scale,
+            shift_semitones,
+            macro_cycles_per_step: cycles.unwrap_or(1),
+        });
+
+    let circle_parser = kw("circle_of_fifths")
+        .ignore_then(pad_char('('))
+        .ignore_then(scale_def().padded_by(padding()))
+        .then(pad_char(',').ignore_then(int_usize().padded_by(padding())).or_not())
+        .then_ignore(pad_char(')'))
+        .map(|(base_scale, cycles)| ScaleSequence::Algorithmic {
+            base_scale,
+            shift_semitones: 7, // Perfect fifth up
+            macro_cycles_per_step: cycles.unwrap_or(1),
+        });
+
+    choice((circle_parser, shift_parser, explicit))
 }
 
 pub fn global_directives() -> impl Parser<
@@ -61,7 +85,7 @@ pub fn global_directives() -> impl Parser<
         Option<(u8, u8)>,
         Option<QuantizeMode>,
         Option<ScaleDef>,
-        Option<Vec<(usize, usize, ScaleDef)>>,
+        Option<ScaleSequence>,
         bool,
         Vec<String>,
     ),

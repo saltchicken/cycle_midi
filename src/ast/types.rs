@@ -42,6 +42,16 @@ pub struct ScaleDef {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum ScaleSequence {
+    Explicit(Vec<(usize, usize, ScaleDef)>),
+    Algorithmic {
+        base_scale: ScaleDef,
+        shift_semitones: i32,
+        macro_cycles_per_step: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum SeedInterval {
     Micro(usize),
     Macro(usize),

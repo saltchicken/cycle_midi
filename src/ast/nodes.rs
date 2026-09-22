@@ -1,4 +1,4 @@
-use super::types::{ArpStyle, DynamicValue, ExtractType, Pitch, QuantizeMode, ScaleDef, SeedDef};
+use super::types::{ArpStyle, DynamicValue, ExtractType, Pitch, QuantizeMode, ScaleDef, SeedDef, ScaleSequence};
 use crate::engine::render::math::lcm;
 use std::collections::HashMap;
 
@@ -191,7 +191,7 @@ pub struct Program {
     pub signature: Option<(u8, u8)>,
     pub quantize: Option<QuantizeMode>,
     pub scale: Option<ScaleDef>,
-    pub scale_seq: Option<Vec<(usize, usize, ScaleDef)>>,
+    pub scale_seq: Option<ScaleSequence>,
     pub global_silence: bool,
     pub includes: Vec<String>,
     pub aliases: HashMap<String, MacroDef>,
