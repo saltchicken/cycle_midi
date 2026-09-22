@@ -43,7 +43,8 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
             kw("low").to(ExtractType::Lowest),
         ));
 
-        let method = pad_char('.').ignore_then(choice((
+        // Method chained modifiers (require a leading dot, spaces permitted after dot)
+        let method = just('.').ignore_then(choice((
             kw("euclid").or(kw("E"))
                 .ignore_then(pad_char('('))
                 .ignore_then(int_u8())
@@ -52,25 +53,11 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
                 .then_ignore(pad_char(')'))
                 .map(|(p, s)| PostfixOp::Euclidean(p, s)),
 
-            kw("span")
-                .ignore_then(pad_char('('))
-                .ignore_then(int_usize())
-                .then_ignore(pad_char(')'))
-                .or(pad_char('/').ignore_then(int_usize()))
-                .map(PostfixOp::Span),
-
             kw("arp")
                 .ignore_then(pad_char('('))
                 .ignore_then(arp_style)
                 .then_ignore(pad_char(')'))
                 .map(PostfixOp::Arp),
-
-            kw("ratchet")
-                .ignore_then(pad_char('('))
-                .ignore_then(int_u8())
-                .then_ignore(pad_char(')'))
-                .or(pad_char('*').ignore_then(int_u8()))
-                .map(PostfixOp::Ratchet),
 
             kw("stut")
                 .ignore_then(pad_char('('))
@@ -81,20 +68,6 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
                 .then(float_f32())
                 .then_ignore(pad_char(')'))
                 .map(|((d, f), t)| PostfixOp::Stut(d, f, t)),
-
-            kw("prob")
-                .ignore_then(pad_char('('))
-                .ignore_then(int_u8())
-                .then_ignore(pad_char(')'))
-                .or(pad_char('?').ignore_then(int_u8()))
-                .map(PostfixOp::Prob),
-
-            kw("invert")
-                .ignore_then(pad_char('('))
-                .ignore_then(int_i32())
-                .then_ignore(pad_char(')'))
-                .or(pad_char('^').ignore_then(int_i32()))
-                .map(PostfixOp::Invert),
 
             kw("drop")
                 .ignore_then(pad_char('('))
@@ -126,12 +99,6 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
                     };
                     PostfixOp::Humanize(vel, time)
                 }),
-
-            kw("octave")
-                .ignore_then(pad_char('('))
-                .ignore_then(int_i32())
-                .then_ignore(pad_char(')'))
-                .map(PostfixOp::Transpose),
 
             kw("off")
                 .ignore_then(pad_char('('))
@@ -190,14 +157,18 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
                 .map(PostfixOp::GateOverride),
         )));
 
+        // Core structural modifiers - rigidly bound (NO leading padding allowed)
         let symbolic = choice((
-            pad_char('*').ignore_then(int_u8()).map(PostfixOp::Ratchet),
-            pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob),
-            pad_char('^').ignore_then(int_i32()).map(PostfixOp::Invert),
-            pad_char('/').ignore_then(int_usize()).map(PostfixOp::Span),
+            just('*').ignore_then(int_u8().padded_by(padding())).map(PostfixOp::Ratchet),
+            just('?').ignore_then(int_u8().padded_by(padding())).map(PostfixOp::Prob),
+            just('^').ignore_then(int_i32().padded_by(padding())).map(PostfixOp::Invert),
+            just('/').ignore_then(int_usize().padded_by(padding())).map(PostfixOp::Span),
+            just('+').ignore_then(int_usize().padded_by(padding())).map(|v| PostfixOp::Transpose(v as i32)),
+            just('-').ignore_then(int_usize().padded_by(padding())).map(|v| PostfixOp::Transpose(-(v as i32))),
         ));
 
-        choice((method, symbolic)).padded_by(padding())
+        // Explicitly NOT padded_by(padding()) overall to ensure tight binding on the left
+        choice((method, symbolic))
     })
 }
 
