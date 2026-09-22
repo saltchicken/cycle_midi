@@ -174,8 +174,18 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
             just('?').ignore_then(int_u8().padded_by(padding())).map(PostfixOp::Prob),
             just('^').ignore_then(int_i32().padded_by(padding())).map(PostfixOp::Invert),
             just('/').ignore_then(int_usize().padded_by(padding())).map(PostfixOp::Span),
-            just('+').ignore_then(int_usize().padded_by(padding())).map(|v| PostfixOp::Transpose(v as i32)),
-            just('-').ignore_then(int_usize().padded_by(padding())).map(|v| PostfixOp::Transpose(-(v as i32))),
+            
+            // Transpose modifiers: strictly reject if followed immediately by an accidental (# or b)
+            // so we don't accidentally consume negative pitches like -14# as a transpose operation.
+            just('+')
+                .ignore_then(int_usize())
+                .then_ignore(choice((just('#'), just('b'))).not().rewind())
+                .map(|v| PostfixOp::Transpose(v as i32)),
+                
+            just('-')
+                .ignore_then(int_usize())
+                .then_ignore(choice((just('#'), just('b'))).not().rewind())
+                .map(|v| PostfixOp::Transpose(-(v as i32))),
         ));
 
         // Explicitly NOT padded_by(padding()) overall to ensure tight binding on the left
