@@ -2,6 +2,7 @@
 #SCALE=C4 major
 
 #INCLUDE "include/progressions.mmn"
+#INCLUDE "include/bass.mmn"
 
 $MELODY = 
 chain [
@@ -129,8 +130,8 @@ chain [
 T1:
   $MELODY
 
-T2 octave -2:
-  $MELODY.chordify.extract(lowest).ratchet(4)
-
-T3 octave -1 seed 44 every 2:
+T2 octave -1 seed 44 every 2:
   $RAND_TEXTURE($MELODY)
+
+T3 octave -2:
+  $B_STUTTER($MELODY)
