@@ -54,5 +54,5 @@ T1:
 T2 octave -2:
   $MELODY.chordify.extract(lowest).ratchet(4)
 
-T3 octave -1:
-  $RAND_ALT($MELODY)
+T3 octave -1 seed 44 every 2:
+  $RAND_CHORDIFY($MELODY)

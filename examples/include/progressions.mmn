@@ -1,11 +1,13 @@
-$CHORD_A($VAR) = $VAR.chordify(-2, -1)
-$CHORD_B($VAR) = $VAR.chordify(3, 1)
+$BASE($VAR) = $VAR.chordify(2)
+$BASE_UP_1($VAR) = $VAR.chordify(2,1)
+$TOP($VAR) = $VAR.chordify(-2)
+$TOP_DOWN_1($VAR) = $VAR.chordify(-2, -1)
 
-$PROG_A_B_ALT($VAR) = alt(
-  $CHORD_A($VAR) $CHORD_A($VAR) $CHORD_A($VAR) 
-  $CHORD_B($VAR) $CHORD_B($VAR) $CHORD_B($VAR)
+$BASE_BASE_UP_1_ALT($VAR) = alt(
+  $BASE($VAR) $BASE($VAR) $BASE($VAR) 
+  $BASE_UP_1($VAR) $BASE_UP_1($VAR) $BASE_UP_1($VAR)
 )
 
-$RAND_ALT($VAR) = rand(
-  $CHORD_A($VAR) $CHORD_B($VAR)
+$RAND_CHORDIFY($VAR) = rnd(
+  2: $BASE($VAR), 1: $BASE_UP_1($VAR), 2: $TOP($VAR), 1: $TOP_DOWN_1($VAR)
 )
