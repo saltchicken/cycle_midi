@@ -171,6 +171,7 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
                 .ignore_then(pad_char('('))
                 .ignore_then(int_u8())
                 .then_ignore(pad_char(')'))
+                .or(pad_char('*').ignore_then(int_u8()))
                 .map(PostfixOp::Ratchet),
 
             kw("stut")
@@ -187,12 +188,14 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
                 .ignore_then(pad_char('('))
                 .ignore_then(int_u8())
                 .then_ignore(pad_char(')'))
+                .or(pad_char('?').ignore_then(int_u8()))
                 .map(PostfixOp::Prob),
 
             kw("invert")
                 .ignore_then(pad_char('('))
                 .ignore_then(int_i32())
                 .then_ignore(pad_char(')'))
+                .or(pad_char('^').ignore_then(int_i32()))
                 .map(PostfixOp::Invert),
 
             kw("drop")
@@ -349,6 +352,14 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
         let alias_ref = just('$')
             .ignore_then(text::ident())
+            .then_ignore(
+                padding()
+                    .ignore_then(just('='))
+                    .not()
+                    .rewind()
+                    .ignored()
+                    .or(end())
+            )
             .map(Node::Ref);
 
         let with_scale = kw("scale")
@@ -404,7 +415,6 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .then_ignore(pad_char(')'))
             .map(|(mask, content)| Node::Struct(Box::new(mask), Box::new(content)));
 
-        // Default grouping (Implicit Sequence)
         let implicit_seq = pad_char('[')
             .ignore_then(expr.clone().padded_by(padding()).repeated())
             .then_ignore(pad_char(']'))
