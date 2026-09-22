@@ -69,16 +69,30 @@ pub fn track_parser<'a>(
                 .or_not()
                 .map(|modifiers| modifiers.unwrap_or_default()),
         )
+        // Parse the optional `with .mod1() .mod2()` block modifiers
+        .then(
+            kw("with")
+                .ignore_then(super::modifiers::postfix_parser().repeated())
+                .or_not()
+                .map(|m| m.unwrap_or_default())
+        )
         .then_ignore(pad_char(':'))
         .padded_by(padding())
         .then(expr.padded_by(padding()).repeated().map(Node::Sequence))
-        .map(|(((is_muted, ch), modifiers), mut root_node)| {
+        .map(|((((is_muted, ch), modifiers), block_mods), mut root_node)| {
+            
+            // 1. Apply unified block modifiers (`with`) directly to the sequence node first.
+            for block_mod in block_mods {
+                root_node = super::modifiers::apply_postfix(root_node, block_mod);
+            }
+
             let mut track_scale = None;
             let mut track_span = None;
             let mut track_seed = None;
             let mut track_octave = 0;
             let mut track_pc = None;
 
+            // 2. Resolve structural track metadata modifiers
             for m in modifiers {
                 match m {
                     TrackModifier::Span(s) => track_span = Some(s),
@@ -89,6 +103,7 @@ pub fn track_parser<'a>(
                 }
             }
 
+            // 3. Force the sequence into a fixed timing span if provided
             if let Some(s) = track_span {
                 root_node = Node::Modified(Box::new(root_node), vec![Modifier::Span(s)]);
             }

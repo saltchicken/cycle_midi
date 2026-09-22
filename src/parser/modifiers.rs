@@ -23,6 +23,17 @@ pub enum PostfixOp {
     GateOverride(u8),
 }
 
+// Helper: Optionally parses a keyword argument label (e.g., "depth:") before a value
+fn opt_kw_arg<'a, T: 'a, P: Parser<char, T, Error = Simple<char>> + Clone + 'a>(
+    parser: P,
+) -> impl Parser<char, T, Error = Simple<char>> + Clone + 'a {
+    text::ident()
+        .padded_by(padding())
+        .then_ignore(pad_char(':'))
+        .or_not()
+        .ignore_then(parser)
+}
+
 pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clone {
     recursive(|postfix| {
         let arp_style = choice((
@@ -47,37 +58,37 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
         let method = just('.').ignore_then(choice((
             kw("euclid").or(kw("E"))
                 .ignore_then(pad_char('('))
-                .ignore_then(int_u8())
+                .ignore_then(opt_kw_arg(int_u8()))
                 .then_ignore(pad_char(','))
-                .then(int_u8())
+                .then(opt_kw_arg(int_u8()))
                 .then_ignore(pad_char(')'))
                 .map(|(p, s)| PostfixOp::Euclidean(p, s)),
 
             kw("arp")
                 .ignore_then(pad_char('('))
-                .ignore_then(arp_style)
+                .ignore_then(opt_kw_arg(arp_style))
                 .then_ignore(pad_char(')'))
                 .map(PostfixOp::Arp),
 
             kw("stut")
                 .ignore_then(pad_char('('))
-                .ignore_then(int_u8())
+                .ignore_then(opt_kw_arg(int_u8()))
                 .then_ignore(pad_char(','))
-                .then(float_f32())
+                .then(opt_kw_arg(float_f32()))
                 .then_ignore(pad_char(','))
-                .then(float_f32())
+                .then(opt_kw_arg(float_f32()))
                 .then_ignore(pad_char(')'))
                 .map(|((d, f), t)| PostfixOp::Stut(d, f, t)),
 
             kw("drop")
                 .ignore_then(pad_char('('))
-                .ignore_then(int_u8())
+                .ignore_then(opt_kw_arg(int_u8()))
                 .then_ignore(pad_char(')'))
                 .map(PostfixOp::Drop),
 
             kw("shift")
                 .ignore_then(pad_char('('))
-                .ignore_then(float_f32())
+                .ignore_then(opt_kw_arg(float_f32()))
                 .then_ignore(pad_char(')'))
                 .map(PostfixOp::PhaseShift),
 
@@ -85,8 +96,8 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
                 .ignore_then(
                     pad_char('(')
                         .ignore_then(
-                            int_u8()
-                                .then(pad_char(',').ignore_then(float_f64()).then_ignore(kw("ms").or_not()).or_not())
+                            opt_kw_arg(int_u8())
+                                .then(pad_char(',').ignore_then(opt_kw_arg(float_f64())).then_ignore(kw("ms").or_not()).or_not())
                                 .or_not()
                         )
                         .then_ignore(pad_char(')'))
@@ -102,7 +113,7 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
 
             kw("off")
                 .ignore_then(pad_char('('))
-                .ignore_then(float_f32())
+                .ignore_then(opt_kw_arg(float_f32()))
                 .then_ignore(pad_char(','))
                 .then(postfix.repeated())
                 .then_ignore(pad_char(')'))
@@ -110,18 +121,18 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
 
             kw("strum")
                 .ignore_then(pad_char('('))
-                .ignore_then(float_f64())
+                .ignore_then(opt_kw_arg(float_f64()))
                 .then_ignore(pad_char(')'))
                 .map(PostfixOp::Strum),
 
             kw("extract")
                 .ignore_then(
                     pad_char('(')
-                        .ignore_then(extract_type)
+                        .ignore_then(opt_kw_arg(extract_type))
                         .then(
                             pad_char(',')
-                                .ignore_then(int_i32().padded_by(padding()))
-                                .then(pad_char(',').ignore_then(int_i32().padded_by(padding())).or_not())
+                                .ignore_then(opt_kw_arg(int_i32()).padded_by(padding()))
+                                .then(pad_char(',').ignore_then(opt_kw_arg(int_i32()).padded_by(padding())).or_not())
                                 .or_not(),
                         )
                         .then_ignore(pad_char(')'))
@@ -134,8 +145,8 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
             kw("chordify")
                 .ignore_then(
                     pad_char('(')
-                        .ignore_then(int_i32().padded_by(padding()))
-                        .then(pad_char(',').ignore_then(int_i32().padded_by(padding())).or_not())
+                        .ignore_then(opt_kw_arg(int_i32()).padded_by(padding()))
+                        .then(pad_char(',').ignore_then(opt_kw_arg(int_i32()).padded_by(padding())).or_not())
                         .then_ignore(pad_char(')'))
                         .or_not()
                 )
@@ -146,13 +157,13 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
 
             kw("vel").or(kw("v"))
                 .ignore_then(pad_char('('))
-                .ignore_then(int_u8())
+                .ignore_then(opt_kw_arg(int_u8()))
                 .then_ignore(pad_char(')'))
                 .map(PostfixOp::VelocityOverride),
 
             kw("gate").or(kw("g"))
                 .ignore_then(pad_char('('))
-                .ignore_then(int_u8())
+                .ignore_then(opt_kw_arg(int_u8()))
                 .then_ignore(pad_char(')'))
                 .map(PostfixOp::GateOverride),
         )));
