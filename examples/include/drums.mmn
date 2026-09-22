@@ -9,3 +9,25 @@ $ht = 50 // High Tom
 $cy = 49 // Crash Cymbal
 $rd = 51 // Ride Cymbal
 
+
+// PARTS
+
+$KICK_A = $bd*2
+$KICK_B = $bd*2 stut(2, 0.5, 0.33)
+
+$SNARE_A = $sn(3,8)
+
+$CLAP_A = $cp*2
+$CLAP_B = $cp stut(4, 0.5, 0.125)
+
+$TOM_A = $lt*2
+$TOM_B = [ . $lt . $lt*2 ] 
+
+
+// LOOPS
+
+
+$DRUM_1 = arrange [
+      (0, 7): [ $bd $ch $sn $ch . $ch $sn $bd ],
+      (7, 8): [ $sn $sn $bd $bd $sn $sn $bd $bd ]
+  ]
