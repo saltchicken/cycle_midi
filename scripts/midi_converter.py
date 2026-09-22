@@ -50,7 +50,7 @@ def midi_to_scale_degree(midi_note, root_midi, scale_intervals):
     accidental = pc_diff - scale_intervals[closest_idx]
     return f"{numeric_degree}{'#' * accidental}"
 
-def extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, beats_per_cycle):
+def extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, beats_per_cycle, subdivide, preserve_velocity):
     ticks_per_beat = mid.ticks_per_beat
     ticks_per_cycle = ticks_per_beat * beats_per_cycle 
     step_ticks = ticks_per_cycle / steps_per_cycle
@@ -63,12 +63,16 @@ def extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, bea
         for msg in track:
             abs_tick += msg.time
             if msg.type == 'note_on' and msg.velocity > 0:
-                active_notes[msg.note] = abs_tick
+                active_notes[msg.note] = (abs_tick, msg.velocity)
             elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
                 if msg.note in active_notes:
-                    start_tick = active_notes.pop(msg.note)
+                    start_tick, velocity = active_notes.pop(msg.note)
                     degree_str = midi_to_scale_degree(msg.note, root_midi, scale_intervals)
-                    note_spans.append((start_tick, abs_tick, degree_str))
+                    
+                    if preserve_velocity:
+                        note_spans.append((start_tick, abs_tick, f"{degree_str}.v({velocity})"))
+                    else:
+                        note_spans.append((start_tick, abs_tick, degree_str))
 
     if not note_spans:
         return []
@@ -88,7 +92,19 @@ def extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, bea
         starting_notes = [n for n in note_spans if window_start <= n[0] < window_end]
         
         if starting_notes:
-            grid.append(starting_notes[0][2])
+            if subdivide:
+                # Sort by exact start time (since note_spans was ordered by note-off time)
+                starting_notes.sort(key=lambda x: x[0])
+                
+                if len(starting_notes) == 1:
+                    grid.append(starting_notes[0][2])
+                else:
+                    # Multiple fast notes in one step! Group them into a sub-sequence
+                    sub_seq = " ".join([n[2] for n in starting_notes])
+                    grid.append(f"[{sub_seq}]")
+            else:
+                # Original behavior: Strictly quantize to the grid, keeping only the first note
+                grid.append(starting_notes[0][2])
         else:
             overlap_threshold = window_start + (step_ticks * 0.25)
             holding_notes = [n for n in note_spans if n[0] < window_start and n[1] > overlap_threshold]
@@ -100,7 +116,7 @@ def extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, bea
                 
     return grid
 
-def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_cycle, beats_per_cycle):
+def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_cycle, beats_per_cycle, subdivide, preserve_velocity):
     try:
         mid = mido.MidiFile(filepath)
     except Exception as e:
@@ -114,7 +130,7 @@ def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_c
     root_midi = parse_root_pitch(root_name)
     scale_intervals = SCALES.get(scale_name.lower(), SCALES["major"])
     
-    grid = extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, beats_per_cycle)
+    grid = extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, beats_per_cycle, subdivide, preserve_velocity)
 
     if not grid:
         print("No Note On events found in the MIDI file.")
@@ -197,6 +213,16 @@ if __name__ == "__main__":
         default=2.0, 
         help="Number of beats that make up a single macro-cycle. Default: 2.0"
     )
+    parser.add_argument(
+        "-d", "--subdivide", 
+        action="store_true", 
+        help="Preserve fast notes by subdividing steps into nested sequences (e.g., [1 2])."
+    )
+    parser.add_argument(
+        "-v", "--velocity", 
+        action="store_true", 
+        help="Preserve MIDI velocity as .v() modifiers."
+    )
 
     args = parser.parse_args()
 
@@ -205,5 +231,7 @@ if __name__ == "__main__":
         target_scale=args.scale, 
         output_format=args.format, 
         steps_per_cycle=args.grid,
-        beats_per_cycle=args.beats
+        beats_per_cycle=args.beats,
+        subdivide=args.subdivide,
+        preserve_velocity=args.velocity
     )
