@@ -3,6 +3,12 @@ use crate::engine::render::math::lcm;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct MacroDef {
+    pub params: Vec<String>,
+    pub body: Node,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Modifier {
     Euclidean(u8, u8),
     Span(usize),
@@ -36,7 +42,7 @@ pub enum Node {
     Chord(Vec<Node>),
     Rest,
     Hold,
-    Ref(String),
+    Ref(String, Vec<Node>),
     Sequence(Vec<Node>),
     ShuffledSequence(Vec<Node>),
     Parallel(Vec<Vec<Node>>),
@@ -50,15 +56,31 @@ pub enum Node {
 }
 
 impl Node {
-    pub fn expand_refs(&mut self, env: &HashMap<String, Node>, depth: usize) -> Result<(), String> {
+    pub fn expand_refs(&mut self, env: &HashMap<String, MacroDef>, depth: usize) -> Result<(), String> {
         if depth > 32 {
             return Err("Max macro expansion depth exceeded (circular reference?)".to_string());
         }
         match self {
-            Node::Ref(name) => {
-                if let Some(resolved) = env.get(name) {
-                    let mut cloned = resolved.clone();
-                    cloned.expand_refs(env, depth + 1)?;
+            Node::Ref(name, args) => {
+                for arg in args.iter_mut() {
+                    arg.expand_refs(env, depth)?;
+                }
+
+                if let Some(macro_def) = env.get(name) {
+                    if args.len() != macro_def.params.len() {
+                        return Err(format!("Macro ${} expects {} args, got {}", name, macro_def.params.len(), args.len()));
+                    }
+
+                    let mut local_env = env.clone();
+                    for (param_name, arg_val) in macro_def.params.iter().zip(args.iter()) {
+                        local_env.insert(
+                            param_name.clone(), 
+                            MacroDef { params: vec![], body: arg_val.clone() }
+                        );
+                    }
+
+                    let mut cloned = macro_def.body.clone();
+                    cloned.expand_refs(&local_env, depth + 1)?;
                     *self = cloned;
                 } else {
                     return Err(format!("Unresolved alias: ${}", name));
@@ -106,7 +128,7 @@ impl Node {
 
     pub fn cycle_length(&self) -> usize {
         match self {
-            Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold | Node::Ref(_) => 1,
+            Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold | Node::Ref(_, _) => 1,
             Node::Chord(elements) | Node::Sequence(elements) | Node::ShuffledSequence(elements) => {
                 elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()))
             }
@@ -172,7 +194,7 @@ pub struct Program {
     pub scale_seq: Option<Vec<(usize, usize, ScaleDef)>>,
     pub global_silence: bool,
     pub includes: Vec<String>,
-    pub aliases: HashMap<String, Node>,
+    pub aliases: HashMap<String, MacroDef>,
     pub tracks: Vec<Track>,
 }
 

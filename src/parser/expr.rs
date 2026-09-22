@@ -1,12 +1,12 @@
 use super::directives::global_directives;
 use super::primitives::{pad_char, padding};
 use super::track::track_parser;
-use crate::ast::{Node, Program};
+use crate::ast::{Node, Program, MacroDef};
 use chumsky::prelude::*;
 use std::collections::HashMap;
 
 enum TopLevelItem {
-    Alias(String, Node),
+    Alias(String, Vec<String>, Node),
     Track(crate::ast::Track),
 }
 
@@ -17,6 +17,13 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
         let alias_ref = just('$')
             .ignore_then(text::ident())
+            .then(
+                expr.clone()
+                    .padded_by(padding())
+                    .separated_by(pad_char(','))
+                    .delimited_by(pad_char('('), pad_char(')'))
+                    .or_not()
+            )
             .then_ignore(
                 padding()
                     .ignore_then(just('='))
@@ -25,7 +32,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .ignored()
                     .or(end())
             )
-            .map(Node::Ref);
+            .map(|(name, args)| Node::Ref(name, args.unwrap_or_default()));
 
         let atom = choice((
             rest,
@@ -52,6 +59,14 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
     let alias_def = just('$')
         .ignore_then(text::ident())
+        .then(
+            just('$')
+                .ignore_then(text::ident())
+                .padded_by(padding())
+                .separated_by(pad_char(','))
+                .delimited_by(pad_char('('), pad_char(')'))
+                .or_not()
+        )
         .then_ignore(pad_char('='))
         .then(
             expr.clone()
@@ -66,7 +81,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     }
                 }),
         )
-        .map(|(name, node)| TopLevelItem::Alias(name, node));
+        .map(|((name, params), node)| TopLevelItem::Alias(name, params.unwrap_or_default(), node));
 
     let track_def = track_parser(expr).map(TopLevelItem::Track);
 
@@ -81,8 +96,8 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
                 for item in items {
                     match item {
-                        TopLevelItem::Alias(name, node) => {
-                            aliases.insert(name, node);
+                        TopLevelItem::Alias(name, params, node) => {
+                            aliases.insert(name, MacroDef { params, body: node });
                         }
                         TopLevelItem::Track(track) => {
                             tracks.push(track);

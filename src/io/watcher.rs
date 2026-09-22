@@ -13,7 +13,7 @@ fn load_recursive(
     path: &Path,
     base_dir: &Path,
     parser: &impl Parser<char, Program, Error = chumsky::error::Simple<char>>,
-    all_aliases: &mut HashMap<String, crate::ast::Node>,
+    all_aliases: &mut HashMap<String, crate::ast::MacroDef>,
     visited: &mut HashSet<PathBuf>,
     cache: &mut HashMap<PathBuf, (SystemTime, Program)>,
     is_root: bool,

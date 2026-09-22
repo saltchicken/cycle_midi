@@ -1,7 +1,10 @@
-#BPM=120
+#BPM=80
 #SCALE=C4 major
 
-$PRELUDE = chain [
+#INCLUDE "include/progressions.mmn"
+
+$MELODY = 
+chain [
   2: [0 2 4 7 9 4 7 9],
   2: [0 1 5 8 10 5 8 10],
   2: [-1 1 4 8 10 4 8 10],
@@ -46,13 +49,10 @@ $PRELUDE = chain [
 ]
 
 T1:
-  $PRELUDE
+  $MELODY
 
 T2 octave -2:
-  $PRELUDE.chordify.extract(lowest).ratchet(4)
-
-$CHORD_A = $PRELUDE.chordify(-2, -1)
-$CHORD_B = $PRELUDE.chordify(3, 1)
+  $MELODY.chordify.extract(lowest).ratchet(4)
 
 T3 octave -1:
-  alt($CHORD_A $CHORD_A $CHORD_A $CHORD_B $CHORD_B $CHORD_B $CHORD_B $CHORD_B)
+  $RAND_ALT($MELODY)

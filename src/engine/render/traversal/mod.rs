@@ -26,7 +26,7 @@ pub fn traverse_ast(
         Node::CC { controller, value } => render_cc(*controller, value, ctx, out_events),
         Node::Rest => { ctx.active_chord_indices.clear(); },
         Node::Hold => render_hold(ctx, out_events),
-        Node::Ref(_) => { ctx.active_chord_indices.clear(); },
+        Node::Ref(_, _) => { ctx.active_chord_indices.clear(); },
         Node::Chord(elements) => render_chord(elements, ctx, out_events),
         Node::Sequence(elements) => render_sequence(elements, ctx, out_events),
         Node::ShuffledSequence(elements) => render_shuffled_sequence(elements, ctx, out_events),
