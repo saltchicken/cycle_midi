@@ -34,11 +34,7 @@ pub(super) fn render_sequence(
     }
     let step_duration = ctx.duration_ms / elements.len() as f64;
     for (i, el) in elements.iter().enumerate() {
-        let mut sub_ctx = ctx.clone();
-        sub_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
-        sub_ctx.duration_ms = step_duration;
-        sub_ctx.window_start_ms = ctx.window_start_ms.max(sub_ctx.start_ms);
-        sub_ctx.window_end_ms = ctx.window_end_ms.min(sub_ctx.start_ms + step_duration);
+        let mut sub_ctx = ctx.derive_step(i, step_duration);
         traverse_ast(el, &mut sub_ctx, out_events);
         ctx.active_chord_indices = sub_ctx.active_chord_indices;
     }
@@ -76,12 +72,7 @@ pub(super) fn render_parallel(
         } else {
             let step_duration = sub_ctx.duration_ms / layer.len() as f64;
             for (i, el) in layer.iter().enumerate() {
-                let mut step_ctx = sub_ctx.clone();
-                step_ctx.start_ms = ctx.start_ms + (i as f64 * step_duration);
-                step_ctx.duration_ms = step_duration;
-                step_ctx.window_start_ms = ctx.window_start_ms.max(step_ctx.start_ms);
-                step_ctx.window_end_ms = ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
-
+                let mut step_ctx = sub_ctx.derive_step(i, step_duration);
                 traverse_ast(el, &mut step_ctx, out_events);
                 sub_ctx.active_chord_indices = step_ctx.active_chord_indices;
             }
@@ -122,12 +113,7 @@ pub(super) fn render_polymeter(
                 |chunk_ctx| {
                     let step_duration = local_duration / li;
                     for (step_idx, el) in layer.iter().enumerate() {
-                        let mut step_ctx = chunk_ctx.clone();
-                        step_ctx.start_ms = chunk_ctx.start_ms + (step_idx as f64 * step_duration);
-                        step_ctx.duration_ms = step_duration;
-                        step_ctx.window_start_ms = chunk_ctx.window_start_ms.max(step_ctx.start_ms);
-                        step_ctx.window_end_ms = chunk_ctx.window_end_ms.min(step_ctx.start_ms + step_duration);
-
+                        let mut step_ctx = chunk_ctx.derive_step(step_idx, step_duration);
                         traverse_ast(el, &mut step_ctx, out_events);
                         chunk_ctx.active_chord_indices = step_ctx.active_chord_indices;
                     }
@@ -172,8 +158,6 @@ pub(super) fn render_alternator(
         ctx.active_chord_indices.clear();
         return;
     }
-    // Fix: Alternator now steps through indices accurately based on the temporal position 
-    // in the macro cycle, preventing macro-loop desync!
     let step_index = (ctx.start_ms / ctx.duration_ms).round() as usize;
     let index = (step_index / ctx.alternator_stride) % elements.len();
     

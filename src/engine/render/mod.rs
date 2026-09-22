@@ -57,6 +57,21 @@ pub struct RenderContext {
     pub max_events: usize,
 }
 
+impl RenderContext {
+    pub fn is_in_window(&self, time_ms: f64) -> bool {
+        time_ms >= self.window_start_ms - 0.1 && time_ms < self.window_end_ms - 0.1
+    }
+
+    pub fn derive_step(&self, index: usize, step_duration: f64) -> Self {
+        let mut step_ctx = self.clone();
+        step_ctx.start_ms = self.start_ms + (index as f64 * step_duration);
+        step_ctx.duration_ms = step_duration;
+        step_ctx.window_start_ms = self.window_start_ms.max(step_ctx.start_ms);
+        step_ctx.window_end_ms = self.window_end_ms.min(step_ctx.start_ms + step_duration);
+        step_ctx
+    }
+}
+
 pub fn generate_next_cycle(
     program: &Program,
     bpm: f64,

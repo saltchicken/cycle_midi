@@ -1,5 +1,15 @@
 use chumsky::prelude::*;
 
+#[macro_export]
+macro_rules! parse_num {
+    ($type:ty, $err_msg:expr) => {
+        text::int::<char, Simple<char>>(10).try_map(|s: String, span| {
+            s.parse::<$type>()
+                .map_err(|e| Simple::custom(span, format!("{}: {}", $err_msg, e)))
+        })
+    };
+}
+
 pub fn padding() -> impl Parser<char, (), Error = Simple<char>> + Clone {
     let comment = just("//")
         .ignore_then(filter(|c: &char| *c != '\n').repeated())
@@ -16,10 +26,15 @@ pub fn pad_char(c: char) -> impl Parser<char, char, Error = Simple<char>> + Clon
 }
 
 pub fn int_u8() -> impl Parser<char, u8, Error = Simple<char>> + Clone {
-    text::int::<char, Simple<char>>(10).try_map(|s: String, span| {
-        s.parse::<u8>()
-            .map_err(|e| Simple::custom(span, format!("Invalid u8: {}", e)))
-    })
+    parse_num!(u8, "Invalid u8")
+}
+
+pub fn int_usize() -> impl Parser<char, usize, Error = Simple<char>> + Clone {
+    parse_num!(usize, "Invalid usize")
+}
+
+pub fn int_u64() -> impl Parser<char, u64, Error = Simple<char>> + Clone {
+    parse_num!(u64, "Invalid u64")
 }
 
 pub fn int_i32() -> impl Parser<char, i32, Error = Simple<char>> + Clone {

@@ -1,5 +1,5 @@
 use super::directives::scale_def;
-use super::primitives::{int_i32, kw, padding};
+use super::primitives::{int_i32, kw, padding, int_u8, int_usize, int_u64};
 use crate::ast::{Modifier, Node, ScaleDef, SeedDef, SeedInterval, Track};
 use chumsky::prelude::*;
 
@@ -15,39 +15,26 @@ enum TrackModifier {
 fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + Clone {
     choice((
         kw("span")
-            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>()
-                    .map_err(|e| Simple::custom(span, format!("Invalid span: {}", e)))
-            }))
+            .ignore_then(int_usize())
             .map(TrackModifier::Span),
         kw("scale")
             .ignore_then(scale_def())
             .map(TrackModifier::Scale),
         kw("pc")
-            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<u8>()
-                    .map(|v| v.saturating_sub(1))
-                    .map_err(|e| Simple::custom(span, format!("Invalid PC: {}", e)))
-            }))
+            .ignore_then(int_u8().map(|v| v.saturating_sub(1)))
             .map(TrackModifier::ProgramChange),
         kw("octave")
             .ignore_then(int_i32().or_not())
             .map(|v| TrackModifier::Octave(v.unwrap_or(1))),
         kw("seed")
-            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<u64>()
-                    .map_err(|e| Simple::custom(span, format!("Invalid seed: {}", e)))
-            }))
+            .ignore_then(int_u64())
             .then(
                 choice((
                     kw("m_every").to(0u8),
                     kw("t_every").to(1u8),
                     kw("every").to(2u8),
                 ))
-                .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                    s.parse::<usize>()
-                        .map_err(|e| Simple::custom(span, format!("Invalid interval: {}", e)))
-                }))
+                .then(int_usize())
                 .or_not(),
             )
             .map(|(base, interval_data)| {
@@ -68,10 +55,7 @@ pub fn track_parser<'a>(
         .or_not()
         .map(|m| m.is_some())
         .then_ignore(just('T'))
-        .then(text::int(10).try_map(|s: String, span| {
-            s.parse::<u8>()
-                .map_err(|e| Simple::custom(span, format!("Invalid channel: {}", e)))
-        }))
+        .then(int_u8())
         .then(track_modifier().repeated())
         .then_ignore(just(':'))
         .padded_by(padding())

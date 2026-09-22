@@ -1,4 +1,4 @@
-use crate::engine::render::RenderContext;
+use crate::engine::render::{RenderContext, ScheduledEvent};
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use rand::{SeedableRng, rngs::StdRng};
@@ -61,4 +61,24 @@ where
     }
 
     all_indices
+}
+
+pub(super) fn group_notes_by_time_and_pitch(
+    events: &[ScheduledEvent],
+    start_idx: usize,
+) -> Vec<Vec<usize>> {
+    let mut notes_by_time: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
+    for i in start_idx..events.len() {
+        if let ScheduledEvent::Note { start_ms, .. } = events[i] {
+            let time_key = (start_ms * 1000.0).round() as i64;
+            notes_by_time.entry(time_key).or_default().push(i);
+        }
+    }
+    let mut groups: Vec<Vec<usize>> = notes_by_time.into_values().collect();
+    for indices in &mut groups {
+        indices.sort_by_key(|&i| {
+            if let ScheduledEvent::Note { pitch, .. } = events[i] { pitch } else { 0 }
+        });
+    }
+    groups
 }

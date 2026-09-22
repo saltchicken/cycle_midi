@@ -1,4 +1,4 @@
-use super::primitives::{float_f64, pad_char, padding, pitch_val};
+use super::primitives::{float_f64, pad_char, padding, pitch_val, int_u8, int_usize};
 use crate::ast::{QuantizeMode, ScaleDef};
 use chumsky::prelude::*;
 
@@ -41,15 +41,9 @@ pub fn scale_def() -> impl Parser<char, ScaleDef, Error = Simple<char>> + Clone 
 pub fn scale_seq_def()
 -> impl Parser<char, Vec<(usize, usize, ScaleDef)>, Error = Simple<char>> + Clone {
     let segment = pad_char('(')
-        .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-            s.parse::<usize>()
-                .map_err(|e| Simple::custom(span, format!("Invalid start: {}", e)))
-        }))
+        .ignore_then(int_usize())
         .then_ignore(pad_char(','))
-        .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-            s.parse::<usize>()
-                .map_err(|e| Simple::custom(span, format!("Invalid end: {}", e)))
-        }))
+        .then(int_usize())
         .then_ignore(pad_char(')'))
         .then_ignore(pad_char(':'))
         .then(scale_def())
@@ -76,25 +70,15 @@ pub fn global_directives() -> impl Parser<
     let directive = choice((
         just("#BPM=").ignore_then(float_f64()).map(Directive::Bpm),
         just("#SIG=")
-            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<u8>()
-                    .map_err(|e| Simple::custom(span, format!("Invalid numerator: {}", e)))
-            }))
+            .ignore_then(int_u8())
             .then_ignore(just('/'))
-            .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<u8>()
-                    .map_err(|e| Simple::custom(span, format!("Invalid denominator: {}", e)))
-            }))
+            .then(int_u8())
             .map(|(num, den)| Directive::Signature(num, den)),
         just("#QUANTIZE=")
             .ignore_then(choice((
                 just("auto").to(QuantizeMode::Auto),
                 just("AUTO").to(QuantizeMode::Auto),
-                text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                    s.parse::<usize>()
-                        .map_err(|e| Simple::custom(span, format!("Invalid quantize: {}", e)))
-                        .map(QuantizeMode::Fixed)
-                }),
+                int_usize().map(QuantizeMode::Fixed),
             )))
             .map(Directive::Quantize),
         just("#SCALE=")

@@ -13,7 +13,7 @@ pub(super) fn render_note(
 ) {
     if out_events.len() >= ctx.max_events { return; }
 
-    if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
+    if ctx.is_in_window(ctx.start_ms) {
         let mut rng = get_positional_rng(ctx);
         let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
         let splits = ctx.ratchet_splits.max(1);
@@ -76,7 +76,7 @@ pub(super) fn render_cc(
 ) {
     if out_events.len() >= ctx.max_events { return; }
 
-    if ctx.start_ms >= ctx.window_start_ms - 0.1 && ctx.start_ms < ctx.window_end_ms - 0.1 {
+    if ctx.is_in_window(ctx.start_ms) {
         let mut rng = get_positional_rng(ctx);
         let splits = ctx.ratchet_splits.max(1);
         let sub_step = ctx.duration_ms / splits as f64;

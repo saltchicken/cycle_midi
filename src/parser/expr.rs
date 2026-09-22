@@ -1,5 +1,5 @@
 use super::directives::global_directives;
-use super::primitives::{float_f32, float_f64, int_i32, int_u8, kw, pad_char, padding};
+use super::primitives::{float_f32, float_f64, int_i32, int_u8, int_usize, kw, pad_char, padding};
 use super::track::track_parser;
 use crate::ast::{ArpStyle, DynamicValue, Modifier, Node, Pitch, Program};
 use chumsky::prelude::*;
@@ -156,9 +156,9 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
 
             kw("span")
                 .ignore_then(pad_char('('))
-                .ignore_then(text::int(10).try_map(|s: String, span| s.parse().map_err(|e| Simple::custom(span, e))))
+                .ignore_then(int_usize())
                 .then_ignore(pad_char(')'))
-                .or(pad_char('/').ignore_then(text::int(10).try_map(|s: String, span| s.parse().map_err(|e| Simple::custom(span, e)))))
+                .or(pad_char('/').ignore_then(int_usize()))
                 .map(PostfixOp::Span),
 
             kw("arp")
@@ -297,7 +297,7 @@ fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + Clon
             pad_char('*').ignore_then(int_u8()).map(PostfixOp::Ratchet),
             pad_char('?').ignore_then(int_u8()).map(PostfixOp::Prob),
             pad_char('^').ignore_then(int_i32()).map(PostfixOp::Invert),
-            pad_char('/').ignore_then(text::int(10).try_map(|s: String, span| s.parse().map_err(|e| Simple::custom(span, e)))).map(PostfixOp::Span),
+            pad_char('/').ignore_then(int_usize()).map(PostfixOp::Span),
         ));
 
         choice((method, symbolic)).padded_by(padding())
@@ -421,13 +421,9 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) });
 
         let arrange_segment = pad_char('(')
-            .ignore_then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid start: {}", e)))
-            }))
+            .ignore_then(int_usize())
             .then_ignore(pad_char(','))
-            .then(text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid end: {}", e)))
-            }))
+            .then(int_usize())
             .then_ignore(pad_char(')'))
             .then_ignore(pad_char(':'))
             .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }))
@@ -437,9 +433,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             .ignore_then(arrange_segment.padded_by(padding()).then_ignore(pad_char(',').or_not()).repeated().delimited_by(pad_char('['), pad_char(']')))
             .map(|segments| Node::Arrange(segments));
 
-        let chain_segment = text::int::<char, Simple<char>>(10).try_map(|s, span| {
-                s.parse::<usize>().map_err(|e| Simple::custom(span, format!("Invalid duration: {}", e)))
-            })
+        let chain_segment = int_usize()
             .then_ignore(pad_char(':'))
             .then(expr.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }));
 
