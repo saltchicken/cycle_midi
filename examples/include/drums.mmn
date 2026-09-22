@@ -1,33 +1,93 @@
-$bd = 36 // Bass Drum
-$sn = 38 // Snare
-$cp = 39 // Clap
-$ch = 42 // Closed Hi-Hat
-$oh = 46 // Open Hi-Hat
-$lt = 43 // Low Tom / Floor Tom
-$mt = 47 // Mid Tom
-$ht = 50 // High Tom
-$cy = 49 // Crash Cymbal
-$rd = 51 // Ride Cymbal
+// ---------------------------------------------------------
+// GENERAL MIDI DRUM MAP
+// ---------------------------------------------------------
+$BD = 36  // Bass Drum
+$SN = 38  // Snare Drum
+$CP = 39  // Clap
+$CH = 42  // Closed Hi-Hat
+$OH = 46  // Open Hi-Hat
+$PD = 44  // Pedal Hi-Hat
+$LT = 43  // Low Tom
+$MT = 47  // Mid Tom
+$HT = 50  // High Tom
+$CR = 49  // Crash Cymbal
+$RD = 51  // Ride Cymbal
 
+// ---------------------------------------------------------
+// KICKS
+// ---------------------------------------------------------
+// Standard 4-on-the-floor
+$K_FOUR = [ $BD $BD $BD $BD ]
 
-// PARTS
+// Syncopated / Breakbeat kick (16-step feel)
+$K_BREAK = [ $BD . . $BD . . $BD . ]
 
-$KICK_A = $bd*2
-$KICK_B = $bd*2 stut(2, 0.5, 0.33)
+// Reggaeton / Tresillo kick pattern
+$K_TRES = $BD.euclid(3, 8)
 
-$SNARE_A = $sn(3,8)
+// ---------------------------------------------------------
+// SNARES & CLAPS
+// ---------------------------------------------------------
+// Classic backbeat (beats 2 and 4)
+$S_BACKBEAT = [ . $SN . $SN ]
 
-$CLAP_A = $cp*2
-$CLAP_B = $cp stut(4, 0.5, 0.125)
+// Half-time backbeat (beat 3 only - great for Trap/Dubstep)
+$S_HALF = [ . . $SN . ]
 
-$TOM_A = $lt*2
-$TOM_B = [ . $lt . $lt*2 ] 
+// Ghost note snare (low velocity, 30% chance to play)
+$S_GHOST = $SN.v(40).prob(30)
 
+// ---------------------------------------------------------
+// HI-HATS & CYMBALS
+// ---------------------------------------------------------
+// Straight 8ths with humanized velocity and timing
+$H_8THS = [ $CH $CH $CH $CH $CH $CH $CH $CH ].humanize(15, 8.0)
 
-// LOOPS
+// Off-beat hats (Classic House)
+$H_OFF = [ . $OH . $OH . $OH . $OH ]
 
+// Trap hi-hat rolls using ratchets (*2 = 2 hits per step, *3 = triplets)
+$H_TRAP_1 = [ $CH $CH $CH*2 $CH ]
+$H_TRAP_2 = [ $CH $CH*3 $CH*2 $CH ]
 
-$DRUM_1 = arrange [
-      (0, 7): [ $bd $ch $sn $ch . $ch $sn $bd ],
-      (7, 8): [ $sn $sn $bd $bd $sn $sn $bd $bd ]
+// ---------------------------------------------------------
+// FILLS & TRANSITIONS
+// ---------------------------------------------------------
+// Classic escalating snare roll
+$FILL_SNARE_ROLL = [ $SN*2.v(50) $SN*4.v(70) $SN*4.v(90) $SN*8.v(110) ]
+
+// Glitchy stutter fill on a Tom
+$FILL_STUT = $MT.stut(4, 0.8, 0.25)
+
+// ---------------------------------------------------------
+// GENERATIVE / RANDOMIZED PERCUSSION
+// ---------------------------------------------------------
+// Sprinkle random hats and ghost snares into the background
+$RAND_PERC = rnd(
+  10: .,                 // mostly silence
+  2: $CH.v(50),          // quiet hat
+  1: $OH.v(60),          // open hat
+  1: $S_GHOST,           // ghost snare
+  1: $CH.stut(2, 0.6, 0.5) // delay/echo hat
+)
+
+// ---------------------------------------------------------
+// MACRO GROOVES (ARRANGER & ALTERNATORS)
+// ---------------------------------------------------------
+// A classic house loop that adds an open hat on the 2nd cycle and a crash on the 4th
+$GROOVE_HOUSE = par(
+  $K_FOUR,
+  $S_BACKBEAT,
+  alt( $H_8THS par($H_8THS, $H_OFF) ), // Brings in offbeat hats every other cycle
+  arrange [
+    (0, 3): .,
+    (3, 4): [ . . . $CR.v(90) ] // Crash at the end of the 4-bar phrase
   ]
+)
+
+// A generative breakbeat that never plays the exact same way twice
+$GROOVE_BREAK = par(
+  $K_BREAK,
+  [ . $SN . . . $S_GHOST $SN $S_GHOST ],
+  [ $RAND_PERC $RAND_PERC $RAND_PERC $RAND_PERC $RAND_PERC $RAND_PERC $RAND_PERC $RAND_PERC ]
+)
