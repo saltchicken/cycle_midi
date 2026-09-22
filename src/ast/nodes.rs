@@ -68,7 +68,7 @@ impl Node {
 
                 if let Some(macro_def) = env.get(name) {
                     if args.len() != macro_def.params.len() {
-                        return Err(format!("Macro ${} expects {} args, got {}", name, macro_def.params.len(), args.len()));
+                        return Err(format!("Macro '{}' expects {} args, got {}", name, macro_def.params.len(), args.len()));
                     }
 
                     let mut local_env = env.clone();
@@ -83,7 +83,7 @@ impl Node {
                     cloned.expand_refs(&local_env, depth + 1)?;
                     *self = cloned;
                 } else {
-                    return Err(format!("Unresolved alias: ${}", name));
+                    return Err(format!("Unresolved alias: '{}'", name));
                 }
             }
             Node::Chord(elements)

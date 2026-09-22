@@ -1,5 +1,5 @@
 use super::directives::global_directives;
-use super::primitives::{pad_char, padding};
+use super::primitives::{pad_char, padding, kw};
 use super::track::track_parser;
 use crate::ast::{Node, Program, MacroDef};
 use chumsky::prelude::*;
@@ -15,8 +15,17 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
         let rest = just('.').to(Node::Rest);
         let hold = just('_').to(Node::Hold); 
 
-        let alias_ref = just('$')
-            .ignore_then(text::ident())
+        // Macro/Variable invocation - specifically rejects 'let' and Track headers 'T1'-'T16'
+        let alias_ref = text::ident()
+            .try_map(|ident: String, span| {
+                if ident == "let" {
+                    Err(Simple::custom(span, "'let' is a reserved keyword"))
+                } else if ident.starts_with('T') && ident[1..].chars().all(|c| c.is_ascii_digit()) && ident.len() > 1 {
+                    Err(Simple::custom(span, "Track headers cannot be used as macros"))
+                } else {
+                    Ok(ident)
+                }
+            })
             .then(
                 expr.clone()
                     .padded_by(padding())
@@ -24,20 +33,11 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     .delimited_by(pad_char('('), pad_char(')'))
                     .or_not()
             )
-            .then_ignore(
-                padding()
-                    .ignore_then(just('='))
-                    .not()
-                    .rewind()
-                    .ignored()
-                    .or(end())
-            )
             .map(|(name, args)| Node::Ref(name, args.unwrap_or_default()));
 
         let atom = choice((
             rest,
             hold,
-            alias_ref,
             super::combinators::with_scale(expr.clone()),
             super::combinators::implicit_seq(expr.clone()),
             super::combinators::seq_group(expr.clone()),
@@ -51,17 +51,27 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             super::combinators::arrange(expr.clone()),
             super::base::cc_parser(),
             super::base::chord_or_note(),
+            alias_ref, // Fallback for standard identifiers
         ));
 
         atom.then(super::modifiers::postfix_parser().repeated())
             .map(|(base, postfixes)| postfixes.into_iter().fold(base, super::modifiers::apply_postfix))
     });
 
-    let alias_def = just('$')
-        .ignore_then(text::ident())
+    let alias_def = kw("let")
+        .ignore_then(
+            text::ident().try_map(|ident: String, span| {
+                if ident == "let" {
+                    Err(Simple::custom(span, "Cannot name a macro 'let'"))
+                } else if ident.starts_with('T') && ident[1..].chars().all(|c| c.is_ascii_digit()) && ident.len() > 1 {
+                    Err(Simple::custom(span, "Cannot name a macro after a track"))
+                } else {
+                    Ok(ident)
+                }
+            })
+        )
         .then(
-            just('$')
-                .ignore_then(text::ident())
+            text::ident()
                 .padded_by(padding())
                 .separated_by(pad_char(','))
                 .delimited_by(pad_char('('), pad_char(')'))
