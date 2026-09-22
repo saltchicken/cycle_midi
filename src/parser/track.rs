@@ -1,5 +1,5 @@
 use super::directives::scale_def;
-use super::primitives::{int_i32, kw, padding, int_u8, int_usize, int_u64};
+use super::primitives::{int_i32, int_u64, int_u8, int_usize, kw, pad_char, padding};
 use crate::ast::{Modifier, Node, ScaleDef, SeedDef, SeedInterval, Track};
 use chumsky::prelude::*;
 
@@ -15,18 +15,23 @@ enum TrackModifier {
 fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + Clone {
     choice((
         kw("span")
+            .ignore_then(pad_char(':'))
             .ignore_then(int_usize())
             .map(TrackModifier::Span),
         kw("scale")
+            .ignore_then(pad_char(':'))
             .ignore_then(scale_def())
             .map(TrackModifier::Scale),
         kw("pc")
+            .ignore_then(pad_char(':'))
             .ignore_then(int_u8().map(|v| v.saturating_sub(1)))
             .map(TrackModifier::ProgramChange),
         kw("octave")
-            .ignore_then(int_i32().or_not())
-            .map(|v| TrackModifier::Octave(v.unwrap_or(1))),
+            .ignore_then(pad_char(':'))
+            .ignore_then(int_i32())
+            .map(TrackModifier::Octave),
         kw("seed")
+            .ignore_then(pad_char(':'))
             .ignore_then(int_u64())
             .then(
                 choice((
@@ -56,8 +61,15 @@ pub fn track_parser<'a>(
         .map(|m| m.is_some())
         .then_ignore(just('T'))
         .then(int_u8())
-        .then(track_modifier().repeated())
-        .then_ignore(just(':'))
+        .then(
+            track_modifier()
+                .padded_by(padding())
+                .separated_by(pad_char(','))
+                .delimited_by(pad_char('('), pad_char(')'))
+                .or_not()
+                .map(|modifiers| modifiers.unwrap_or_default()),
+        )
+        .then_ignore(pad_char(':'))
         .padded_by(padding())
         .then(expr.padded_by(padding()).repeated().map(Node::Sequence))
         .map(|(((is_muted, ch), modifiers), mut root_node)| {
