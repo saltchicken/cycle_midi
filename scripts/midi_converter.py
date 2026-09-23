@@ -50,7 +50,7 @@ def midi_to_scale_degree(midi_note, root_midi, scale_intervals):
     accidental = pc_diff - scale_intervals[closest_idx]
     return f"{numeric_degree}{'#' * accidental}"
 
-def extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, beats_per_cycle, subdivide, preserve_velocity):
+def extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, beats_per_cycle, subdivide, preserve_velocity, snap_to_grid):
     ticks_per_beat = mid.ticks_per_beat
     ticks_per_cycle = ticks_per_beat * beats_per_cycle 
     step_ticks = ticks_per_cycle / steps_per_cycle
@@ -77,46 +77,84 @@ def extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, bea
     if not note_spans:
         return []
 
-    max_tick = max(span[1] for span in note_spans)
-    total_steps = int((max_tick + step_ticks - 1) // step_ticks)
-    
-    if total_steps % steps_per_cycle != 0:
-        total_steps += steps_per_cycle - (total_steps % steps_per_cycle)
-        
     grid = []
-    
-    for step in range(total_steps):
-        window_start = step * step_ticks
-        window_end = (step + 1) * step_ticks
-        
-        starting_notes = [n for n in note_spans if window_start <= n[0] < window_end]
-        
-        if starting_notes:
-            if subdivide:
-                # Sort by exact start time (since note_spans was ordered by note-off time)
-                starting_notes.sort(key=lambda x: x[0])
-                
-                if len(starting_notes) == 1:
-                    grid.append(starting_notes[0][2])
-                else:
-                    # Multiple fast notes in one step! Group them into a sub-sequence
-                    sub_seq = " ".join([n[2] for n in starting_notes])
-                    grid.append(f"[{sub_seq}]")
-            else:
-                # Original behavior: Strictly quantize to the grid, keeping only the first note
-                grid.append(starting_notes[0][2])
-        else:
-            overlap_threshold = window_start + (step_ticks * 0.25)
-            holding_notes = [n for n in note_spans if n[0] < window_start and n[1] > overlap_threshold]
+
+    if snap_to_grid:
+        # NEW BEHAVIOR: Round ticks to the nearest step to handle un-quantized MIDI
+        quantized_notes = []
+        for (start_tick, end_tick, degree_str) in note_spans:
+            start_step = round(start_tick / step_ticks)
+            end_step = round(end_tick / step_ticks)
             
-            if holding_notes:
-                grid.append("_")
+            if end_step <= start_step:
+                end_step = start_step + 1
+                
+            quantized_notes.append((start_step, end_step, start_tick, degree_str))
+
+        max_step = max(span[1] for span in quantized_notes) if quantized_notes else 0
+        total_steps = max_step
+        
+        if total_steps == 0:
+            total_steps = steps_per_cycle
+        elif total_steps % steps_per_cycle != 0:
+            total_steps += steps_per_cycle - (total_steps % steps_per_cycle)
+            
+        for step in range(total_steps):
+            starting_notes = [n for n in quantized_notes if n[0] == step]
+            
+            if starting_notes:
+                if subdivide:
+                    starting_notes.sort(key=lambda x: x[2])
+                    if len(starting_notes) == 1:
+                        grid.append(starting_notes[0][3])
+                    else:
+                        sub_seq = " ".join([n[3] for n in starting_notes])
+                        grid.append(f"[{sub_seq}]")
+                else:
+                    starting_notes.sort(key=lambda x: x[2])
+                    grid.append(starting_notes[0][3])
             else:
-                grid.append(".")
+                holding_notes = [n for n in quantized_notes if n[0] < step and n[1] > step]
+                if holding_notes:
+                    grid.append("_")
+                else:
+                    grid.append(".")
+    else:
+        # ORIGINAL BEHAVIOR: Strict windowing
+        max_tick = max(span[1] for span in note_spans)
+        total_steps = int((max_tick + step_ticks - 1) // step_ticks)
+        
+        if total_steps % steps_per_cycle != 0:
+            total_steps += steps_per_cycle - (total_steps % steps_per_cycle)
+            
+        for step in range(total_steps):
+            window_start = step * step_ticks
+            window_end = (step + 1) * step_ticks
+            
+            starting_notes = [n for n in note_spans if window_start <= n[0] < window_end]
+            
+            if starting_notes:
+                if subdivide:
+                    starting_notes.sort(key=lambda x: x[0])
+                    if len(starting_notes) == 1:
+                        grid.append(starting_notes[0][2])
+                    else:
+                        sub_seq = " ".join([n[2] for n in starting_notes])
+                        grid.append(f"[{sub_seq}]")
+                else:
+                    grid.append(starting_notes[0][2])
+            else:
+                overlap_threshold = window_start + (step_ticks * 0.25)
+                holding_notes = [n for n in note_spans if n[0] < window_start and n[1] > overlap_threshold]
+                
+                if holding_notes:
+                    grid.append("_")
+                else:
+                    grid.append(".")
                 
     return grid
 
-def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_cycle, beats_per_cycle, subdivide, preserve_velocity):
+def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_cycle, beats_per_cycle, subdivide, preserve_velocity, snap_to_grid):
     try:
         mid = mido.MidiFile(filepath)
     except Exception as e:
@@ -130,7 +168,7 @@ def convert_midi_to_intervals(filepath, target_scale, output_format, steps_per_c
     root_midi = parse_root_pitch(root_name)
     scale_intervals = SCALES.get(scale_name.lower(), SCALES["major"])
     
-    grid = extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, beats_per_cycle, subdivide, preserve_velocity)
+    grid = extract_quantized_grid(mid, root_midi, scale_intervals, steps_per_cycle, beats_per_cycle, subdivide, preserve_velocity, snap_to_grid)
 
     if not grid:
         print("No Note On events found in the MIDI file.")
@@ -223,6 +261,11 @@ if __name__ == "__main__":
         action="store_true", 
         help="Preserve MIDI velocity as .v() modifiers."
     )
+    parser.add_argument(
+        "-n", "--snap", 
+        action="store_true", 
+        help="Snap slightly off-beat notes to the nearest grid step instead of using strict grid windows."
+    )
 
     args = parser.parse_args()
 
@@ -233,5 +276,6 @@ if __name__ == "__main__":
         steps_per_cycle=args.grid,
         beats_per_cycle=args.beats,
         subdivide=args.subdivide,
-        preserve_velocity=args.velocity
+        preserve_velocity=args.velocity,
+        snap_to_grid=args.snap
     )
