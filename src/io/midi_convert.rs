@@ -172,11 +172,47 @@ pub fn convert_midi_to_node(
             let mut starting: Vec<_> = quantized.iter().filter(|q| q.0 == step).collect();
             if !starting.is_empty() {
                 starting.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
-                if options.subdivide && starting.len() > 1 {
-                    let inner = starting.iter().map(|q| q.3.clone()).collect::<Vec<_>>().join(" ");
-                    grid.push(format!("[{}]", inner));
+                
+                if options.subdivide {
+                    let mut chords = Vec::new();
+                    let mut current_chord = Vec::new();
+                    let mut last_tick = -1.0;
+                    
+                    for q in &starting {
+                        // 15 ticks gives standard chord 'strums' a 30-40ms grouped tolerance
+                        if last_tick < 0.0 || (q.2 - last_tick).abs() < 15.0 {
+                            current_chord.push(q.3.clone());
+                        } else {
+                            if current_chord.len() == 1 {
+                                chords.push(current_chord[0].clone());
+                            } else {
+                                chords.push(format!("par({})", current_chord.join(", ")));
+                            }
+                            current_chord = vec![q.3.clone()];
+                        }
+                        last_tick = q.2;
+                    }
+                    if !current_chord.is_empty() {
+                        if current_chord.len() == 1 {
+                            chords.push(current_chord[0].clone());
+                        } else {
+                            chords.push(format!("par({})", current_chord.join(", ")));
+                        }
+                    }
+                    
+                    if chords.len() > 1 {
+                        grid.push(format!("[{}]", chords.join(" ")));
+                    } else {
+                        grid.push(chords[0].clone());
+                    }
                 } else {
-                    grid.push(starting[0].3.clone());
+                    // Not subdividing: squash all notes in this grid step into a single chord hit
+                    if starting.len() == 1 {
+                        grid.push(starting[0].3.clone());
+                    } else {
+                        let inner = starting.iter().map(|q| q.3.clone()).collect::<Vec<_>>().join(", ");
+                        grid.push(format!("par({})", inner));
+                    }
                 }
             } else {
                 let holding = quantized.iter().any(|q| q.0 < step && q.1 > step);
@@ -204,11 +240,45 @@ pub fn convert_midi_to_node(
 
             if !starting.is_empty() {
                 starting.sort_by(|a, b| a.start_tick.partial_cmp(&b.start_tick).unwrap());
-                if options.subdivide && starting.len() > 1 {
-                    let inner = starting.iter().map(|q| q.repr.clone()).collect::<Vec<_>>().join(" ");
-                    grid.push(format!("[{}]", inner));
+
+                if options.subdivide {
+                    let mut chords = Vec::new();
+                    let mut current_chord = Vec::new();
+                    let mut last_tick = -1.0;
+
+                    for s in &starting {
+                        if last_tick < 0.0 || (s.start_tick - last_tick).abs() < 15.0 {
+                            current_chord.push(s.repr.clone());
+                        } else {
+                            if current_chord.len() == 1 {
+                                chords.push(current_chord[0].clone());
+                            } else {
+                                chords.push(format!("par({})", current_chord.join(", ")));
+                            }
+                            current_chord = vec![s.repr.clone()];
+                        }
+                        last_tick = s.start_tick;
+                    }
+                    if !current_chord.is_empty() {
+                        if current_chord.len() == 1 {
+                            chords.push(current_chord[0].clone());
+                        } else {
+                            chords.push(format!("par({})", current_chord.join(", ")));
+                        }
+                    }
+
+                    if chords.len() > 1 {
+                        grid.push(format!("[{}]", chords.join(" ")));
+                    } else {
+                        grid.push(chords[0].clone());
+                    }
                 } else {
-                    grid.push(starting[0].repr.clone());
+                    if starting.len() == 1 {
+                        grid.push(starting[0].repr.clone());
+                    } else {
+                        let inner = starting.iter().map(|q| q.repr.clone()).collect::<Vec<_>>().join(", ");
+                        grid.push(format!("par({})", inner));
+                    }
                 }
             } else {
                 let overlap = window_start + (step_ticks * 0.25);

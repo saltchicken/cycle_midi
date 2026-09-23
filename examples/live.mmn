@@ -1,4 +1,4 @@
-#BPM=120
+#BPM=100
 #SCALE=C4 major
 //#SCALE_SEQ={ (0, 4): C4 major | (4, 8): G3 major | (8, 12): F3 major }
 //#SCALE_SEQ=circle_of_fifths(C4 major, 2)
@@ -9,17 +9,25 @@
 
 //TODO: Add a check to make sure parameters are correct. Right now you can misspell or put in a random parameter and it continues instead of throwing an error.
 //let MELODY = midi("../../Music/MIDI/johann_sebastian_bach/well_tempered_clavier_1/PreludeCMajor.mid", debug=true, subdivide=true, beats=2, grid=8, scale="C4 major")
-let MELODY = midi("../../Music/MIDI/johann_sebastian_bach/well_tempered_clavier_1/Parts/Fugue2.mid", debug=true, grid=16, beats=2, scale="C4 major")
+let MELODY = midi("../../Music/MIDI/daft_punk/veridis-quo_melody.mid", debug=true, grid=32, beats=4, subdivide=true, scale="C4 major")
+let RHYTHM = midi("../../Music/MIDI/daft_punk/veridis-quo_rhythm.mid", debug=true, grid=32, beats=4, subdivide=true, scale="C4 major")
 
 
-T1(octave: -1):
+
+T1:
   MELODY
 
-T2(octave: -1, seed: 44 every 2):
-  RAND_CHORDIFY(MELODY)
+T2:
+  RHYTHM
 
-T3(octave: -2):
-  B_ROLL_16(MELODY)
+T3(octave: -3):
+  chain [
+  1: [0 -2],
+  1: [0 -1],
+] / 4
 
 T10:
-  GROOVE_HOUSE
+chain [
+  3: [BD SN BD SN],
+  1: [BD SN BD [SN _ SN SN]]
+]
