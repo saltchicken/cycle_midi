@@ -317,6 +317,36 @@ pub(super) fn render_modified(
             }
             ctx.active_chord_indices = new_chord_indices;
         }
+        Modifier::Wrap => {
+            let start_idx = out_events.len();
+            render_modified(child, rest, ctx, out_events);
+
+            let base = if let Some(scale) = &ctx.scale {
+                (scale.root_pitch as i32) + (ctx.octave_offset * 12)
+            } else {
+                60 + (ctx.octave_offset * 12)
+            };
+
+            for i in start_idx..out_events.len() {
+                if let ScheduledEvent::Note { pitch, .. } = &mut out_events[i] {
+                    let p = *pitch as i32;
+                    let mut diff = p - base;
+                    
+                    // We lock the allowed diff range to [-12, 11]. 
+                    // This allows it to go exactly one octave down (-12 semitones / -7 diatonic steps)
+                    // without wrapping, but if it hits -13, it's bumped up to -1.
+                    while diff < -12 {
+                        diff += 12;
+                    }
+                    while diff > 11 {
+                        diff -= 12;
+                    }
+
+                    let folded = base + diff;
+                    *pitch = folded.clamp(0, 127) as u8;
+                }
+            }
+        }
         Modifier::Arp(style) => {
             let mut temp_events = Vec::new();
             let mut sub_ctx = ctx.clone();

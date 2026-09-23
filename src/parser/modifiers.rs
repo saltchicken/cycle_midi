@@ -21,6 +21,7 @@ pub enum PostfixOp {
     Chordify(Option<i32>, i32),
     VelocityOverride(u8),
     GateOverride(u8),
+    Wrap,
 }
 
 // Helper: Optionally parses a keyword argument label (e.g., "depth:") before a value
@@ -155,6 +156,10 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
                     None => PostfixOp::Chordify(None, 0),
                 }),
 
+            kw("wrap")
+                .then_ignore(pad_char('(').then_ignore(pad_char(')')).or_not())
+                .map(|_| PostfixOp::Wrap),
+
             kw("vel").or(kw("v"))
                 .ignore_then(pad_char('('))
                 .ignore_then(opt_kw_arg(int_u8()))
@@ -221,6 +226,7 @@ pub fn apply_postfix(mut acc: Node, post: PostfixOp) -> Node {
                 PostfixOp::Chordify(limit, offset) => Modifier::Chordify(limit, offset),
                 PostfixOp::VelocityOverride(v) => Modifier::VelocityOverride(v),
                 PostfixOp::GateOverride(g) => Modifier::GateOverride(g),
+                PostfixOp::Wrap => Modifier::Wrap,
                 PostfixOp::Off(..) => unreachable!(),
             };
             match acc {

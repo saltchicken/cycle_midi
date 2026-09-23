@@ -26,6 +26,7 @@ pub enum Modifier {
     VelocityOverride(u8),
     GateOverride(u8),
     PhaseShift(f32),
+    Wrap,
 }
 
 #[derive(Debug, Clone, PartialEq)]
