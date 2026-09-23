@@ -1,0 +1,68 @@
+// ---------------------------------------------------------
+// BASIC VOICINGS
+// ---------------------------------------------------------
+let BASE(VAR) = VAR.chordify(2)
+let BASE_UP_1(VAR) = VAR.chordify(2, 1)
+let TOP(VAR) = VAR.chordify(-2)
+let TOP_DOWN_1(VAR) = VAR.chordify(-2, -1)
+
+// ---------------------------------------------------------
+// INVERSIONS
+// ---------------------------------------------------------
+let INV_1(VAR) = BASE(VAR)^1
+let INV_2(VAR) = BASE(VAR)^2
+let INV_DOWN_1(VAR) = BASE(VAR)^-1
+
+// ---------------------------------------------------------
+// OPEN & SPREAD VOICINGS
+// ---------------------------------------------------------
+// Drop the 2nd highest voice an octave for an open sound
+let DROP_2(VAR) = BASE(VAR).drop(2)
+let DROP_2_INV_1(VAR) = INV_1(VAR).drop(2)
+
+// ---------------------------------------------------------
+// TEXTURAL VOICINGS (STRUM & ARP)
+// ---------------------------------------------------------
+let STRUM_UP(VAR) = BASE(VAR).strum(15)
+let STRUM_DOWN(VAR) = BASE(VAR).strum(-15)
+
+let ARP_UP(VAR) = BASE(VAR).arp(up)
+let ARP_DOWN(VAR) = BASE(VAR).arp(down)
+let ARP_CONVERGE(VAR) = BASE(VAR).arp(converge)
+let ARP_PINKY(VAR) = BASE(VAR).arp(pinkyup)
+
+// ---------------------------------------------------------
+// DETERMINISTIC ALTERNATORS
+// ---------------------------------------------------------
+let BASE_BASE_UP_1_ALT(VAR) = alt(
+  BASE(VAR) BASE(VAR) BASE(VAR) 
+  BASE_UP_1(VAR) BASE_UP_1(VAR) BASE_UP_1(VAR)
+)
+
+let INVERSION_WALK(VAR) = alt(
+  BASE(VAR) INV_1(VAR) INV_2(VAR) INV_1(VAR)
+)
+
+// ---------------------------------------------------------
+// STOCHASTIC (RANDOM) GENERATORS
+// ---------------------------------------------------------
+let RAND_CHORDIFY(VAR) = rnd(
+  2: BASE(VAR), 
+  1: BASE_UP_1(VAR), 
+  2: TOP(VAR), 
+  1: TOP_DOWN_1(VAR)
+)
+
+let RAND_INVERSION(VAR) = rnd(
+  3: BASE(VAR),
+  2: INV_1(VAR),
+  1: INV_2(VAR),
+  1: INV_DOWN_1(VAR)
+)
+
+let RAND_TEXTURE(VAR) = rnd(
+  4: BASE(VAR),
+  2: STRUM_UP(VAR),
+  20: ARP_UP(VAR)*2,
+  1: DROP_2(VAR)
+)

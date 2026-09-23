@@ -13,20 +13,40 @@ let HT = 50  // High Tom
 let CR = 49  // Crash Cymbal
 let RD = 51  // Ride Cymbal
 
+// ---------------------------------------------------------
+// KICKS
+// ---------------------------------------------------------
+// Standard 4-on-the-floor
 let K_FOUR = [ BD BD BD BD ]
+
+// Syncopated / Breakbeat kick (16-step feel)
 let K_BREAK = [ BD . . BD . . BD . ]
+
+// Reggaeton / Tresillo kick pattern
 let K_TRES = BD.euclid(3, 8)
 
+// ---------------------------------------------------------
+// SNARES & CLAPS
+// ---------------------------------------------------------
+// Classic backbeat (beats 2 and 4)
 let S_BACKBEAT = [ . SN . SN ]
 
+// Half-time backbeat (beat 3 only - great for Trap/Dubstep)
 let S_HALF = [ . . SN . ]
 
+// Ghost note snare (low velocity, 30% chance to play)
 let S_GHOST = SN.v(40)?30
 
+// ---------------------------------------------------------
+// HI-HATS & CYMBALS
+// ---------------------------------------------------------
+// Straight 8ths with humanized velocity and timing
 let H_8THS = [ CH CH CH CH CH CH CH CH ].humanize(15, 8.0)
 
+// Off-beat hats (Classic House)
 let H_OFF = [ . OH . OH . OH . OH ]
 
+// Trap hi-hat rolls using ratchets (*2 = 2 hits per step, *3 = triplets)
 let H_TRAP_1 = [ CH CH CH*2 CH ]
 let H_TRAP_2 = [ CH CH*3 CH*2 CH ]
 

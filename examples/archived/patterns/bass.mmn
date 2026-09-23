@@ -1,0 +1,80 @@
+// ---------------------------------------------------------
+// FOUNDATION (ROOT EXTRACTION)
+// ---------------------------------------------------------
+// Extracts the lowest note from a chord/melody
+let B_ROOT(VAR) = VAR.chordify.extract(lowest)
+
+// Deep sub-bass (drops the root an octave)
+let B_SUB(VAR) = B_ROOT(VAR)-12
+
+
+// ---------------------------------------------------------
+// CLASSIC RHYTHMIC PATTERNS
+// ---------------------------------------------------------
+// Classic 8th-note driving bass (accents the downbeat)
+let B_DRIVE(VAR) = [ B_ROOT(VAR) B_ROOT(VAR).vel(70) ]
+
+// Off-beat bass (classic House/Trance)
+let B_OFFBEAT(VAR) = [ _ B_ROOT(VAR) ]
+
+// Disco/Funk Octave Jumps (Root -> Octave up)
+let B_OCT_JUMP(VAR) = [ B_ROOT(VAR) B_ROOT(VAR)+12.vel(85) ]
+
+// Gallop rhythm (Root, rest, Root, Root)
+let B_GALLOP(VAR) = [ B_ROOT(VAR) _ B_ROOT(VAR) B_ROOT(VAR) ]
+
+
+// ---------------------------------------------------------
+// EUCLIDEAN GROOVES & SYNCOPATION
+// ---------------------------------------------------------
+// Tresillo rhythm (3 hits over 8 steps) - Reggaeton/Latin feel
+let B_TRESILLO(VAR) = B_ROOT(VAR).euclid(3, 8)
+
+// Funky syncopation (5 hits over 16 steps)
+let B_FUNK_16(VAR) = B_ROOT(VAR).euclid(5, 16)
+
+// Sparse, dubby bass (2 hits over 8 steps)
+let B_DUB(VAR) = B_ROOT(VAR).euclid(2, 8)
+
+
+// ---------------------------------------------------------
+// TEXTURES & FILLS
+// ---------------------------------------------------------
+// 16th-note rolling bassline
+let B_ROLL_16(VAR) = B_ROOT(VAR)*4
+
+// Stuttering delay fill (creates a descending velocity echo)
+let B_STUTTER(VAR) = B_ROOT(VAR).stut(3, 0.6, 0.25)
+
+
+// ---------------------------------------------------------
+// DETERMINISTIC ALTERNATORS (MACRO-CYCLES)
+// ---------------------------------------------------------
+// Drops to the sub-octave every 4th cycle
+let B_SUB_DROP(VAR) = alt(
+  B_ROOT(VAR) 
+  B_ROOT(VAR) 
+  B_ROOT(VAR) 
+  B_SUB(VAR)
+)
+
+// Alternates between a driving 8th rhythm and an octave jump
+let B_DISCO_WALK(VAR) = alt(
+  B_DRIVE(VAR)
+  B_OCT_JUMP(VAR)
+)
+
+
+// ---------------------------------------------------------
+// STOCHASTIC (RANDOM) GENERATORS
+// ---------------------------------------------------------
+// Mostly plays the root, but occasionally throws in an octave jump or stutter
+let RAND_BASS_FILLS(VAR) = rnd(
+  6: B_ROOT(VAR),
+  2: B_OCT_JUMP(VAR),
+  1: B_STUTTER(VAR),
+  1: B_ROLL_16(VAR).vel(70)
+)
+
+// Humanized driving bass (randomizes timing and velocity slightly for a "live" feel)
+let HUMAN_DRIVE(VAR) = B_DRIVE(VAR).humanize(15, 10.0)

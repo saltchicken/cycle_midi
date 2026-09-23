@@ -7,12 +7,15 @@
 #INCLUDE "include/progressions.mmn"
 #INCLUDE "include/bass.mmn"
 
-let MELODY = midi("C:\Users\saltchicken\Projects\cycle_midi\wind-melody.mid", debug=true)
+//TODO: Add a check to make sure parameters are correct. Right now you can misspell or put in a random parameter and it continues instead of throwing an error.
+//let MELODY = midi("../../Music/MIDI/johann_sebastian_bach/well_tempered_clavier_1/PreludeCMajor.mid", debug=true, subdivide=true, beats=2, grid=8, scale="C4 major")
+let MELODY = midi("../../Music/MIDI/johann_sebastian_bach/well_tempered_clavier_1/Parts/Fugue2.mid", debug=true, grid=16, beats=2, scale="C4 major")
+
 
 T1(octave: -1):
   MELODY
 
-T2(octave: -2, seed: 44 every 2):
+T2(octave: -1, seed: 44 every 2):
   RAND_CHORDIFY(MELODY)
 
 T3(octave: -2):
