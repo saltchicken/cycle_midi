@@ -76,12 +76,24 @@ pub fn convert_midi_to_node(
     base_dir: &Path,
     parser: &impl Parser<char, Node, Error = chumsky::error::Simple<char>>,
 ) -> Result<Node, String> {
-    let full_path = base_dir.join(&options.path);
+    let mut full_path = base_dir.join(&options.path);
+    
+    // Smart path fallback: If the file isn't in the configured MMN workspace,
+    // check if it exists relative to the directory where you launched the app.
+    if !full_path.exists() {
+        if let Ok(cwd) = std::env::current_dir() {
+            let cwd_path = cwd.join(&options.path);
+            if cwd_path.exists() {
+                full_path = cwd_path;
+            }
+        }
+    }
+
     let data = std::fs::read(&full_path)
-        .map_err(|e| format!("Could not read MIDI file {}: {}", options.path, e))?;
+        .map_err(|e| format!("Could not read MIDI file {}: {}", full_path.display(), e))?;
         
     let smf = Smf::parse(&data)
-        .map_err(|e| format!("Failed to parse MIDI structure for {}: {}", options.path, e))?;
+        .map_err(|e| format!("Failed to parse MIDI structure for {}: {}", full_path.display(), e))?;
 
     let ticks_per_beat = match smf.header.timing {
         Timing::Metrical(t) => t.as_int() as f64,
