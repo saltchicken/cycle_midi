@@ -10,8 +10,8 @@ enum TopLevelItem {
     Track(crate::ast::Track),
 }
 
-pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
-    let expr = recursive(move |expr| {
+pub fn node_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
+    recursive(move |expr| {
         let rest = just('.').to(Node::Rest);
         let hold = just('_').to(Node::Hold); 
 
@@ -49,6 +49,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
             super::combinators::struct_group(expr.clone()),
             super::combinators::chain_loop(expr.clone()),
             super::combinators::arrange(expr.clone()),
+            super::base::midi_import(),
             super::base::cc_parser(),
             super::base::chord_or_note(),
             alias_ref, // Fallback for standard identifiers
@@ -56,7 +57,11 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
 
         atom.then(super::modifiers::postfix_parser().repeated())
             .map(|(base, postfixes)| postfixes.into_iter().fold(base, super::modifiers::apply_postfix))
-    });
+    })
+}
+
+pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
+    let expr = node_parser();
 
     let alias_def = kw("let")
         .ignore_then(

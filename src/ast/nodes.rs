@@ -1,4 +1,4 @@
-use super::types::{ArpStyle, DynamicValue, ExtractType, Pitch, QuantizeMode, ScaleDef, SeedDef, ScaleSequence};
+use super::types::{ArpStyle, DynamicValue, ExtractType, Pitch, QuantizeMode, ScaleDef, SeedDef, ScaleSequence, MidiImportOptions};
 use crate::engine::render::math::lcm;
 use std::collections::HashMap;
 
@@ -53,6 +53,7 @@ pub enum Node {
     WithScale(ScaleDef, Box<Node>),
     Struct(Box<Node>, Box<Node>),
     Modified(Box<Node>, Vec<Modifier>),
+    MidiImport(MidiImportOptions),
 }
 
 impl Node {
@@ -121,6 +122,9 @@ impl Node {
             Node::Modified(child, _) => {
                 child.expand_refs(env, depth)?;
             }
+            Node::MidiImport(_) => {
+                // Resolved out during the IO parsing phase, ignored here
+            }
             _ => {}
         }
         Ok(())
@@ -128,7 +132,7 @@ impl Node {
 
     pub fn cycle_length(&self) -> usize {
         match self {
-            Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold | Node::Ref(_, _) => 1,
+            Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold | Node::Ref(_, _) | Node::MidiImport(_) => 1,
             Node::Chord(elements) | Node::Sequence(elements) | Node::ShuffledSequence(elements) => {
                 elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()))
             }

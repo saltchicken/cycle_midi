@@ -6,4 +6,4 @@ pub mod modifiers;
 pub mod primitives;
 pub mod track;
 
-pub use expr::mmn_parser;
+pub use expr::{mmn_parser, node_parser};

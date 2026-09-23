@@ -63,3 +63,32 @@ pub struct SeedDef {
     pub base: u64,
     pub interval: Option<SeedInterval>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MidiImportOptions {
+    pub path: String,
+    pub target_scale: String,
+    pub format: String,
+    pub grid: usize,
+    pub beats: f64,
+    pub subdivide: bool,
+    pub preserve_velocity: bool,
+    pub snap_to_grid: bool,
+    pub debug: bool,
+}
+
+impl Default for MidiImportOptions {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            target_scale: "C4 major".to_string(),
+            format: "chain".to_string(),
+            grid: 8,
+            beats: 2.0,
+            subdivide: false,
+            preserve_velocity: false,
+            snap_to_grid: false,
+            debug: false,
+        }
+    }
+}

@@ -1,5 +1,5 @@
-use super::primitives::{float_f64, int_i32, int_u8, kw, pad_char};
-use crate::ast::{DynamicValue, Node, Pitch};
+use super::primitives::{float_f64, int_i32, int_u8, kw, pad_char, padding};
+use crate::ast::{DynamicValue, Node, Pitch, MidiImportOptions};
 use chumsky::prelude::*;
 
 pub fn dynamic_value() -> impl Parser<char, DynamicValue, Error = Simple<char>> + Clone {
@@ -41,6 +41,60 @@ pub fn cc_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
             controller,
             value: v.unwrap_or(DynamicValue::Static(127)),
         })
+}
+
+pub fn midi_import() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
+    let string_lit = just('"')
+        .ignore_then(filter(|c: &char| *c != '"').repeated().collect::<String>())
+        .then_ignore(just('"'));
+        
+    let bool_lit = kw("true").to(true).or(kw("false").to(false));
+
+    // Loosely parse all values as strings so we can iterate them dynamically
+    let kwarg_val = choice((
+        string_lit.clone(),
+        float_f64().map(|f| f.to_string()),
+        bool_lit.map(|b| b.to_string()),
+    ));
+
+    let kwarg = text::ident()
+        .padded_by(padding())
+        .then_ignore(pad_char('='))
+        .then(kwarg_val);
+
+    let explicit = kw("midi")
+        .ignore_then(pad_char('('))
+        .ignore_then(string_lit.clone())
+        .then(pad_char(',').ignore_then(kwarg.separated_by(pad_char(','))).or_not())
+        .then_ignore(pad_char(')'))
+        .map(|(path, kwargs)| {
+            let mut opts = MidiImportOptions { path, ..Default::default() };
+            if let Some(args) = kwargs {
+                for (k, v) in args {
+                    match k.as_str() {
+                        "scale" => opts.target_scale = v,
+                        "format" => opts.format = v,
+                        "grid" => opts.grid = v.parse().unwrap_or(8),
+                        "beats" => opts.beats = v.parse().unwrap_or(2.0),
+                        "subdivide" => opts.subdivide = v == "true",
+                        "velocity" => opts.preserve_velocity = v == "true",
+                        "snap" => opts.snap_to_grid = v == "true",
+                        "debug" => opts.debug = v == "true",
+                        _ => {}
+                    }
+                }
+            }
+            Node::MidiImport(opts)
+        });
+
+    let unquoted = filter(|c: &char| c.is_alphanumeric() || *c == '_' || *c == '/' || *c == '-')
+        .repeated().at_least(1).collect::<String>()
+        .then(choice((just(".midi"), just(".mid"))).map(|s| s.to_string()))
+        .map(|(name, ext)| {
+            Node::MidiImport(MidiImportOptions { path: format!("{}{}", name, ext), ..Default::default() })
+        });
+
+    choice((explicit, unquoted))
 }
 
 pub fn diatonic_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>> + Clone {

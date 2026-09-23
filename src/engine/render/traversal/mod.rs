@@ -38,5 +38,6 @@ pub fn traverse_ast(
         Node::WithScale(scale, child) => render_with_scale(scale, child, ctx, out_events),
         Node::Struct(structure, content) => render_struct(structure, content, ctx, out_events),
         Node::Modified(child, modifiers) => render_modified(child, modifiers, ctx, out_events),
+        Node::MidiImport(_) => { /* Ignored. Resolved upstream in the watcher */ }
     }
 }

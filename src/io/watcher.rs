@@ -1,5 +1,5 @@
-use crate::ast::Program;
-use crate::parser::mmn_parser;
+use crate::ast::{Program, Node};
+use crate::parser::{mmn_parser, node_parser};
 use chumsky::Parser;
 use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
 use std::collections::{HashMap, HashSet};
@@ -23,7 +23,6 @@ fn load_recursive(
         return Ok(None); // Prevent infinite loops from circular includes
     }
 
-    // Capture the modification time to check against our cache
     let modified_time = fs::metadata(&canonical)
         .and_then(|m| m.modified())
         .unwrap_or(SystemTime::UNIX_EPOCH);
@@ -31,14 +30,13 @@ fn load_recursive(
     let mut prog_opt = None;
     if let Some((cached_time, cached_prog)) = cache.get(&canonical) {
         if *cached_time == modified_time {
-            prog_opt = Some(cached_prog.clone()); // Cache hit!
+            prog_opt = Some(cached_prog.clone());
         }
     }
 
     let prog = match prog_opt {
         Some(p) => p,
         None => {
-            // Cache miss (new or modified file)
             let content = fs::read_to_string(&canonical)
                 .map_err(|e| format!("Could not read file {}: {}", path.display(), e))?;
 
@@ -59,7 +57,6 @@ fn load_recursive(
         }
     };
 
-    // Recursively load includes first
     for inc in &prog.includes {
         let inc_path = base_dir.join(inc);
         load_recursive(
@@ -73,7 +70,6 @@ fn load_recursive(
         )?;
     }
 
-    // Merge this file's aliases into the master list
     for (k, v) in prog.aliases.clone() {
         all_aliases.insert(k, v);
     }
@@ -81,15 +77,53 @@ fn load_recursive(
     if is_root {
         Ok(Some(prog))
     } else {
-        Ok(None) // We only care about aliases for included files
+        Ok(None)
     }
+}
+
+fn resolve_midi_nodes(
+    node: &mut Node,
+    base_dir: &Path,
+    node_parser: &impl Parser<char, Node, Error = chumsky::error::Simple<char>>,
+) -> Result<(), String> {
+    match node {
+        Node::MidiImport(options) => {
+            // Execute the pure rust midi conversion, passing the resulting text directly into our node_parser
+            let mut parsed_node = super::midi_convert::convert_midi_to_node(options, base_dir, node_parser)?;
+            
+            // Just in case the parsed structure itself had weird nested macros or imports (unlikely for MIDI, but safe)
+            resolve_midi_nodes(&mut parsed_node, base_dir, node_parser)?;
+            *node = parsed_node;
+        }
+        Node::Sequence(seq) | Node::Chord(seq) | Node::ShuffledSequence(seq) | Node::Alternator(seq) => {
+            for n in seq { resolve_midi_nodes(n, base_dir, node_parser)?; }
+        }
+        Node::Parallel(layers) | Node::Polymeter(layers) => {
+            for layer in layers {
+                for n in layer { resolve_midi_nodes(n, base_dir, node_parser)?; }
+            }
+        }
+        Node::Arrange(segments) => {
+            for (_, _, child) in segments { resolve_midi_nodes(child, base_dir, node_parser)?; }
+        }
+        Node::WithScale(_, child) | Node::Struct(_, child) | Node::Modified(child, _) => {
+            resolve_midi_nodes(child, base_dir, node_parser)?;
+        }
+        Node::RandomChoice(choices) => {
+            for (_, child) in choices { resolve_midi_nodes(child, base_dir, node_parser)?; }
+        }
+        Node::Ref(_, args) => {
+            for arg in args { resolve_midi_nodes(arg, base_dir, node_parser)?; }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(String, Program)>) {
     thread::spawn(move || {
         let (watch_tx, watch_rx) = channel();
 
-        // Safely initialize the debouncer instead of unwrapping to prevent silent thread crashes
         let mut debouncer = match new_debouncer(Duration::from_millis(150), watch_tx) {
             Ok(d) => d,
             Err(e) => {
@@ -113,9 +147,9 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
         );
 
         let parser = mmn_parser();
+        let n_parser = node_parser();
         let mut ast_cache: HashMap<PathBuf, (SystemTime, Program)> = HashMap::new();
 
-        // Helper closure to process a file and its dependencies
         let process_file = |active_file_path: &Path,
                             cache: &mut HashMap<PathBuf, (SystemTime, Program)>|
          -> Result<Program, String> {
@@ -133,13 +167,24 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
             )? {
                 Some(mut main_prog) => {
                     main_prog.aliases = all_aliases;
+
+                    // 1. Resolve and replace all physical MIDI files in tracks
+                    for track in &mut main_prog.tracks {
+                        resolve_midi_nodes(&mut track.root_node, &watch_dir, &n_parser)?;
+                    }
+                    
+                    // ... and in macros (so `let MELODY = song1.midi` works perfectly)
+                    for macro_def in main_prog.aliases.values_mut() {
+                        resolve_midi_nodes(&mut macro_def.body, &watch_dir, &n_parser)?;
+                    }
+
+                    // 2. Expand all standard macros now that the raw midi structures are injected
                     main_prog.expand_all_refs().map(|_| main_prog)
                 }
                 None => Err("Failed to load root file".to_string()),
             }
         };
 
-        // Initially load the default file (e.g., live.mmn)
         if file_path.exists() {
             if let Ok(initial_prog) = process_file(&file_path, &mut ast_cache) {
                 let filename = file_path
@@ -154,7 +199,6 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
         for res in watch_rx {
             match res {
                 Ok(events) => {
-                    // Find the most recently modified .mmn file in the event batch
                     let saved_mmn_file = events
                         .iter()
                         .find(|e| e.path.extension().and_then(|ext| ext.to_str()) == Some("mmn"))
@@ -169,7 +213,6 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
                         println!("Detected save in: {}", active_file.display());
 
                         if let Ok(contents) = fs::read_to_string(active_file) {
-                            // If the user clears the file entirely, immediately silence the sequence
                             if contents.trim().is_empty() {
                                 let empty_prog = Program {
                                     bpm: None,
