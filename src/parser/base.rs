@@ -79,6 +79,7 @@ pub fn midi_import() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
                         "subdivide" => opts.subdivide = v == "true",
                         "velocity" => opts.preserve_velocity = v == "true",
                         "snap" => opts.snap_to_grid = v == "true",
+                        "chords" => opts.chords = v == "true",
                         "debug" => opts.debug = v == "true",
                         _ => {}
                     }

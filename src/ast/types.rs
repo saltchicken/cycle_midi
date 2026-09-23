@@ -74,6 +74,7 @@ pub struct MidiImportOptions {
     pub subdivide: bool,
     pub preserve_velocity: bool,
     pub snap_to_grid: bool,
+    pub chords: bool,
     pub debug: bool,
 }
 
@@ -88,6 +89,7 @@ impl Default for MidiImportOptions {
             subdivide: false,
             preserve_velocity: false,
             snap_to_grid: false,
+            chords: false,
             debug: false,
         }
     }
