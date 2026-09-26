@@ -54,7 +54,7 @@ where
         chunk_ctx.cycle_start_ms = absolute_chunk_start;
 
         let virtual_chunk_start = virtual_start_ms - phase_offset + (i as f64 * wrap_duration);
-        chunk_ctx.cycle_count = (virtual_chunk_start / master_dur).floor().max(0.0) as usize;
+        chunk_ctx.cycle_count = ((virtual_chunk_start + 1.0) / master_dur).floor().max(0.0) as usize;
 
         render_fn(&mut chunk_ctx);
         all_indices.extend_from_slice(&chunk_ctx.active_chord_indices);
