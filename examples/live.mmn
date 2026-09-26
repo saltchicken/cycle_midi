@@ -1,25 +1,20 @@
 #BPM=120
 #SCALE=C4 major
-//#SCALE_SEQ={ (0, 4): C4 major | (4, 8): G3 major | (8, 12): F3 major }
-//#SCALE_SEQ=circle_of_fifths(C4 major, 2)
 
 #INCLUDE "include/drums.mmn"
 #INCLUDE "include/progressions.mmn"
 #INCLUDE "include/bass.mmn"
 
-//TODO: Add a check to make sure parameters are correct. Right now you can misspell or put in a random parameter and it continues instead of throwing an error.
-//let MELODY = midi("../../Music/MIDI/johann_sebastian_bach/well_tempered_clavier_1/PreludeCMajor.mid", debug=true, subdivide=true, beats=2, grid=8, scale="C4 major")
-let MELODY = midi("../../Music/MIDI/johann_sebastian_bach/well_tempered_clavier_1/PreludeCMajor.mid", debug=true, scale="C4 major")
 
 
-T1(octave: -1):
-  MELODY
+!T1(octave: -1):
+  chain [
+  1: [0 1 2 3],
+  1: [6 5 4 3]
+  ] / 16
 
-T2(octave: -1, seed: 44 every 2):
-  RAND_CHORDIFY(MELODY)
-
-T3(octave: -2):
-  B_ROLL_16(MELODY)
-
-T10:
-  GROOVE_HOUSE
+T2(octave: -2):
+  chain [
+  1: par(0, 1, 3), 
+  1: par(5, 7, 8)
+  ] / 4

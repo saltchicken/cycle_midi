@@ -1,0 +1,10 @@
+mkdir tree-sitter-mmn
+cd tree-sitter-mmn
+npm install
+
+~/.config/nvim/queries/mmn/highlights.scm
+
+
+npx tree-sitter generate
+gcc -shared -o mmn.so -fPIC src/parser.c -I./src
+mv mmn.so ~/.local/share/nvim/site/parser/
