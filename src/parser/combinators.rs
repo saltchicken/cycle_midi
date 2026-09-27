@@ -85,21 +85,29 @@ pub fn rnd_group<'a>(
 pub fn par_group<'a>(
     expr: impl Parser<char, Node, Error = Simple<char>> + Clone + 'a,
 ) -> impl Parser<char, Node, Error = Simple<char>> + Clone + 'a {
+    let layer = expr.padded_by(padding()).repeated().at_least(1).map(|mut seq| {
+        if seq.len() == 1 { seq.remove(0) } else { Node::Macro(seq) }
+    });
+
     kw("par")
         .ignore_then(pad_char('('))
-        .ignore_then(expr.padded_by(padding()).repeated().separated_by(pad_char(',')))
+        .ignore_then(layer.separated_by(pad_char(',')))
         .then_ignore(pad_char(')'))
-        .map(Node::Parallel)
+        .map(|layers| Node::Parallel(layers.into_iter().map(|l| vec![l]).collect()))
 }
 
 pub fn poly_group<'a>(
     expr: impl Parser<char, Node, Error = Simple<char>> + Clone + 'a,
 ) -> impl Parser<char, Node, Error = Simple<char>> + Clone + 'a {
+    let layer = expr.padded_by(padding()).repeated().at_least(1).map(|mut seq| {
+        if seq.len() == 1 { seq.remove(0) } else { Node::Macro(seq) }
+    });
+
     kw("poly")
         .ignore_then(pad_char('('))
-        .ignore_then(expr.padded_by(padding()).repeated().separated_by(pad_char(',')))
+        .ignore_then(layer.separated_by(pad_char(',')))
         .then_ignore(pad_char(')'))
-        .map(Node::Polymeter)
+        .map(|layers| Node::Polymeter(layers.into_iter().map(|l| vec![l]).collect()))
 }
 
 pub fn shuf_group<'a>(

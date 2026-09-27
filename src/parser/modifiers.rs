@@ -11,6 +11,7 @@ pub enum PostfixOp {
     Humanize(u8, f64),
     Prob(u8),
     PhaseShift(f32),
+    Speed(f64),
     Invert(i32),
     Drop(u8),
     Transpose(i32),
@@ -91,6 +92,12 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
                 .ignore_then(opt_kw_arg(float_f32()))
                 .then_ignore(pad_char(')'))
                 .map(PostfixOp::PhaseShift),
+
+            kw("speed")
+                .ignore_then(pad_char('('))
+                .ignore_then(opt_kw_arg(float_f64()))
+                .then_ignore(pad_char(')'))
+                .map(PostfixOp::Speed),
 
             kw("humanize")
                 .ignore_then(
@@ -215,6 +222,7 @@ pub fn apply_postfix(mut acc: Node, post: PostfixOp) -> Node {
                 PostfixOp::Humanize(vel, time) => Modifier::Humanize(vel, time),
                 PostfixOp::Prob(p) => Modifier::Probability(p),
                 PostfixOp::PhaseShift(val) => Modifier::PhaseShift(val),
+                PostfixOp::Speed(val) => Modifier::Speed(val),
                 PostfixOp::Invert(amount) => Modifier::Invert(amount),
                 PostfixOp::Drop(voice) => Modifier::Drop(voice),
                 PostfixOp::Transpose(amt) => Modifier::Transpose(amt),

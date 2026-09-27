@@ -62,6 +62,22 @@ pub(super) fn render_modified(
                 },
             );
         }
+        Modifier::Speed(factor) => {
+            if *factor <= 0.0 {
+                return; // Avoid division by zero
+            }
+            let local_duration = ctx.duration_ms / *factor;
+            let local_master = ctx.master_duration_ms / *factor;
+            ctx.active_chord_indices = render_phase_chunks(
+                ctx,
+                local_duration,
+                0.0,
+                Some(local_master),
+                |chunk_ctx| {
+                    render_modified(child, rest, chunk_ctx, out_events);
+                },
+            );
+        }
         Modifier::Euclidean(pulses, steps) => {
             if *steps == 0 || *pulses == 0 {
                 ctx.active_chord_indices.clear();

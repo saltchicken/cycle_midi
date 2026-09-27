@@ -1,5 +1,5 @@
 use super::directives::scale_def;
-use super::primitives::{int_i32, int_u64, int_u8, int_usize, kw, pad_char, padding};
+use super::primitives::{float_f64, int_i32, int_u64, int_u8, int_usize, kw, pad_char, padding};
 use crate::ast::{Modifier, Node, ScaleDef, SeedDef, SeedInterval, Track};
 use chumsky::prelude::*;
 
@@ -10,6 +10,7 @@ enum TrackModifier {
     Seed(SeedDef),
     Octave(i32),
     ProgramChange(u8),
+    Speed(f64),
 }
 
 fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + Clone {
@@ -18,6 +19,10 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
             .ignore_then(pad_char(':'))
             .ignore_then(int_usize())
             .map(TrackModifier::Span),
+        kw("speed")
+            .ignore_then(pad_char(':'))
+            .ignore_then(float_f64())
+            .map(TrackModifier::Speed),
         kw("scale")
             .ignore_then(pad_char(':'))
             .ignore_then(scale_def())
@@ -91,11 +96,13 @@ pub fn track_parser<'a>(
             let mut track_seed = None;
             let mut track_octave = 0;
             let mut track_pc = None;
+            let mut track_speed = 1.0;
 
             // 2. Resolve structural track metadata modifiers
             for m in modifiers {
                 match m {
                     TrackModifier::Span(s) => track_span = Some(s),
+                    TrackModifier::Speed(sp) => track_speed = sp,
                     TrackModifier::Scale(s) => track_scale = Some(s),
                     TrackModifier::Seed(s) => track_seed = Some(s),
                     TrackModifier::Octave(o) => track_octave += o,
@@ -103,9 +110,12 @@ pub fn track_parser<'a>(
                 }
             }
 
-            // 3. Force the sequence into a fixed timing span if provided
+            // 3. Force the sequence into a fixed timing span or speed scaling
             if let Some(s) = track_span {
                 root_node = Node::Modified(Box::new(root_node), vec![Modifier::Span(s)]);
+            }
+            if track_speed != 1.0 {
+                root_node = Node::Modified(Box::new(root_node), vec![Modifier::Speed(track_speed)]);
             }
 
             Track {

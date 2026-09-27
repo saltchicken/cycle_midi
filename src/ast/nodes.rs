@@ -25,6 +25,7 @@ pub enum Modifier {
     VelocityOverride(u8),
     GateOverride(u8),
     PhaseShift(f32),
+    Speed(f64),
     Wrap,
 }
 
@@ -129,6 +130,14 @@ impl Node {
     pub fn cycle_length(&self) -> usize {
         match self {
             Node::Macro(elements) => elements.iter().map(|n| n.cycle_length()).sum::<usize>().max(1),
+            // Par and Poly take the maximum macro length of all their overlapping layers
+            Node::Parallel(layers) | Node::Polymeter(layers) => layers
+                .iter()
+                .map(|layer| layer.iter().map(|n| n.cycle_length()).sum::<usize>())
+                .max()
+                .unwrap_or(1)
+                .max(1),
+            Node::Alternator(elements) => elements.iter().map(|n| n.cycle_length()).sum::<usize>().max(1),
             _ => 1, // Everything else fits inside 1 cycle block boundary by design
         }
     }

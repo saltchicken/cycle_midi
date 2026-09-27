@@ -62,6 +62,7 @@ module.exports = grammar({
 
     track_modifier: $ => choice(
       seq('span', ':', $.int),
+      seq('speed', ':', $._number),
       seq('scale', ':', $.scale_def),
       seq('pc', ':', $.int),
       seq('octave', ':', $.int),
@@ -144,6 +145,7 @@ module.exports = grammar({
         seq('stut', '(', optional($._kwarg_label), $.int, ',', optional($._kwarg_label), $._number, ',', optional($._kwarg_label), $._number, ')'),
         seq('drop', '(', optional($._kwarg_label), $.int, ')'),
         seq('shift', '(', optional($._kwarg_label), $._number, ')'),
+        seq('speed', '(', optional($._kwarg_label), $._number, ')'),
         seq('humanize', '(', optional(seq(optional($._kwarg_label), $.int, optional(seq(',', optional($._kwarg_label), $._number, optional('ms'))))), ')'),
         seq('off', '(', optional($._kwarg_label), $._number, ',', repeat1($.postfix), ')'),
         seq('strum', '(', optional($._kwarg_label), $._number, ')'),
