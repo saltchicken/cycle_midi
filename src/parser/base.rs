@@ -105,8 +105,6 @@ pub fn diatonic_chord_type() -> impl Parser<char, Vec<i32>, Error = Simple<char>
         just("9th").or(just("9")).to(vec![0, 2, 4, 6, 8]),
         just("sus2").to(vec![0, 1, 4]),
         just("sus4").to(vec![0, 3, 4]),
-        just("m").to(vec![0, 3, 7]),
-        just("maj").to(vec![0, 4, 7]),
     ))
 }
 
