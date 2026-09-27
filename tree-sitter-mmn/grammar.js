@@ -6,9 +6,6 @@ module.exports = grammar({
     $.comment,
   ],
 
-  conflicts: $ => [
-  ],
-
   rules: {
     source_file: $ => repeat($._item),
     comment: $ => token(seq('//', /.*/)),
@@ -45,10 +42,10 @@ module.exports = grammar({
         optional($._parallel_macro)
     ),
 
-    alias_ref: $ => seq(
+    alias_ref: $ => prec.right(seq(
         $.identifier, 
         optional(seq('(', sepBy(',', $.expr), ')'))
-    ),
+    )),
 
     track_def: $ => seq(
       optional('!'),
@@ -71,10 +68,10 @@ module.exports = grammar({
     _parallel_macro: $ => sepBy1('|', repeat1($.expr)),
     _parallel_seq: $ => sepBy1('|', repeat1($.expr)),
 
-    expr: $ => seq(
+    expr: $ => prec.left(seq(
       $._atom,
       repeat($.postfix)
-    ),
+    )),
 
     _atom: $ => choice(
       '.', // rest
@@ -99,7 +96,11 @@ module.exports = grammar({
     seq_group: $ => seq('seq', '(', optional($._parallel_seq), ')'),
     alt_group: $ => seq('alt', '(', repeat($.expr), ')'),
     
-    rnd_branch: $ => seq(optional(seq($.int, ':')), optional($._parallel_seq)),
+    rnd_branch: $ => choice(
+      seq($.int, ':', optional($._parallel_seq)),
+      $._parallel_seq
+    ),
+    
     rnd_group: $ => seq('rnd', '(', sepBy(',', $.rnd_branch), ')'),
     
     poly_group: $ => seq('poly', '(', sepBy(',', repeat1($.expr)), ')'),
@@ -150,8 +151,8 @@ module.exports = grammar({
         seq('off', '(', optional($._kwarg_label), $._number, ',', repeat1($.postfix), ')'),
         seq('strum', '(', optional($._kwarg_label), $._number, ')'),
         seq('extract', '(', optional($._kwarg_label), $.identifier, optional(seq(',', optional($._kwarg_label), $.int, optional(seq(',', optional($._kwarg_label), $.int)))), ')'),
-        seq('chordify', optional(seq('(', optional($._kwarg_label), $.int, optional(seq(',', optional($._kwarg_label), $.int)), ')'))),
-        seq('wrap', optional(seq('(', ')'))),
+        prec.right(seq('chordify', optional(seq('(', optional($._kwarg_label), $.int, optional(seq(',', optional($._kwarg_label), $.int)), ')')))),
+        prec.right(seq('wrap', optional(seq('(', ')')))),
         seq(choice('vel', 'v'), '(', optional($._kwarg_label), $.int, ')'),
         seq(choice('gate', 'g'), '(', optional($._kwarg_label), $.int, ')')
       )),
@@ -160,8 +161,7 @@ module.exports = grammar({
       seq('^', $.int),
       seq('/', $.int),
       seq('+', $.int), 
-      seq('-', $.int),
-      seq('*', $.int)
+      seq('-', $.int)
     ),
 
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
@@ -169,8 +169,9 @@ module.exports = grammar({
     float: $ => /-?[0-9]+\.[0-9]+/,
     _number: $ => choice($.int, $.float),
     string: $ => /"[^"]*"/,
+    
     dynamic_val: $ => choice(
-      seq(choice('sine', 'saw', 'tri'), optional(seq('(', $.int, ',', $.int, optional(seq(',', $._number)), ')'))),
+      prec.right(seq(choice('sine', 'saw', 'tri'), optional(seq('(', $.int, ',', $.int, optional(seq(',', $._number)), ')')))),
       $.int
     )
   }

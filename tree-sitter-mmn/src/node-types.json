@@ -53,40 +53,6 @@
     }
   },
   {
-    "type": "arrange_group",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
-        {
-          "type": "arrange_segment",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "arrange_segment",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "expr",
-          "named": true
-        },
-        {
-          "type": "int",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
     "type": "cc_val",
     "named": true,
     "fields": {},
@@ -96,40 +62,6 @@
       "types": [
         {
           "type": "dynamic_val",
-          "named": true
-        },
-        {
-          "type": "int",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "chain_group",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
-        {
-          "type": "chain_segment",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "chain_segment",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "expr",
           "named": true
         },
         {
@@ -157,6 +89,25 @@
         },
         {
           "type": "pitch_val",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "cycle_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "expr",
+          "named": true
+        },
+        {
+          "type": "int",
           "named": true
         }
       ]
@@ -229,15 +180,7 @@
           "named": true
         },
         {
-          "type": "arrange_group",
-          "named": true
-        },
-        {
           "type": "cc_val",
-          "named": true
-        },
-        {
-          "type": "chain_group",
           "named": true
         },
         {
@@ -245,19 +188,15 @@
           "named": true
         },
         {
+          "type": "cycle_block",
+          "named": true
+        },
+        {
           "type": "expr",
           "named": true
         },
         {
-          "type": "implicit_seq",
-          "named": true
-        },
-        {
           "type": "midi_import",
-          "named": true
-        },
-        {
-          "type": "par_group",
           "named": true
         },
         {
@@ -287,20 +226,9 @@
         {
           "type": "struct_group",
           "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "implicit_seq",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
+        },
         {
-          "type": "expr",
+          "type": "subdivision_group",
           "named": true
         }
       ]
@@ -368,21 +296,6 @@
     }
   },
   {
-    "type": "par_group",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
-        {
-          "type": "expr",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
     "type": "pitch_val",
     "named": true,
     "fields": {}
@@ -435,7 +348,7 @@
     "fields": {},
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
         {
           "type": "expr",
@@ -575,6 +488,21 @@
     }
   },
   {
+    "type": "subdivision_group",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "expr",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "track_def",
     "named": true,
     "fields": {},
@@ -609,6 +537,10 @@
       "multiple": true,
       "required": true,
       "types": [
+        {
+          "type": "float",
+          "named": true
+        },
         {
           "type": "int",
           "named": true
@@ -753,19 +685,11 @@
     "named": false
   },
   {
-    "type": "arrange",
-    "named": false
-  },
-  {
     "type": "auto",
     "named": false
   },
   {
     "type": "cc",
-    "named": false
-  },
-  {
-    "type": "chain",
     "named": false
   },
   {
@@ -850,10 +774,6 @@
     "named": false
   },
   {
-    "type": "par",
-    "named": false
-  },
-  {
     "type": "pc",
     "named": false
   },
@@ -895,6 +815,10 @@
   },
   {
     "type": "span",
+    "named": false
+  },
+  {
+    "type": "speed",
     "named": false
   },
   {
