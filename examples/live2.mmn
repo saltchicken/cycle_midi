@@ -1,0 +1,47 @@
+#BPM=100
+//#SCALE=C4 major
+#SCALE_SEQ={ (0, 4): C4 major | (4, 8): A3 minor | (8, 12): F3 major | (12, 16): G3 major }
+
+
+#INCLUDE "include/drums.mmn"
+#INCLUDE "include/progressions.mmn"
+#INCLUDE "include/bass.mmn"
+
+let CYBER_LEAD = [
+  // --- BAR 1: The establishing motif ---
+  // Starts on the root (0), jumps to the 3rd (4), rests, and slides into the 5th (7)
+  0 _ _ .    0 _ 4 _    5 _ _ _    . . 7 _ 
+  
+  // --- BAR 2: The tension builder ---
+  // Repeats the start, but climbs to the minor 6th (8) before dropping to the 5th
+  0 _ _ .    0 _ 4 _    5 _ _ _    . 8 7 _ 
+
+  // --- BAR 3: The lift ---
+  // The whole phrase shifts up to start on the minor 3rd (3) to create emotional lift
+  3 _ _ .    3 _ 7 _    8 _ _ _    . 10 8 _ 
+
+  // --- BAR 4: The cascading turnaround ---
+  // Hangs on the dominant (7), then rapidly falls back down the scale to reset
+  7 _ _ _    _ . 4 _    5 _ 4 _    2 _ . . 
+] / 16
+
+
+T1(octave: -1) with .v(70) .g(200):
+  [ 
+    0'm       // Bar 1: Tonic minor (Deep and brooding)
+    -2'm      // Bar 2: VI major (A classic synthwave lift)
+    3'm       // Bar 3: iv minor (Matches the melody shifting up)
+    4'm       // Bar 4: v minor (Moody turnaround back home)
+  ] / 4       // Stretches these 4 chords across 4 full bars
+
+T2(octave: -2) with .vel(80) .gate(10):
+  CYBER_LEAD
+
+T3:
+  chain [
+    2: 0'9,          // Tonic 9th (deep, stable)
+    1: -2'm,       // Drops to the VI major (uplifting shift)
+    1: 4'm,          // V minor (moody transition)
+    3: 3'sus4,       // IV suspended (floating tension)
+    1: -1'7          // VII 7th (quick turnaround back home)
+  ] / 4 // Span 8 macro cycles, rolled note attacks

@@ -1,0 +1,48 @@
+#BPM=115
+#SCALE=C4 dorian
+#QUANTIZE=auto
+
+#INCLUDE "include/drums.mmn"
+#INCLUDE "include/progressions.mmn"
+#INCLUDE "include/bass.mmn"
+
+let NIGHT_RIDER_LEAD = chain [
+  2: [ 0 _ _ 2   4 _ 2 0   4 _ _ _   _ . . . ],
+  1: [ 4 _ 7 _   8 _ _ 7   4 _ 2 _   2 _ _ _ ],
+  1: [ 2 _ _ 0  -1 _ 0 2   0 _ _ _   _ _ _ _ ]
+] / 4
+
+// --- TRACKS ---
+
+// T10: Drums (Standard GM Drum Channel)
+T10:
+  arrange [
+    // Play a standard driving house beat for 3 cycles
+    (0, 3): par(K_FOUR, S_BACKBEAT, H_8THS),
+    // Drop the kick and roll the snare on the 4th turnaround
+    (3, 4): par(S_BACKBEAT, H_8THS, FILL_SNARE_ROLL)
+  ]
+
+// T1: Cyber Pad (Deep, atmospheric chords)
+T1(octave: -1) with .vel(75) .gate(100):
+  chain [
+    2: 0'm,       // i minor (C minor)
+    1: -1'm,    // VII major (Bb major)
+    1: -2'm     // VI major (A major, creating that dark Dorian lift)
+  ] / 4           // Spans these 4 chords across 4 full bars
+
+// T2: Soaring Lead
+// Notice the .gate(95) - this keeps the MIDI notes long so your new 
+// monophonic legato Vital patch will glide smoothly between pitch changes!
+T2(octave: 0) with .vel(90) .gate(95):
+  [0 1] / 16
+
+
+// T3: Drone Bass
+T3(octave: -2) with .vel(100) .gate(50):
+  // Drives steady 16th notes (*16 ratchet) tracking the root notes of the Pad
+  chain [
+    2: [0 . 0 .],
+    1: [-1 . -1 .],
+    1: [-2 . -2 .]
+  ] / 4

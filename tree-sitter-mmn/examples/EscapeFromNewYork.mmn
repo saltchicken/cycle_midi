@@ -1,0 +1,27 @@
+#BPM=100
+//#SCALE=C4 major
+#SCALE_SEQ={ (0, 4): C4 major | (4, 8): A3 minor | (8, 12): F3 major | (12, 16): G3 major }
+
+
+#INCLUDE "include/drums.mmn"
+#INCLUDE "include/progressions.mmn"
+#INCLUDE "include/bass.mmn"
+
+
+
+T1(octave: -2) with .vel(30) .gate(50):
+chain [
+  3: [-5 -5 -5 -5],
+  1: [-5 -5 -5 [-5 -5]],
+  3: [-4 -4 -4 -4],
+  1: [-4 -4 -4 [-4 -4]],
+  ] / 2
+
+T2(octave: -1):
+  chain [
+    2: 0'9,          // Tonic 9th (deep, stable)
+    1: -2'm,       // Drops to the VI major (uplifting shift)
+    1: 4'm,          // V minor (moody transition)
+    3: 3'sus4,       // IV suspended (floating tension)
+    1: -1'7          // VII 7th (quick turnaround back home)
+  ] / 4 // Span 8 macro cycles, rolled note attacks
