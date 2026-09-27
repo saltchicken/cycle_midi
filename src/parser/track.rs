@@ -15,26 +15,11 @@ enum TrackModifier {
 
 fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + Clone {
     choice((
-        kw("span")
-            .ignore_then(pad_char(':'))
-            .ignore_then(int_usize())
-            .map(TrackModifier::Span),
-        kw("speed")
-            .ignore_then(pad_char(':'))
-            .ignore_then(float_f64())
-            .map(TrackModifier::Speed),
-        kw("scale")
-            .ignore_then(pad_char(':'))
-            .ignore_then(scale_def())
-            .map(TrackModifier::Scale),
-        kw("pc")
-            .ignore_then(pad_char(':'))
-            .ignore_then(int_u8().map(|v| v.saturating_sub(1)))
-            .map(TrackModifier::ProgramChange),
-        kw("octave")
-            .ignore_then(pad_char(':'))
-            .ignore_then(int_i32())
-            .map(TrackModifier::Octave),
+        kw("span").ignore_then(pad_char(':')).ignore_then(int_usize()).map(TrackModifier::Span),
+        kw("speed").ignore_then(pad_char(':')).ignore_then(float_f64()).map(TrackModifier::Speed),
+        kw("scale").ignore_then(pad_char(':')).ignore_then(scale_def()).map(TrackModifier::Scale),
+        kw("pc").ignore_then(pad_char(':')).ignore_then(int_u8().map(|v| v.saturating_sub(1))).map(TrackModifier::ProgramChange),
+        kw("octave").ignore_then(pad_char(':')).ignore_then(int_i32()).map(TrackModifier::Octave),
         kw("seed")
             .ignore_then(pad_char(':'))
             .ignore_then(int_u64())
@@ -61,11 +46,15 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
 pub fn track_parser<'a>(
     unary: impl Parser<char, Node, Error = Simple<char>> + Clone + 'a,
 ) -> impl Parser<char, Track, Error = Simple<char>> + Clone + 'a {
+    
+    // Top Level space-separated nodes concatenate time (Macro)
     let layer = unary.padded_by(padding()).repeated().at_least(1).map(|mut seq| {
         if seq.len() == 1 { seq.remove(0) } else { Node::Macro(seq) }
     });
+    
+    // Top Level pipe-separated nodes parallelize time
     let parallel = layer.separated_by(pad_char('|')).at_least(1).map(|mut layers| {
-        if layers.len() == 1 { layers.remove(0) } else { Node::Parallel(layers.into_iter().map(|l| vec![l]).collect()) }
+        if layers.len() == 1 { layers.remove(0) } else { Node::Parallel(layers) }
     });
 
     just('!')
@@ -81,7 +70,6 @@ pub fn track_parser<'a>(
                 .or_not()
                 .map(|modifiers| modifiers.unwrap_or_default()),
         )
-        // Parse the optional `with .mod1() .mod2()` block modifiers
         .then(
             kw("with")
                 .ignore_then(super::modifiers::postfix_parser().repeated())
@@ -95,7 +83,6 @@ pub fn track_parser<'a>(
             
             let mut root_node = opt_root_node.unwrap_or_else(|| Node::Macro(vec![]));
 
-            // 1. Apply unified block modifiers (`with`) directly to the sequence node first.
             for block_mod in block_mods {
                 root_node = super::modifiers::apply_postfix(root_node, block_mod);
             }
@@ -107,7 +94,6 @@ pub fn track_parser<'a>(
             let mut track_pc = None;
             let mut track_speed = 1.0;
 
-            // 2. Resolve structural track metadata modifiers
             for m in modifiers {
                 match m {
                     TrackModifier::Span(s) => track_span = Some(s),
@@ -119,7 +105,6 @@ pub fn track_parser<'a>(
                 }
             }
 
-            // 3. Force the sequence into a fixed timing span or speed scaling
             if let Some(s) = track_span {
                 root_node = Node::Modified(Box::new(root_node), vec![Modifier::Span(s)]);
             }

@@ -1,126 +1,59 @@
-use super::types::{ArpStyle, DynamicValue, ExtractType, Pitch, QuantizeMode, ScaleDef, SeedDef, ScaleSequence, MidiImportOptions};
+use super::types::{ArpStyle, DynamicValue, MidiImportOptions, Pitch, QuantizeMode, ScaleDef, ScaleSequence, SeedDef};
 use crate::engine::render::math::lcm;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MacroDef {
-    pub params: Vec<String>,
-    pub body: Node,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub enum Modifier {
-    Euclidean(u8, u8),
-    Span(usize),
-    Arp(ArpStyle),
-    Stut(u8, f32, f32),
+    Velocity(u8),
+    Gate(u8),
     Humanize(u8, f64),
     Probability(u8),
-    Invert(i32),
-    Drop(u8),
     Transpose(i32),
-    Strum(f64),
-    ExtractPitch(ExtractType, Option<i32>, i32),
-    Chordify(Option<i32>, i32),
-    VelocityOverride(u8),
-    GateOverride(u8),
-    PhaseShift(f32),
+    Arp(ArpStyle),
+    Span(usize),
     Speed(f64),
-    Wrap,
+    Stut(u8, f32, f32),
+    Euclidean(u8, u8),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    Note {
-        pitch: Pitch,
-        velocity: u8,
-        gate: u8,
-    },
-    CC {
-        controller: u8,
-        value: DynamicValue,
-    },
+    Note { pitch: Pitch, velocity: u8, gate: u8 },
+    CC { controller: u8, value: DynamicValue },
     Chord(Vec<Node>),
     Rest,
     Hold,
-    Ref(String, Vec<Node>),
-    Sequence(Vec<Node>),
-    ShuffledSequence(Vec<Node>),
-    Parallel(Vec<Vec<Node>>),
-    Polymeter(Vec<Vec<Node>>),
-    Macro(Vec<Node>),
-    Alternator(Vec<Node>),
-    RandomChoice(Vec<(u32, Node)>),
-    WithScale(ScaleDef, Box<Node>),
-    Struct(Box<Node>, Box<Node>),
+    Ref(String),
+    Sequence(Vec<Node>), // Subdivides time (e.g. inside `[ ]`)
+    Macro(Vec<Node>),    // Concatenates time (e.g. top level)
+    Parallel(Vec<Node>), // Plays multiple nodes concurrently
+    Repeat(Box<Node>, usize),
     Modified(Box<Node>, Vec<Modifier>),
     MidiImport(MidiImportOptions),
 }
 
 impl Node {
-    pub fn expand_refs(&mut self, env: &HashMap<String, MacroDef>, depth: usize) -> Result<(), String> {
+    pub fn expand_refs(&mut self, env: &HashMap<String, Node>, depth: usize) -> Result<(), String> {
         if depth > 32 {
             return Err("Max macro expansion depth exceeded (circular reference?)".to_string());
         }
         match self {
-            Node::Ref(name, args) => {
-                for arg in args.iter_mut() {
-                    arg.expand_refs(env, depth)?;
-                }
-
-                if let Some(macro_def) = env.get(name) {
-                    if args.len() != macro_def.params.len() {
-                        return Err(format!("Macro '{}' expects {} args, got {}", name, macro_def.params.len(), args.len()));
-                    }
-
-                    let mut local_env = env.clone();
-                    for (param_name, arg_val) in macro_def.params.iter().zip(args.iter()) {
-                        local_env.insert(
-                            param_name.clone(), 
-                            MacroDef { params: vec![], body: arg_val.clone() }
-                        );
-                    }
-
-                    let mut cloned = macro_def.body.clone();
-                    cloned.expand_refs(&local_env, depth + 1)?;
+            Node::Ref(name) => {
+                if let Some(resolved) = env.get(name) {
+                    let mut cloned = resolved.clone();
+                    cloned.expand_refs(env, depth + 1)?;
                     *self = cloned;
                 } else {
                     return Err(format!("Unresolved alias: '{}'", name));
                 }
             }
-            Node::Chord(elements)
-            | Node::Sequence(elements)
-            | Node::ShuffledSequence(elements)
-            | Node::Macro(elements)
-            | Node::Alternator(elements) => {
-                for el in elements {
+            Node::Chord(seq) | Node::Sequence(seq) | Node::Macro(seq) | Node::Parallel(seq) => {
+                for el in seq {
                     el.expand_refs(env, depth)?;
                 }
             }
-            Node::RandomChoice(elements) => {
-                for (_, el) in elements {
-                    el.expand_refs(env, depth)?;
-                }
-            }
-            Node::Parallel(layers) | Node::Polymeter(layers) => {
-                for layer in layers {
-                    for el in layer {
-                        el.expand_refs(env, depth)?;
-                    }
-                }
-            }
-            Node::WithScale(_, child) => {
+            Node::Repeat(child, _) | Node::Modified(child, _) => {
                 child.expand_refs(env, depth)?;
-            }
-            Node::Struct(structure, content) => {
-                structure.expand_refs(env, depth)?;
-                content.expand_refs(env, depth)?;
-            }
-            Node::Modified(child, _) => {
-                child.expand_refs(env, depth)?;
-            }
-            Node::MidiImport(_) => {
-                // Resolved out during the IO parsing phase, ignored here
             }
             _ => {}
         }
@@ -130,15 +63,9 @@ impl Node {
     pub fn cycle_length(&self) -> usize {
         match self {
             Node::Macro(elements) => elements.iter().map(|n| n.cycle_length()).sum::<usize>().max(1),
-            // Par and Poly take the maximum macro length of all their overlapping layers
-            Node::Parallel(layers) | Node::Polymeter(layers) => layers
-                .iter()
-                .map(|layer| layer.iter().map(|n| n.cycle_length()).sum::<usize>())
-                .max()
-                .unwrap_or(1)
-                .max(1),
-            Node::Alternator(elements) => elements.iter().map(|n| n.cycle_length()).sum::<usize>().max(1),
-            _ => 1, // Everything else fits inside 1 cycle block boundary by design
+            Node::Repeat(child, count) => child.cycle_length() * count.max(&1),
+            Node::Parallel(layers) => layers.iter().map(|n| n.cycle_length()).max().unwrap_or(1).max(1),
+            _ => 1, // Sequences, notes, chords all evaluate to 1 cycle length by default
         }
     }
 }
@@ -163,7 +90,7 @@ pub struct Program {
     pub scale_seq: Option<ScaleSequence>,
     pub global_silence: bool,
     pub includes: Vec<String>,
-    pub aliases: HashMap<String, MacroDef>,
+    pub aliases: HashMap<String, Node>,
     pub tracks: Vec<Track>,
 }
 

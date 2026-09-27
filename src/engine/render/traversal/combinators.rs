@@ -1,11 +1,6 @@
-use super::helpers::{render_phase_chunks, get_positional_rng};
 use super::traverse_ast;
-use crate::ast::{Node, ScaleDef};
+use crate::ast::Node;
 use crate::engine::render::{RenderContext, ScheduledEvent};
-use rand::RngExt;
-use rand::distr::Distribution;
-use rand::distr::weighted::WeightedIndex;
-use rand::seq::SliceRandom;
 
 pub(super) fn render_chord(
     elements: &[Node],
@@ -40,92 +35,6 @@ pub(super) fn render_sequence(
     }
 }
 
-pub(super) fn render_shuffled_sequence(
-    elements: &[Node],
-    ctx: &mut RenderContext,
-    out_events: &mut Vec<ScheduledEvent>,
-) {
-    if elements.is_empty() {
-        ctx.active_chord_indices.clear();
-        return;
-    }
-    let mut rng = get_positional_rng(ctx);
-    let mut shuffled = elements.to_vec();
-    shuffled.shuffle(&mut rng);
-    render_sequence(&shuffled, ctx, out_events);
-}
-
-pub(super) fn render_parallel(
-    layers: &[Vec<Node>],
-    ctx: &mut RenderContext,
-    out_events: &mut Vec<ScheduledEvent>,
-) {
-    let orig_indices = ctx.active_chord_indices.clone();
-    let mut all_indices = Vec::new();
-
-    for layer in layers {
-        let mut sub_ctx = ctx.clone();
-        sub_ctx.active_chord_indices = orig_indices.clone();
-
-        if layer.is_empty() {
-            sub_ctx.active_chord_indices.clear();
-        } else {
-            let step_duration = sub_ctx.duration_ms / layer.len() as f64;
-            for (i, el) in layer.iter().enumerate() {
-                let mut step_ctx = sub_ctx.derive_step(i, step_duration);
-                traverse_ast(el, &mut step_ctx, out_events);
-                sub_ctx.active_chord_indices = step_ctx.active_chord_indices;
-            }
-        }
-        all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
-    }
-    ctx.active_chord_indices = all_indices;
-}
-
-pub(super) fn render_polymeter(
-    layers: &[Vec<Node>],
-    ctx: &mut RenderContext,
-    out_events: &mut Vec<ScheduledEvent>,
-) {
-    let orig_indices = ctx.active_chord_indices.clone();
-    let mut all_indices = Vec::new();
-
-    if layers.is_empty() {
-        ctx.active_chord_indices.clear();
-        return;
-    }
-
-    let l0 = layers[0].len().max(1) as f64;
-    for layer in layers {
-        let mut sub_ctx = ctx.clone();
-        sub_ctx.active_chord_indices = orig_indices.clone();
-
-        if !layer.is_empty() {
-            let li = layer.len() as f64;
-            let speed = l0 / li;
-            let local_duration = sub_ctx.duration_ms / speed;
-
-            let layer_indices = render_phase_chunks(
-                &sub_ctx,
-                local_duration,
-                0.0,
-                Some(local_duration),
-                |chunk_ctx| {
-                    let step_duration = local_duration / li;
-                    for (step_idx, el) in layer.iter().enumerate() {
-                        let mut step_ctx = chunk_ctx.derive_step(step_idx, step_duration);
-                        traverse_ast(el, &mut step_ctx, out_events);
-                        chunk_ctx.active_chord_indices = step_ctx.active_chord_indices;
-                    }
-                },
-            );
-            sub_ctx.active_chord_indices = layer_indices;
-        }
-        all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
-    }
-    ctx.active_chord_indices = all_indices;
-}
-
 pub(super) fn render_macro(
     elements: &[Node],
     ctx: &mut RenderContext,
@@ -149,7 +58,6 @@ pub(super) fn render_macro(
         let len = el.cycle_length();
         if target_cycle >= current_cycle_accum && target_cycle < current_cycle_accum + len {
             let mut sub_ctx = ctx.clone();
-            // Resync internal cycle phase for LFOs/seeds locally within the macro 
             sub_ctx.cycle_count = target_cycle - current_cycle_accum;
             traverse_ast(el, &mut sub_ctx, out_events);
             ctx.active_chord_indices = sub_ctx.active_chord_indices;
@@ -159,129 +67,39 @@ pub(super) fn render_macro(
     }
 }
 
-pub(super) fn render_alternator(
-    elements: &[Node],
+pub(super) fn render_parallel(
+    layers: &[Node],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
 ) {
-    if elements.is_empty() {
-        ctx.active_chord_indices.clear();
-        return;
-    }
-    let step_index = (ctx.start_ms / ctx.duration_ms).round() as usize;
-    let index = (step_index / ctx.alternator_stride) % elements.len();
-    
-    let mut sub_ctx = ctx.clone();
-    sub_ctx.alternator_stride *= elements.len();
-    traverse_ast(&elements[index], &mut sub_ctx, out_events);
-    ctx.active_chord_indices = sub_ctx.active_chord_indices;
-}
-
-pub(super) fn render_random_choice(
-    elements: &[(u32, Node)],
-    ctx: &mut RenderContext,
-    out_events: &mut Vec<ScheduledEvent>,
-) {
-    if elements.is_empty() {
-        ctx.active_chord_indices.clear();
-        return;
-    }
-    let mut rng = get_positional_rng(ctx);
-    let weights: Vec<u32> = elements.iter().map(|(w, _)| *w).collect();
-    if let Ok(dist) = WeightedIndex::new(&weights) {
-        let index = dist.sample(&mut rng);
-        traverse_ast(&elements[index].1, ctx, out_events);
-    } else {
-        let index = rng.random_range(0..elements.len());
-        traverse_ast(&elements[index].1, ctx, out_events);
-    }
-}
-
-pub(super) fn render_with_scale(
-    scale: &ScaleDef,
-    child: &Node,
-    ctx: &mut RenderContext,
-    out_events: &mut Vec<ScheduledEvent>,
-) {
-    let mut sub_ctx = ctx.clone();
-    sub_ctx.scale = Some(scale.clone());
-    traverse_ast(child, &mut sub_ctx, out_events);
-    ctx.active_chord_indices = sub_ctx.active_chord_indices;
-}
-
-pub(super) fn render_struct(
-    structure: &Node,
-    content: &Node,
-    ctx: &mut RenderContext,
-    out_events: &mut Vec<ScheduledEvent>,
-) {
-    let mut struct_events = Vec::new();
-    traverse_ast(structure, ctx, &mut struct_events);
-
-    if struct_events.is_empty() {
-        ctx.active_chord_indices.clear();
-        return;
-    }
-
-    let mut content_events = Vec::new();
-    let mut content_ctx = ctx.clone();
-    content_ctx.window_start_ms = f64::MIN;
-    content_ctx.window_end_ms = f64::MAX;
-    content_ctx.transition_fade = None;
-    traverse_ast(content, &mut content_ctx, &mut content_events);
-
+    let orig_indices = ctx.active_chord_indices.clone();
     let mut all_indices = Vec::new();
 
-    for s_ev in struct_events {
-        if out_events.len() >= ctx.max_events { break; }
-        match s_ev {
-            ScheduledEvent::Note { start_ms, duration_ms, velocity: s_vel, .. } => {
-                let mut matched_notes = Vec::new();
-                let mut exact_match_found = false;
-
-                for c_ev in &content_events {
-                    if let ScheduledEvent::Note { start_ms: c_start, duration_ms: c_dur, pitch, velocity, channel, .. } = c_ev {
-                        if start_ms >= *c_start - 0.1 && start_ms < (*c_start + *c_dur - 0.1) {
-                            matched_notes.push((*pitch, *velocity, *channel));
-                            exact_match_found = true;
-                        }
-                    }
-                }
-
-                if !exact_match_found {
-                    let mut last_start_time = -1.0;
-                    for c_ev in &content_events {
-                        if let ScheduledEvent::Note { start_ms: c_start, pitch, velocity, channel, .. } = c_ev {
-                            if *c_start <= start_ms + 0.1 {
-                                if *c_start - last_start_time > 1.0 {
-                                    matched_notes.clear();
-                                    last_start_time = *c_start;
-                                }
-                                matched_notes.push((*pitch, *velocity, *channel));
-                            }
-                        }
-                    }
-                }
-
-                for (pitch, c_vel, matched_channel) in matched_notes {
-                    if out_events.len() >= ctx.max_events { break; }
-                    let mixed_vel = ((s_vel as f32 * c_vel as f32) / 127.0).clamp(1.0, 127.0) as u8;
-                    let final_vel = ctx.override_velocity.unwrap_or(mixed_vel);
-
-                    out_events.push(ScheduledEvent::Note {
-                        channel: matched_channel,
-                        pitch,
-                        velocity: final_vel,
-                        start_ms,
-                        duration_ms,
-                    });
-                    all_indices.push(out_events.len() - 1);
-                }
-            }
-            cc @ ScheduledEvent::CC { .. } => {
-                out_events.push(cc);
-            }
-        }
+    for layer in layers {
+        let mut sub_ctx = ctx.clone();
+        sub_ctx.active_chord_indices = orig_indices.clone();
+        traverse_ast(layer, &mut sub_ctx, out_events);
+        all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
     }
     ctx.active_chord_indices = all_indices;
+}
+
+pub(super) fn render_repeat(
+    child: &Node,
+    count: usize,
+    ctx: &mut RenderContext,
+    out_events: &mut Vec<ScheduledEvent>,
+) {
+    if count == 0 {
+        ctx.active_chord_indices.clear();
+        return;
+    }
+    let total_cycles = child.cycle_length() * count;
+    let target_cycle = ctx.cycle_count % total_cycles.max(1);
+    let child_len = child.cycle_length().max(1);
+    
+    let mut sub_ctx = ctx.clone();
+    sub_ctx.cycle_count = target_cycle % child_len;
+    traverse_ast(child, &mut sub_ctx, out_events);
+    ctx.active_chord_indices = sub_ctx.active_chord_indices;
 }

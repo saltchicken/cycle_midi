@@ -4,12 +4,6 @@ pub enum Pitch {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ExtractType {
-    Highest,
-    Lowest,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub enum ArpStyle {
     Up,
     Down,

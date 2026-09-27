@@ -1,17 +1,13 @@
 use super::primitives::{float_f64, int_i32, int_u8, kw, pad_char, padding};
-use crate::ast::{DynamicValue, Node, Pitch, MidiImportOptions};
+use crate::ast::{DynamicValue, MidiImportOptions, Node, Pitch};
 use chumsky::prelude::*;
 
 pub fn dynamic_value() -> impl Parser<char, DynamicValue, Error = Simple<char>> + Clone {
     let lfo_args = pad_char('(')
-        .ignore_then(int_u8()) // min
+        .ignore_then(int_u8())
         .then_ignore(pad_char(','))
-        .then(int_u8()) // max
-        .then(
-            pad_char(',')
-                .ignore_then(float_f64()) // speed
-                .or_not(),
-        )
+        .then(int_u8())
+        .then(pad_char(',').ignore_then(float_f64()).or_not())
         .then_ignore(pad_char(')'))
         .or_not();
 
@@ -47,7 +43,7 @@ pub fn midi_import() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
     let string_lit = just('"')
         .ignore_then(filter(|c: &char| *c != '"').repeated().collect::<String>())
         .then_ignore(just('"'));
-        
+
     let bool_lit = kw("true").to(true).or(kw("false").to(false));
 
     let kwarg_val = choice((
@@ -88,10 +84,15 @@ pub fn midi_import() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         });
 
     let unquoted = filter(|c: &char| c.is_alphanumeric() || *c == '_' || *c == '/' || *c == '-')
-        .repeated().at_least(1).collect::<String>()
+        .repeated()
+        .at_least(1)
+        .collect::<String>()
         .then(choice((just(".midi"), just(".mid"))).map(|s| s.to_string()))
         .map(|(name, ext)| {
-            Node::MidiImport(MidiImportOptions { path: format!("{}{}", name, ext), ..Default::default() })
+            Node::MidiImport(MidiImportOptions {
+                path: format!("{}{}", name, ext),
+                ..Default::default()
+            })
         });
 
     choice((explicit, unquoted))
@@ -120,7 +121,7 @@ pub fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone 
 
     let numeric_named_chord = int_i32()
         .then(accidental.clone())
-        .then_ignore(just('\'')) 
+        .then_ignore(just('\''))
         .then(diatonic_chord_type())
         .map(|((root_degree, acc), intervals)| {
             intervals
@@ -141,11 +142,14 @@ pub fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone 
                     gate: 100,
                 }
             } else {
-                let notes = pitches.into_iter().map(|p| Node::Note {
-                    pitch: p,
-                    velocity: 100,
-                    gate: 100,
-                }).collect();
+                let notes = pitches
+                    .into_iter()
+                    .map(|p| Node::Note {
+                        pitch: p,
+                        velocity: 100,
+                        gate: 100,
+                    })
+                    .collect();
                 Node::Chord(notes)
             }
         })

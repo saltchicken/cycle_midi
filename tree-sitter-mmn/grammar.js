@@ -1,3 +1,4 @@
+<file path="tree-sitter-mmn/grammar.js">
 module.exports = grammar({
   name: 'mmn',
 
@@ -79,12 +80,6 @@ module.exports = grammar({
       seq('scale', '(', $.scale_def, ')', $.expr),
       $.subdivision_group,
       $.cycle_block,
-      $.seq_group,
-      $.alt_group,
-      $.rnd_group,
-      $.poly_group,
-      $.shuf_group,
-      $.struct_group,
       $.midi_import,
       $.cc_val,
       $.chord_or_note,
@@ -93,19 +88,6 @@ module.exports = grammar({
 
     subdivision_group: $ => seq('(', optional($._parallel_seq), ')'),
     cycle_block: $ => seq('[', optional($._parallel_seq), ']', optional(seq('*', $.int))),
-    seq_group: $ => seq('seq', '(', optional($._parallel_seq), ')'),
-    alt_group: $ => seq('alt', '(', repeat($.expr), ')'),
-    
-    rnd_branch: $ => choice(
-      seq($.int, ':', optional($._parallel_seq)),
-      $._parallel_seq
-    ),
-    
-    rnd_group: $ => seq('rnd', '(', sepBy(',', $.rnd_branch), ')'),
-    
-    poly_group: $ => seq('poly', '(', sepBy(',', repeat1($.expr)), ')'),
-    shuf_group: $ => seq('shuf', '(', repeat($.expr), ')'),
-    struct_group: $ => seq('struct', '(', $.expr, ',', $.expr, ')'),
     
     kwarg: $ => seq($.identifier, '=', choice($.string, $._number, 'true', 'false')),
     
@@ -144,19 +126,12 @@ module.exports = grammar({
         seq(choice('euclid', 'E'), '(', optional($._kwarg_label), $.int, ',', optional($._kwarg_label), $.int, ')'),
         seq('arp', '(', optional($._kwarg_label), $.identifier, ')'),
         seq('stut', '(', optional($._kwarg_label), $.int, ',', optional($._kwarg_label), $._number, ',', optional($._kwarg_label), $._number, ')'),
-        seq('drop', '(', optional($._kwarg_label), $.int, ')'),
         seq('shift', '(', optional($._kwarg_label), $._number, ')'),
         seq('speed', '(', optional($._kwarg_label), $._number, ')'),
         seq('humanize', '(', optional(seq(optional($._kwarg_label), $.int, optional(seq(',', optional($._kwarg_label), $._number, optional('ms'))))), ')'),
-        seq('off', '(', optional($._kwarg_label), $._number, ',', repeat1($.postfix), ')'),
-        seq('strum', '(', optional($._kwarg_label), $._number, ')'),
-        seq('extract', '(', optional($._kwarg_label), $.identifier, optional(seq(',', optional($._kwarg_label), $.int, optional(seq(',', optional($._kwarg_label), $.int)))), ')'),
-        prec.right(seq('chordify', optional(seq('(', optional($._kwarg_label), $.int, optional(seq(',', optional($._kwarg_label), $.int)), ')')))),
-        prec.right(seq('wrap', optional(seq('(', ')')))),
         seq(choice('vel', 'v'), '(', optional($._kwarg_label), $.int, ')'),
         seq(choice('gate', 'g'), '(', optional($._kwarg_label), $.int, ')')
       )),
-      // Symbolic Postfixes
       seq('?', $.int),
       seq('^', $.int),
       seq('/', $.int),
@@ -184,3 +159,4 @@ function sepBy1(sep, rule) {
 function sepBy(sep, rule) {
   return optional(sepBy1(sep, rule));
 }
+</file>
