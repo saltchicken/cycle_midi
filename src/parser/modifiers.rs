@@ -7,7 +7,6 @@ pub enum PostfixOp {
     Euclidean(u8, u8),
     Span(usize),
     Arp(ArpStyle),
-    Ratchet(u8),
     Stut(u8, f32, f32),
     Humanize(u8, f64),
     Prob(u8),
@@ -175,7 +174,6 @@ pub fn postfix_parser() -> impl Parser<char, PostfixOp, Error = Simple<char>> + 
 
         // Core structural modifiers - rigidly bound (NO leading padding allowed)
         let symbolic = choice((
-            just('*').ignore_then(int_u8().padded_by(padding())).map(PostfixOp::Ratchet),
             just('?').ignore_then(int_u8().padded_by(padding())).map(PostfixOp::Prob),
             just('^').ignore_then(int_i32().padded_by(padding())).map(PostfixOp::Invert),
             just('/').ignore_then(int_usize().padded_by(padding())).map(PostfixOp::Span),
@@ -213,7 +211,6 @@ pub fn apply_postfix(mut acc: Node, post: PostfixOp) -> Node {
                 PostfixOp::Euclidean(p, s) => Modifier::Euclidean(p, s),
                 PostfixOp::Span(val) => Modifier::Span(val),
                 PostfixOp::Arp(style) => Modifier::Arp(style),
-                PostfixOp::Ratchet(splits) => Modifier::Ratchet(splits),
                 PostfixOp::Stut(d, f, t) => Modifier::Stut(d, f, t),
                 PostfixOp::Humanize(vel, time) => Modifier::Humanize(vel, time),
                 PostfixOp::Prob(p) => Modifier::Probability(p),

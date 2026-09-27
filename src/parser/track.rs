@@ -78,7 +78,7 @@ pub fn track_parser<'a>(
         )
         .then_ignore(pad_char(':'))
         .padded_by(padding())
-        .then(expr.padded_by(padding()).repeated().map(Node::Sequence))
+        .then(expr.padded_by(padding()).repeated().map(Node::Macro))
         .map(|((((is_muted, ch), modifiers), block_mods), mut root_node)| {
             
             // 1. Apply unified block modifiers (`with`) directly to the sequence node first.

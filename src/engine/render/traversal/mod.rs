@@ -32,7 +32,7 @@ pub fn traverse_ast(
         Node::ShuffledSequence(elements) => render_shuffled_sequence(elements, ctx, out_events),
         Node::Parallel(layers) => render_parallel(layers, ctx, out_events),
         Node::Polymeter(layers) => render_polymeter(layers, ctx, out_events),
-        Node::Arrange(segments) => render_arrange(segments, ctx, out_events),
+        Node::Macro(elements) => render_macro(elements, ctx, out_events),
         Node::Alternator(elements) => render_alternator(elements, ctx, out_events),
         Node::RandomChoice(elements) => render_random_choice(elements, ctx, out_events),
         Node::WithScale(scale, child) => render_with_scale(scale, child, ctx, out_events),

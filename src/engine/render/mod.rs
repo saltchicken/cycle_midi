@@ -51,7 +51,6 @@ pub struct RenderContext {
     pub velocity_modifier: f32,
     pub override_velocity: Option<u8>,
     pub override_gate: Option<u8>,
-    pub ratchet_splits: usize,
     pub humanize_velocity_range: u8,
     pub humanize_timing_range_ms: f64,
     pub max_events: usize,
@@ -107,7 +106,7 @@ pub fn generate_next_cycle(
                 }
             }
             crate::ast::ScaleSequence::Algorithmic { base_scale, shift_semitones, macro_cycles_per_step } => {
-                let steps = (macro_cycle_count / macro_cycles_per_step.max(&1)) as i32;
+                let steps = (macro_cycle_count / (*macro_cycles_per_step).max(1)) as i32;
                 let mut new_scale = base_scale.clone();
                 
                 // Keep the shifted pitch class pinned inside the original base octave.
@@ -115,7 +114,7 @@ pub fn generate_next_cycle(
                 let base_pc = base_scale.root_pitch as i32 % 12;
                 let base_oct = base_scale.root_pitch as i32 / 12;
                 
-                let new_pc = (base_pc + (steps * shift_semitones)).rem_euclid(12);
+                let new_pc = (base_pc + (steps * *shift_semitones)).rem_euclid(12);
                 new_scale.root_pitch = (base_oct * 12 + new_pc) as u8;
                 
                 active_global_scale = Some(new_scale);
@@ -174,7 +173,6 @@ pub fn generate_next_cycle(
             velocity_modifier: 1.0,
             override_velocity: None,
             override_gate: None,
-            ratchet_splits: 1,
             humanize_velocity_range: 0,
             humanize_timing_range_ms: 0.0,
             max_events: 1024,

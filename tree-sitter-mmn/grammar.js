@@ -77,7 +77,8 @@ module.exports = grammar({
       '.', // rest
       '_', // hold
       seq('scale', '(', $.scale_def, ')', $.expr),
-      $.implicit_seq,
+      $.subdivision_group,
+      $.cycle_block,
       $.seq_group,
       $.alt_group,
       $.rnd_group,
@@ -85,15 +86,14 @@ module.exports = grammar({
       $.poly_group,
       $.shuf_group,
       $.struct_group,
-      $.chain_group,
-      $.arrange_group,
       $.midi_import,
       $.cc_val,
       $.chord_or_note,
       $.alias_ref
     ),
 
-    implicit_seq: $ => seq('[', repeat($.expr), ']'),
+    subdivision_group: $ => seq('(', repeat($.expr), ')'),
+    cycle_block: $ => seq('[', repeat($.expr), ']', optional(seq('*', $.int))),
     seq_group: $ => seq('seq', '(', repeat($.expr), ')'),
     alt_group: $ => seq('alt', '(', repeat($.expr), ')'),
     
@@ -105,12 +105,6 @@ module.exports = grammar({
     shuf_group: $ => seq('shuf', '(', repeat($.expr), ')'),
     struct_group: $ => seq('struct', '(', $.expr, ',', $.expr, ')'),
     
-    chain_segment: $ => seq($.int, ':', repeat1($.expr)),
-    chain_group: $ => seq('chain', '[', sepBy(',', $.chain_segment), ']'),
-    
-    arrange_segment: $ => seq('(', $.int, ',', $.int, ')', ':', repeat1($.expr)),
-    arrange_group: $ => seq('arrange', '[', sepBy(',', $.arrange_segment), ']'),
-
     kwarg: $ => seq($.identifier, '=', choice($.string, $._number, 'true', 'false')),
     
     midi_import: $ => choice(
@@ -160,12 +154,12 @@ module.exports = grammar({
         seq(choice('gate', 'g'), '(', optional($._kwarg_label), $.int, ')')
       )),
       // Symbolic Postfixes
-      seq('*', $.int),
       seq('?', $.int),
       seq('^', $.int),
       seq('/', $.int),
       seq('+', $.int), 
-      seq('-', $.int)
+      seq('-', $.int),
+      seq('*', $.int)
     ),
 
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,

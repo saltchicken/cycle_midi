@@ -39,7 +39,8 @@ pub fn node_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
             rest,
             hold,
             super::combinators::with_scale(expr.clone()),
-            super::combinators::implicit_seq(expr.clone()),
+            super::combinators::subdivision_group(expr.clone()),
+            super::combinators::cycle_block(expr.clone()),
             super::combinators::seq_group(expr.clone()),
             super::combinators::alt_group(expr.clone()),
             super::combinators::rnd_group(expr.clone()),
@@ -47,8 +48,6 @@ pub fn node_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
             super::combinators::poly_group(expr.clone()),
             super::combinators::shuf_group(expr.clone()),
             super::combinators::struct_group(expr.clone()),
-            super::combinators::chain_loop(expr.clone()),
-            super::combinators::arrange(expr.clone()),
             super::base::midi_import(),
             super::base::cc_parser(),
             super::base::chord_or_note(),
@@ -92,7 +91,7 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                     if seq.len() == 1 {
                         seq.remove(0)
                     } else {
-                        Node::Sequence(seq)
+                        Node::Macro(seq) // Treat as macro blocks
                     }
                 }),
         )

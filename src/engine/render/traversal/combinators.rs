@@ -126,27 +126,37 @@ pub(super) fn render_polymeter(
     ctx.active_chord_indices = all_indices;
 }
 
-pub(super) fn render_arrange(
-    segments: &[(usize, usize, Box<Node>)],
+pub(super) fn render_macro(
+    elements: &[Node],
     ctx: &mut RenderContext,
     out_events: &mut Vec<ScheduledEvent>,
 ) {
-    let max_end = segments.iter().map(|s| s.1).max().unwrap_or(1).max(1);
-    let current_cycle = ctx.cycle_count % max_end;
-
-    let orig_indices = ctx.active_chord_indices.clone();
-    let mut all_indices = Vec::new();
-
-    for (start, end, child) in segments {
-        if current_cycle >= *start && current_cycle < *end {
-            let mut sub_ctx = ctx.clone();
-            sub_ctx.cycle_count = current_cycle;
-            sub_ctx.active_chord_indices = orig_indices.clone();
-            traverse_ast(child, &mut sub_ctx, out_events);
-            all_indices.extend_from_slice(&sub_ctx.active_chord_indices);
-        }
+    if elements.is_empty() {
+        ctx.active_chord_indices.clear();
+        return;
     }
-    ctx.active_chord_indices = all_indices;
+    
+    let total_cycles: usize = elements.iter().map(|n| n.cycle_length()).sum();
+    if total_cycles == 0 {
+        ctx.active_chord_indices.clear();
+        return;
+    }
+    
+    let target_cycle = ctx.cycle_count % total_cycles;
+    let mut current_cycle_accum = 0;
+    
+    for el in elements {
+        let len = el.cycle_length();
+        if target_cycle >= current_cycle_accum && target_cycle < current_cycle_accum + len {
+            let mut sub_ctx = ctx.clone();
+            // Resync internal cycle phase for LFOs/seeds locally within the macro 
+            sub_ctx.cycle_count = target_cycle - current_cycle_accum;
+            traverse_ast(el, &mut sub_ctx, out_events);
+            ctx.active_chord_indices = sub_ctx.active_chord_indices;
+            break;
+        }
+        current_cycle_accum += len;
+    }
 }
 
 pub(super) fn render_alternator(

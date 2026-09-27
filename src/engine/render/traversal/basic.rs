@@ -16,10 +16,8 @@ pub(super) fn render_note(
     if ctx.is_in_window(ctx.start_ms) {
         let mut rng = get_positional_rng(ctx);
         let actual_pitch = resolve_pitch(pitch, &ctx.scale, ctx.octave_offset);
-        let splits = ctx.ratchet_splits.max(1);
-        let sub_step = ctx.duration_ms / splits as f64;
         let actual_gate = ctx.override_gate.unwrap_or(gate);
-        let actual_duration = sub_step * (actual_gate as f64 / 100.0);
+        let actual_duration = ctx.duration_ms * (actual_gate as f64 / 100.0);
         let base_vel = ctx.override_velocity.unwrap_or(velocity);
         let mut final_vel = (base_vel as f32 * ctx.velocity_modifier).clamp(0.0, 127.0) as u8;
         let mut play_note = true;
@@ -33,33 +31,31 @@ pub(super) fn render_note(
 
         if play_note && final_vel > 0 {
             ctx.active_chord_indices.clear();
-            for i in 0..splits {
-                if out_events.len() >= ctx.max_events { break; }
-                let mut jitter = 0.0;
-                if ctx.humanize_timing_range_ms > 0.0 {
-                    jitter = rng.random_range(
-                        -ctx.humanize_timing_range_ms..=ctx.humanize_timing_range_ms,
-                    );
-                }
-
-                let mut split_vel = final_vel;
-                if ctx.humanize_velocity_range > 0 {
-                    let offset = rng.random_range(
-                        -(ctx.humanize_velocity_range as i32)
-                            ..=(ctx.humanize_velocity_range as i32),
-                    );
-                    split_vel = (split_vel as i32 + offset).clamp(1, 127) as u8;
-                }
-
-                out_events.push(ScheduledEvent::Note {
-                    channel: ctx.channel,
-                    pitch: actual_pitch,
-                    velocity: split_vel,
-                    start_ms: ctx.start_ms + (i as f64 * sub_step) + jitter,
-                    duration_ms: actual_duration,
-                });
-                ctx.active_chord_indices.push(out_events.len() - 1);
+            
+            let mut jitter = 0.0;
+            if ctx.humanize_timing_range_ms > 0.0 {
+                jitter = rng.random_range(
+                    -ctx.humanize_timing_range_ms..=ctx.humanize_timing_range_ms,
+                );
             }
+
+            let mut final_note_vel = final_vel;
+            if ctx.humanize_velocity_range > 0 {
+                let offset = rng.random_range(
+                    -(ctx.humanize_velocity_range as i32)
+                        ..=(ctx.humanize_velocity_range as i32),
+                );
+                final_note_vel = (final_note_vel as i32 + offset).clamp(1, 127) as u8;
+            }
+
+            out_events.push(ScheduledEvent::Note {
+                channel: ctx.channel,
+                pitch: actual_pitch,
+                velocity: final_note_vel,
+                start_ms: ctx.start_ms + jitter,
+                duration_ms: actual_duration,
+            });
+            ctx.active_chord_indices.push(out_events.len() - 1);
         } else {
             ctx.active_chord_indices.clear();
         }
@@ -78,55 +74,50 @@ pub(super) fn render_cc(
 
     if ctx.is_in_window(ctx.start_ms) {
         let mut rng = get_positional_rng(ctx);
-        let splits = ctx.ratchet_splits.max(1);
-        let sub_step = ctx.duration_ms / splits as f64;
         ctx.active_chord_indices.clear();
 
-        for i in 0..splits {
-            if out_events.len() >= ctx.max_events { break; }
-            let mut jitter = 0.0;
-            if ctx.humanize_timing_range_ms > 0.0 {
-                jitter = rng.random_range(
-                    -ctx.humanize_timing_range_ms..=ctx.humanize_timing_range_ms,
-                );
-            }
-            let note_start = ctx.start_ms + (i as f64 * sub_step) + jitter;
-
-            let mut lfo_ctx = ctx.clone();
-            lfo_ctx.start_ms = note_start;
-
-            let actual_value = match value {
-                DynamicValue::Static(v) => *v,
-                DynamicValue::Sine(min, max, speed) => {
-                    let phase = calculate_lfo_phase(&lfo_ctx, *speed);
-                    let normalized = (phase * std::f64::consts::TAU).sin() * 0.5 + 0.5;
-                    let range = *max as f64 - *min as f64;
-                    (*min as f64 + normalized * range).clamp(0.0, 127.0) as u8
-                }
-                DynamicValue::Saw(min, max, speed) => {
-                    let phase = calculate_lfo_phase(&lfo_ctx, *speed);
-                    let range = *max as f64 - *min as f64;
-                    (*min as f64 + phase * range).clamp(0.0, 127.0) as u8
-                }
-                DynamicValue::Tri(min, max, speed) => {
-                    let phase = calculate_lfo_phase(&lfo_ctx, *speed);
-                    let tri = if phase < 0.5 {
-                        phase * 2.0
-                    } else {
-                        2.0 - phase * 2.0
-                    };
-                    let range = *max as f64 - *min as f64;
-                    (*min as f64 + tri * range).clamp(0.0, 127.0) as u8
-                }
-            };
-
-            out_events.push(ScheduledEvent::CC {
-                channel: ctx.channel,
-                controller,
-                value: actual_value,
-                start_ms: note_start,
-            });
+        let mut jitter = 0.0;
+        if ctx.humanize_timing_range_ms > 0.0 {
+            jitter = rng.random_range(
+                -ctx.humanize_timing_range_ms..=ctx.humanize_timing_range_ms,
+            );
         }
+        let note_start = ctx.start_ms + jitter;
+
+        let mut lfo_ctx = ctx.clone();
+        lfo_ctx.start_ms = note_start;
+
+        let actual_value = match value {
+            DynamicValue::Static(v) => *v,
+            DynamicValue::Sine(min, max, speed) => {
+                let phase = calculate_lfo_phase(&lfo_ctx, *speed);
+                let normalized = (phase * std::f64::consts::TAU).sin() * 0.5 + 0.5;
+                let range = *max as f64 - *min as f64;
+                (*min as f64 + normalized * range).clamp(0.0, 127.0) as u8
+            }
+            DynamicValue::Saw(min, max, speed) => {
+                let phase = calculate_lfo_phase(&lfo_ctx, *speed);
+                let range = *max as f64 - *min as f64;
+                (*min as f64 + phase * range).clamp(0.0, 127.0) as u8
+            }
+            DynamicValue::Tri(min, max, speed) => {
+                let phase = calculate_lfo_phase(&lfo_ctx, *speed);
+                let tri = if phase < 0.5 {
+                    phase * 2.0
+                } else {
+                    2.0 - phase * 2.0
+                };
+                let range = *max as f64 - *min as f64;
+                (*min as f64 + tri * range).clamp(0.0, 127.0) as u8
+            }
+        };
+
+        out_events.push(ScheduledEvent::CC {
+            channel: ctx.channel,
+            controller,
+            value: actual_value,
+            start_ms: note_start,
+        });
     } else {
         ctx.active_chord_indices.clear();
     }

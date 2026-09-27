@@ -13,13 +13,33 @@ pub fn with_scale<'a>(
         .map(|(scale, child)| Node::WithScale(scale, Box::new(child)))
 }
 
-pub fn implicit_seq<'a>(
+pub fn subdivision_group<'a>(
+    expr: impl Parser<char, Node, Error = Simple<char>> + Clone + 'a,
+) -> impl Parser<char, Node, Error = Simple<char>> + Clone + 'a {
+    pad_char('(')
+        .ignore_then(expr.padded_by(padding()).repeated())
+        .then_ignore(pad_char(')'))
+        .map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) })
+}
+
+pub fn cycle_block<'a>(
     expr: impl Parser<char, Node, Error = Simple<char>> + Clone + 'a,
 ) -> impl Parser<char, Node, Error = Simple<char>> + Clone + 'a {
     pad_char('[')
         .ignore_then(expr.padded_by(padding()).repeated())
         .then_ignore(pad_char(']'))
         .map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) })
+        .then(
+            pad_char('*').ignore_then(int_usize().padded_by(padding())).or_not()
+        )
+        .map(|(node, multiplier)| {
+            let count = multiplier.unwrap_or(1);
+            if count == 1 {
+                node
+            } else {
+                Node::Macro(vec![node; count])
+            }
+        })
 }
 
 pub fn seq_group<'a>(
@@ -102,64 +122,4 @@ pub fn struct_group<'a>(
         .then(expr)
         .then_ignore(pad_char(')'))
         .map(|(mask, content)| Node::Struct(Box::new(mask), Box::new(content)))
-}
-
-pub fn arrange<'a>(
-    expr: impl Parser<char, Node, Error = Simple<char>> + Clone + 'a,
-) -> impl Parser<char, Node, Error = Simple<char>> + Clone + 'a {
-    let arrange_segment = pad_char('(')
-        .ignore_then(int_usize())
-        .then_ignore(pad_char(','))
-        .then(int_usize())
-        .then_ignore(pad_char(')'))
-        .then_ignore(pad_char(':'))
-        .then(
-            expr.padded_by(padding())
-                .repeated()
-                .at_least(1)
-                .map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }),
-        )
-        .map(|((start, end), node)| (start, end, Box::new(node)));
-
-    kw("arrange")
-        .ignore_then(
-            arrange_segment
-                .padded_by(padding())
-                .then_ignore(pad_char(',').or_not())
-                .repeated()
-                .delimited_by(pad_char('['), pad_char(']')),
-        )
-        .map(|segments| Node::Arrange(segments))
-}
-
-pub fn chain_loop<'a>(
-    expr: impl Parser<char, Node, Error = Simple<char>> + Clone + 'a,
-) -> impl Parser<char, Node, Error = Simple<char>> + Clone + 'a {
-    let chain_segment = int_usize().then_ignore(pad_char(':')).then(
-        expr.padded_by(padding())
-            .repeated()
-            .at_least(1)
-            .map(|mut seq| if seq.len() == 1 { seq.remove(0) } else { Node::Sequence(seq) }),
-    );
-
-    kw("chain")
-        .ignore_then(
-            chain_segment
-                .padded_by(padding())
-                .then_ignore(pad_char(',').or_not())
-                .repeated()
-                .delimited_by(pad_char('['), pad_char(']')),
-        )
-        .map(|segments| {
-            let mut current_start = 0;
-            let mut arrange_segments = Vec::new();
-
-            for (duration, node) in segments {
-                let end = current_start + duration;
-                arrange_segments.push((current_start, end, Box::new(node)));
-                current_start = end;
-            }
-
-            Node::Arrange(arrange_segments)
-        })
 }

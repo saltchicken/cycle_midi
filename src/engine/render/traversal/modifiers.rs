@@ -30,7 +30,6 @@ pub(super) fn render_modified(
     let (last_mod, rest) = modifiers.split_last().unwrap();
 
     match last_mod {
-        Modifier::Ratchet(splits) => with_ctx!(ctx, child, rest, out_events, |c: &mut RenderContext| c.ratchet_splits *= *splits as usize),
         Modifier::VelocityOverride(vel) => with_ctx!(ctx, child, rest, out_events, |c: &mut RenderContext| c.override_velocity = Some(*vel)),
         Modifier::GateOverride(g) => with_ctx!(ctx, child, rest, out_events, |c: &mut RenderContext| c.override_gate = Some(*g)),
         Modifier::Humanize(vel, time) => with_ctx!(ctx, child, rest, out_events, |c: &mut RenderContext| {
@@ -467,9 +466,7 @@ pub(super) fn render_modified(
                 let step_ctx = ctx.derive_step(i, step_duration);
 
                 if step_ctx.is_in_window(step_ctx.start_ms) {
-                    let splits = step_ctx.ratchet_splits.max(1);
-                    let sub_step = step_ctx.duration_ms / splits as f64;
-                    let actual_duration = sub_step;
+                    let actual_duration = step_ctx.duration_ms;
                     let mut final_vel = vel;
                     let mut play_note = true;
 
@@ -479,22 +476,19 @@ pub(super) fn render_modified(
                     }
 
                     if play_note && final_vel > 0 {
-                        for sub_i in 0..splits {
-                            if out_events.len() >= ctx.max_events { break; }
-                            let mut jitter = 0.0;
-                            if step_ctx.humanize_timing_range_ms > 0.0 {
-                                jitter = rng.random_range(-step_ctx.humanize_timing_range_ms..=step_ctx.humanize_timing_range_ms);
-                            }
-
-                            out_events.push(ScheduledEvent::Note {
-                                channel: step_ctx.channel,
-                                pitch,
-                                velocity: final_vel,
-                                start_ms: step_ctx.start_ms + (sub_i as f64 * sub_step) + jitter,
-                                duration_ms: actual_duration,
-                            });
-                            all_indices.push(out_events.len() - 1);
+                        let mut jitter = 0.0;
+                        if step_ctx.humanize_timing_range_ms > 0.0 {
+                            jitter = rng.random_range(-step_ctx.humanize_timing_range_ms..=step_ctx.humanize_timing_range_ms);
                         }
+
+                        out_events.push(ScheduledEvent::Note {
+                            channel: step_ctx.channel,
+                            pitch,
+                            velocity: final_vel,
+                            start_ms: step_ctx.start_ms + jitter,
+                            duration_ms: actual_duration,
+                        });
+                        all_indices.push(out_events.len() - 1);
                     }
                 }
             }

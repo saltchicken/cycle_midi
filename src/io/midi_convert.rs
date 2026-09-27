@@ -202,7 +202,7 @@ pub fn convert_midi_to_node(
                         }
                         
                         if chords.len() > 1 {
-                            grid.push(format!("[{}]", chords.join(" ")));
+                            grid.push(format!("({})", chords.join(" "))); // Swapped to subdivision syntax
                         } else {
                             grid.push(chords[0].clone());
                         }
@@ -219,7 +219,7 @@ pub fn convert_midi_to_node(
                     // Original non-chord grouping behavior
                     if options.subdivide && starting.len() > 1 {
                         let inner = starting.iter().map(|q| q.3.clone()).collect::<Vec<_>>().join(" ");
-                        grid.push(format!("[{}]", inner));
+                        grid.push(format!("({})", inner)); // Swapped to subdivision syntax
                     } else {
                         grid.push(starting[0].3.clone());
                     }
@@ -279,7 +279,7 @@ pub fn convert_midi_to_node(
                         }
 
                         if chords.len() > 1 {
-                            grid.push(format!("[{}]", chords.join(" ")));
+                            grid.push(format!("({})", chords.join(" "))); // Swapped to subdivision syntax
                         } else {
                             grid.push(chords[0].clone());
                         }
@@ -295,7 +295,7 @@ pub fn convert_midi_to_node(
                     // Original non-chord grouping behavior
                     if options.subdivide && starting.len() > 1 {
                         let inner = starting.iter().map(|q| q.repr.clone()).collect::<Vec<_>>().join(" ");
-                        grid.push(format!("[{}]", inner));
+                        grid.push(format!("({})", inner)); // Swapped to subdivision syntax
                     } else {
                         grid.push(starting[0].repr.clone());
                     }
@@ -314,15 +314,8 @@ pub fn convert_midi_to_node(
 
     let final_string = if options.format == "raw" {
         format!("[ {} ]", grid.join(" "))
-    } else if options.format == "arrange" {
-        let chunks: Vec<_> = grid.chunks(options.grid).collect();
-        let mut segments = Vec::new();
-        for (i, chunk) in chunks.iter().enumerate() {
-            segments.push(format!("({}, {}): [{}]", i, i + 1, chunk.join(" ")));
-        }
-        format!("arrange [ {} ]", segments.join(", "))
     } else {
-        // chain (Run Length Encoding default)
+        // Run Length Encoding mapped to macro block multipliers
         let chunks: Vec<_> = grid.chunks(options.grid).collect();
         let mut rle = Vec::new();
         if !chunks.is_empty() {
@@ -341,9 +334,13 @@ pub fn convert_midi_to_node(
         }
         let mut segments = Vec::new();
         for (c, chunk) in rle {
-            segments.push(format!("{}: [{}]", c, chunk.join(" ")));
+            if c > 1 {
+                segments.push(format!("[ {} ] * {}", chunk.join(" "), c));
+            } else {
+                segments.push(format!("[ {} ]", chunk.join(" ")));
+            }
         }
-        format!("chain [ {} ]", segments.join(", "))
+        segments.join(" ")
     };
 
     if options.debug {

@@ -95,16 +95,13 @@ fn resolve_midi_nodes(
             resolve_midi_nodes(&mut parsed_node, base_dir, node_parser)?;
             *node = parsed_node;
         }
-        Node::Sequence(seq) | Node::Chord(seq) | Node::ShuffledSequence(seq) | Node::Alternator(seq) => {
+        Node::Sequence(seq) | Node::Chord(seq) | Node::ShuffledSequence(seq) | Node::Alternator(seq) | Node::Macro(seq) => {
             for n in seq { resolve_midi_nodes(n, base_dir, node_parser)?; }
         }
         Node::Parallel(layers) | Node::Polymeter(layers) => {
             for layer in layers {
                 for n in layer { resolve_midi_nodes(n, base_dir, node_parser)?; }
             }
-        }
-        Node::Arrange(segments) => {
-            for (_, _, child) in segments { resolve_midi_nodes(child, base_dir, node_parser)?; }
         }
         Node::WithScale(_, child) | Node::Struct(_, child) | Node::Modified(child, _) => {
             resolve_midi_nodes(child, base_dir, node_parser)?;

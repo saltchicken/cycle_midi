@@ -13,7 +13,6 @@ pub enum Modifier {
     Euclidean(u8, u8),
     Span(usize),
     Arp(ArpStyle),
-    Ratchet(u8),
     Stut(u8, f32, f32),
     Humanize(u8, f64),
     Probability(u8),
@@ -48,7 +47,7 @@ pub enum Node {
     ShuffledSequence(Vec<Node>),
     Parallel(Vec<Vec<Node>>),
     Polymeter(Vec<Vec<Node>>),
-    Arrange(Vec<(usize, usize, Box<Node>)>),
+    Macro(Vec<Node>),
     Alternator(Vec<Node>),
     RandomChoice(Vec<(u32, Node)>),
     WithScale(ScaleDef, Box<Node>),
@@ -91,6 +90,7 @@ impl Node {
             Node::Chord(elements)
             | Node::Sequence(elements)
             | Node::ShuffledSequence(elements)
+            | Node::Macro(elements)
             | Node::Alternator(elements) => {
                 for el in elements {
                     el.expand_refs(env, depth)?;
@@ -106,11 +106,6 @@ impl Node {
                     for el in layer {
                         el.expand_refs(env, depth)?;
                     }
-                }
-            }
-            Node::Arrange(segments) => {
-                for (_, _, child) in segments {
-                    child.expand_refs(env, depth)?;
                 }
             }
             Node::WithScale(_, child) => {
@@ -133,48 +128,8 @@ impl Node {
 
     pub fn cycle_length(&self) -> usize {
         match self {
-            Node::Note { .. } | Node::CC { .. } | Node::Rest | Node::Hold | Node::Ref(_, _) | Node::MidiImport(_) => 1,
-            Node::Chord(elements) | Node::Sequence(elements) | Node::ShuffledSequence(elements) => {
-                elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()))
-            }
-            Node::RandomChoice(elements) => elements
-                .iter()
-                .fold(1, |acc, (_, n)| lcm(acc, n.cycle_length())),
-            Node::Alternator(elements) => {
-                let children_lcm = elements.iter().fold(1, |acc, n| lcm(acc, n.cycle_length()));
-                children_lcm * elements.len()
-            }
-            Node::Parallel(layers) => layers.iter().fold(1, |acc, l| {
-                let layer_len = l.iter().fold(1, |a, n| lcm(a, n.cycle_length()));
-                lcm(acc, layer_len)
-            }),
-            Node::Polymeter(layers) => {
-                if layers.is_empty() {
-                    return 1;
-                }
-                let l0 = layers[0].len().max(1);
-                layers.iter().fold(1, |acc, layer| {
-                    let li = layer.len().max(1);
-                    let layer_child_lcm = layer.iter().fold(1, |a, n| lcm(a, n.cycle_length()));
-
-                    let sync_macro_cycles = lcm(l0, li * layer_child_lcm) / l0;
-                    lcm(acc, sync_macro_cycles)
-                })
-            }
-            Node::Arrange(segments) => segments.iter().map(|s| s.1).max().unwrap_or(1).max(1),
-            Node::WithScale(_, child) => child.cycle_length(),
-            Node::Struct(structure, content) => {
-                lcm(structure.cycle_length(), content.cycle_length())
-            }
-            Node::Modified(child, mods) => {
-                let mut len = child.cycle_length();
-                for m in mods {
-                    if let Modifier::Span(span) = m {
-                        len = (*span).max(1);
-                    }
-                }
-                len
-            }
+            Node::Macro(elements) => elements.iter().map(|n| n.cycle_length()).sum::<usize>().max(1),
+            _ => 1, // Everything else fits inside 1 cycle block boundary by design
         }
     }
 }
