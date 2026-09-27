@@ -59,8 +59,15 @@ fn track_modifier() -> impl Parser<char, TrackModifier, Error = Simple<char>> + 
 }
 
 pub fn track_parser<'a>(
-    expr: impl Parser<char, Node, Error = Simple<char>> + Clone + 'a,
+    unary: impl Parser<char, Node, Error = Simple<char>> + Clone + 'a,
 ) -> impl Parser<char, Track, Error = Simple<char>> + Clone + 'a {
+    let layer = unary.padded_by(padding()).repeated().at_least(1).map(|mut seq| {
+        if seq.len() == 1 { seq.remove(0) } else { Node::Macro(seq) }
+    });
+    let parallel = layer.separated_by(pad_char('|')).at_least(1).map(|mut layers| {
+        if layers.len() == 1 { layers.remove(0) } else { Node::Parallel(layers.into_iter().map(|l| vec![l]).collect()) }
+    });
+
     just('!')
         .or_not()
         .map(|m| m.is_some())
@@ -83,9 +90,11 @@ pub fn track_parser<'a>(
         )
         .then_ignore(pad_char(':'))
         .padded_by(padding())
-        .then(expr.padded_by(padding()).repeated().map(Node::Macro))
-        .map(|((((is_muted, ch), modifiers), block_mods), mut root_node)| {
+        .then(parallel.padded_by(padding()).or_not())
+        .map(|((((is_muted, ch), modifiers), block_mods), opt_root_node)| {
             
+            let mut root_node = opt_root_node.unwrap_or_else(|| Node::Macro(vec![]));
+
             // 1. Apply unified block modifiers (`with`) directly to the sequence node first.
             for block_mod in block_mods {
                 root_node = super::modifiers::apply_postfix(root_node, block_mod);

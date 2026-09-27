@@ -7,7 +7,6 @@ module.exports = grammar({
   ],
 
   conflicts: $ => [
-    [$.expr] // Fixes the '.' rest vs '.' method chaining ambiguity
   ],
 
   rules: {
@@ -43,7 +42,7 @@ module.exports = grammar({
         $.identifier, 
         optional(seq('(', sepBy(',', $.identifier), ')')), 
         '=', 
-        repeat1($.expr)
+        optional($._parallel_macro)
     ),
 
     alias_ref: $ => seq(
@@ -57,7 +56,7 @@ module.exports = grammar({
       optional(seq('(', sepBy(',', $.track_modifier), ')')),
       optional(seq('with', repeat1($.postfix))),
       ':',
-      repeat($.expr)
+      optional($._parallel_macro)
     ),
 
     track_modifier: $ => choice(
@@ -68,6 +67,9 @@ module.exports = grammar({
       seq('octave', ':', $.int),
       seq('seed', ':', $.int, optional(seq(choice('m_every', 't_every', 'every'), $.int)))
     ),
+
+    _parallel_macro: $ => sepBy1('|', repeat1($.expr)),
+    _parallel_seq: $ => sepBy1('|', repeat1($.expr)),
 
     expr: $ => seq(
       $._atom,
@@ -83,7 +85,6 @@ module.exports = grammar({
       $.seq_group,
       $.alt_group,
       $.rnd_group,
-      $.par_group,
       $.poly_group,
       $.shuf_group,
       $.struct_group,
@@ -93,15 +94,14 @@ module.exports = grammar({
       $.alias_ref
     ),
 
-    subdivision_group: $ => seq('(', repeat($.expr), ')'),
-    cycle_block: $ => seq('[', repeat($.expr), ']', optional(seq('*', $.int))),
-    seq_group: $ => seq('seq', '(', repeat($.expr), ')'),
+    subdivision_group: $ => seq('(', optional($._parallel_seq), ')'),
+    cycle_block: $ => seq('[', optional($._parallel_seq), ']', optional(seq('*', $.int))),
+    seq_group: $ => seq('seq', '(', optional($._parallel_seq), ')'),
     alt_group: $ => seq('alt', '(', repeat($.expr), ')'),
     
-    rnd_branch: $ => seq(optional(seq($.int, ':')), repeat1($.expr)),
+    rnd_branch: $ => seq(optional(seq($.int, ':')), optional($._parallel_seq)),
     rnd_group: $ => seq('rnd', '(', sepBy(',', $.rnd_branch), ')'),
     
-    par_group: $ => seq('par', '(', sepBy(',', repeat1($.expr)), ')'),
     poly_group: $ => seq('poly', '(', sepBy(',', repeat1($.expr)), ')'),
     shuf_group: $ => seq('shuf', '(', repeat($.expr), ')'),
     struct_group: $ => seq('struct', '(', $.expr, ',', $.expr, ')'),

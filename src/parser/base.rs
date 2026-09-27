@@ -50,7 +50,6 @@ pub fn midi_import() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         
     let bool_lit = kw("true").to(true).or(kw("false").to(false));
 
-    // Loosely parse all values as strings so we can iterate them dynamically
     let kwarg_val = choice((
         string_lit.clone(),
         float_f64().map(|f| f.to_string()),
@@ -130,20 +129,24 @@ pub fn chord_or_note() -> impl Parser<char, Node, Error = Simple<char>> + Clone 
                 .collect::<Vec<_>>()
         });
 
-    choice((numeric_named_chord, single_pitch)).map(|pitches| {
-        if pitches.len() == 1 {
-            Node::Note {
-                pitch: pitches[0].clone(),
-                velocity: 100,
-                gate: 100,
+    choice((numeric_named_chord, single_pitch))
+        .separated_by(pad_char('+'))
+        .at_least(1)
+        .map(|pitch_groups| {
+            let pitches: Vec<Pitch> = pitch_groups.into_iter().flatten().collect();
+            if pitches.len() == 1 {
+                Node::Note {
+                    pitch: pitches[0].clone(),
+                    velocity: 100,
+                    gate: 100,
+                }
+            } else {
+                let notes = pitches.into_iter().map(|p| Node::Note {
+                    pitch: p,
+                    velocity: 100,
+                    gate: 100,
+                }).collect();
+                Node::Chord(notes)
             }
-        } else {
-            let notes = pitches.into_iter().map(|p| Node::Note {
-                pitch: p,
-                velocity: 100,
-                gate: 100,
-            }).collect();
-            Node::Chord(notes)
-        }
-    })
+        })
 }

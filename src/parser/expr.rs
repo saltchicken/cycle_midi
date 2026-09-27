@@ -11,7 +11,7 @@ enum TopLevelItem {
 }
 
 pub fn node_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
-    recursive(move |expr| {
+    recursive(move |unary| {
         let rest = just('.').to(Node::Rest);
         let hold = just('_').to(Node::Hold); 
 
@@ -27,7 +27,7 @@ pub fn node_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
                 }
             })
             .then(
-                expr.clone()
+                unary.clone()
                     .padded_by(padding())
                     .separated_by(pad_char(','))
                     .delimited_by(pad_char('('), pad_char(')'))
@@ -38,16 +38,15 @@ pub fn node_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
         let atom = choice((
             rest,
             hold,
-            super::combinators::with_scale(expr.clone()),
-            super::combinators::subdivision_group(expr.clone()),
-            super::combinators::cycle_block(expr.clone()),
-            super::combinators::seq_group(expr.clone()),
-            super::combinators::alt_group(expr.clone()),
-            super::combinators::rnd_group(expr.clone()),
-            super::combinators::par_group(expr.clone()),
-            super::combinators::poly_group(expr.clone()),
-            super::combinators::shuf_group(expr.clone()),
-            super::combinators::struct_group(expr.clone()),
+            super::combinators::with_scale(unary.clone()),
+            super::combinators::subdivision_group(unary.clone()),
+            super::combinators::cycle_block(unary.clone()),
+            super::combinators::seq_group(unary.clone()),
+            super::combinators::alt_group(unary.clone()),
+            super::combinators::rnd_group(unary.clone()),
+            super::combinators::poly_group(unary.clone()),
+            super::combinators::shuf_group(unary.clone()),
+            super::combinators::struct_group(unary.clone()),
             super::base::midi_import(),
             super::base::cc_parser(),
             super::base::chord_or_note(),
@@ -60,7 +59,15 @@ pub fn node_parser() -> impl Parser<char, Node, Error = Simple<char>> + Clone {
 }
 
 pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
-    let expr = node_parser();
+    let unary = node_parser();
+
+    let layer = unary.clone().padded_by(padding()).repeated().at_least(1).map(|mut seq| {
+        if seq.len() == 1 { seq.remove(0) } else { Node::Macro(seq) }
+    });
+    
+    let parallel = layer.separated_by(pad_char('|')).at_least(1).map(|mut layers| {
+        if layers.len() == 1 { layers.remove(0) } else { Node::Parallel(layers.into_iter().map(|l| vec![l]).collect()) }
+    });
 
     let alias_def = kw("let")
         .ignore_then(
@@ -82,22 +89,10 @@ pub fn mmn_parser() -> impl Parser<char, Program, Error = Simple<char>> {
                 .or_not()
         )
         .then_ignore(pad_char('='))
-        .then(
-            expr.clone()
-                .padded_by(padding())
-                .repeated()
-                .at_least(1)
-                .map(|mut seq| {
-                    if seq.len() == 1 {
-                        seq.remove(0)
-                    } else {
-                        Node::Macro(seq) // Treat as macro blocks
-                    }
-                }),
-        )
-        .map(|((name, params), node)| TopLevelItem::Alias(name, params.unwrap_or_default(), node));
+        .then(parallel.clone().padded_by(padding()).or_not())
+        .map(|((name, params), opt_node)| TopLevelItem::Alias(name, params.unwrap_or_default(), opt_node.unwrap_or_else(|| Node::Macro(vec![]))));
 
-    let track_def = track_parser(expr).map(TopLevelItem::Track);
+    let track_def = super::track::track_parser(unary.clone()).map(TopLevelItem::Track);
 
     let item = choice((alias_def, track_def)).padded_by(padding());
 

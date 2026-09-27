@@ -78,8 +78,6 @@ pub fn convert_midi_to_node(
 ) -> Result<Node, String> {
     let mut full_path = base_dir.join(&options.path);
     
-    // Smart path fallback: If the file isn't in the configured MMN workspace,
-    // check if it exists relative to the directory where you launched the app.
     if !full_path.exists() {
         if let Ok(cwd) = std::env::current_dir() {
             let cwd_path = cwd.join(&options.path);
@@ -180,14 +178,13 @@ pub fn convert_midi_to_node(
                         let mut last_tick = -1.0;
                         
                         for q in &starting {
-                            // 15 ticks gives standard chord 'strums' a 30-40ms grouped tolerance
                             if last_tick < 0.0 || (q.2 - last_tick).abs() < 15.0 {
                                 current_chord.push(q.3.clone());
                             } else {
                                 if current_chord.len() == 1 {
                                     chords.push(current_chord[0].clone());
                                 } else {
-                                    chords.push(format!("par({})", current_chord.join(", ")));
+                                    chords.push(current_chord.join("+"));
                                 }
                                 current_chord = vec![q.3.clone()];
                             }
@@ -197,29 +194,30 @@ pub fn convert_midi_to_node(
                             if current_chord.len() == 1 {
                                 chords.push(current_chord[0].clone());
                             } else {
-                                chords.push(format!("par({})", current_chord.join(", ")));
+                                chords.push(current_chord.join("+"));
                             }
                         }
                         
                         if chords.len() > 1 {
-                            grid.push(format!("({})", chords.join(" "))); // Swapped to subdivision syntax
+                            grid.push(format!("({})", chords.join(" "))); 
                         } else {
                             grid.push(chords[0].clone());
                         }
                     } else {
-                        // Not subdividing: squash all notes in this grid step into a single chord hit
                         if starting.len() == 1 {
                             grid.push(starting[0].3.clone());
                         } else {
-                            let inner = starting.iter().map(|q| q.3.clone()).collect::<Vec<_>>().join(", ");
-                            grid.push(format!("par({})", inner));
+                            let inner = starting.iter().map(|q| q.3.clone()).collect::<Vec<_>>().join("+");
+                            grid.push(inner);
                         }
                     }
                 } else {
-                    // Original non-chord grouping behavior
                     if options.subdivide && starting.len() > 1 {
-                        let inner = starting.iter().map(|q| q.3.clone()).collect::<Vec<_>>().join(" ");
-                        grid.push(format!("({})", inner)); // Swapped to subdivision syntax
+                        let inner = starting.iter().map(|q| q.3.clone()).collect::<Vec<_>>().join(" | ");
+                        grid.push(format!("({})", inner)); 
+                    } else if starting.len() > 1 {
+                        let inner = starting.iter().map(|q| q.3.clone()).collect::<Vec<_>>().join(" | ");
+                        grid.push(format!("({})", inner));
                     } else {
                         grid.push(starting[0].3.clone());
                     }
@@ -264,7 +262,7 @@ pub fn convert_midi_to_node(
                                 if current_chord.len() == 1 {
                                     chords.push(current_chord[0].clone());
                                 } else {
-                                    chords.push(format!("par({})", current_chord.join(", ")));
+                                    chords.push(current_chord.join("+"));
                                 }
                                 current_chord = vec![s.repr.clone()];
                             }
@@ -274,12 +272,12 @@ pub fn convert_midi_to_node(
                             if current_chord.len() == 1 {
                                 chords.push(current_chord[0].clone());
                             } else {
-                                chords.push(format!("par({})", current_chord.join(", ")));
+                                chords.push(current_chord.join("+"));
                             }
                         }
 
                         if chords.len() > 1 {
-                            grid.push(format!("({})", chords.join(" "))); // Swapped to subdivision syntax
+                            grid.push(format!("({})", chords.join(" "))); 
                         } else {
                             grid.push(chords[0].clone());
                         }
@@ -287,15 +285,17 @@ pub fn convert_midi_to_node(
                         if starting.len() == 1 {
                             grid.push(starting[0].repr.clone());
                         } else {
-                            let inner = starting.iter().map(|q| q.repr.clone()).collect::<Vec<_>>().join(", ");
-                            grid.push(format!("par({})", inner));
+                            let inner = starting.iter().map(|q| q.repr.clone()).collect::<Vec<_>>().join("+");
+                            grid.push(inner);
                         }
                     }
                 } else {
-                    // Original non-chord grouping behavior
                     if options.subdivide && starting.len() > 1 {
-                        let inner = starting.iter().map(|q| q.repr.clone()).collect::<Vec<_>>().join(" ");
-                        grid.push(format!("({})", inner)); // Swapped to subdivision syntax
+                        let inner = starting.iter().map(|q| q.repr.clone()).collect::<Vec<_>>().join(" | ");
+                        grid.push(format!("({})", inner));
+                    } else if starting.len() > 1 {
+                        let inner = starting.iter().map(|q| q.repr.clone()).collect::<Vec<_>>().join(" | ");
+                        grid.push(format!("({})", inner));
                     } else {
                         grid.push(starting[0].repr.clone());
                     }
@@ -315,7 +315,6 @@ pub fn convert_midi_to_node(
     let final_string = if options.format == "raw" {
         format!("[ {} ]", grid.join(" "))
     } else {
-        // Run Length Encoding mapped to macro block multipliers
         let chunks: Vec<_> = grid.chunks(options.grid).collect();
         let mut rle = Vec::new();
         if !chunks.is_empty() {
@@ -347,7 +346,6 @@ pub fn convert_midi_to_node(
         println!("\n[DEBUG] MIDI Import Output for '{}':\n{}\n", options.path, final_string);
     }
 
-    // Feed the native Rust generator output straight back through our standard node parser
     parser.parse(final_string)
         .map_err(|errs| {
             let mut msg = String::new();
