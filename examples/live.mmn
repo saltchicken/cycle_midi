@@ -1,20 +1,58 @@
-#BPM=95
-#SCALE=C4 major
+#BPM=80
+#SCALE_SEQ={ (0, 16): E3 major | (16, 32): B3 locrian | (32, 48): A3 locrian | (48, 64): D3 locrian}
 #QUANTIZE=1
 
-let melody = [ 4 3 1 0 ]
+let progression_A =
+  [2+5+7].v(70)
+  [3+5+7].v(70)
+  [3+6+8].v(70)
+  [3+5+7].v(70)
+  [4+6+8].v(70)
+  [1+3+5].v(70)
+  [2+4+6].v(70)
+  [2+5+7].v(70)
 
-T2(octave: 0, speed:2) with .v(127) .g(10):
-  melody
-  [ . . . . ] * 3
 
-!T2(octave: 0) with .v(60):
-  [1+3+5]
-  [1+4+6]
-  [2+5+7]
-  [ . . . .  ]
-|
-  [ . . . . ]
-  [ . . . . ]
-  [ . . . . ]
-  [3.v(100) _ 2.v(100) _]
+let progression_B =
+  [0+2+4].v(70) // I (E)
+  [4+6+8].v(70) // V (B)
+  [2+5+7].v(70) // vi (C#m inverted)
+  [3+5+7].v(70) // IV (A)
+  [0+2+4].v(70) // I (E)
+  [1+3+5].v(70) // ii (F#m)
+  [3+5+7].v(70) // IV (A)
+  [4+6+8].v(70) // V (B)
+
+let progression_C =
+  [1+3+5].v(70) // ii (F#m)
+  [2+4+6].v(70) // iii (G#m)
+  [3+5+7].v(70) // IV (A)
+  [2+4+7].v(70) // I (E major 1st inversion - G# B E)
+  [1+3+5].v(70) // ii (F#m)
+  [2+4+6].v(70) // iii (G#m)
+  [3+5+7].v(70) // IV (A)
+  [4+6+8].v(70) // V (B)
+
+
+let progression_D =
+  [4+6+8].v(70)
+  [1+3+5].v(70)
+  [2+5+7].v(70)
+  [3+6+8].v(70)
+  [4+6+8].v(70)
+  [1+3+5].v(70)
+  [2+4+6].v(70)
+  [2+5+7].v(70)
+
+
+T2(octave: 1, span: 4):
+  progression_A
+  progression_A
+  progression_B
+  progression_B
+  progression_C
+  progression_C
+  progression_D
+  progression_D
+
+
