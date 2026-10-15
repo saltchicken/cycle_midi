@@ -1,0 +1,46 @@
+// =====================================================================
+// Scene: "Tectonic Slow-drift"
+// Style: Generative Ambient / Evolving Drone
+// =====================================================================
+
+#BPM=38
+#QUANTIZE=auto
+
+// Using the algorithmic 'shift' generator to constantly descend.
+// Starting in E2 Phrygian (a dark, mysterious mode), the progression
+// physically shifts down a whole step (-2 semitones) every 8 macro-cycles,
+// creating a feeling of sinking deeper into the earth.
+#SCALE_SEQ=shift(E2 phrygian, -2, 8)
+
+// --- AUTOMATION ---
+// Slow, asymmetrical modulation. A saw wave creates a massive, slow build in
+// expression that abruptly drops, while a sine wave gently rolls the filter.
+let tectonic_rumble = (
+  cc11@saw(30, 95, 0.0125) | 
+  cc74@sine(15, 75, 0.021)
+)
+
+// --- T1: Subterranean Pads ---
+// Dense 7th chords that hold for 8 full macro-cycles, letting the
+// CC automation do all the rhythmic and textural movement.
+!T2(octave: 1, span: 1) with .vel(75) .gate(100):
+  ( [ 0+2+4+6 _ _ _ ] | tectonic_rumble )
+
+// --- T2: Core Drone ---
+// A monstrous, unwavering root and perfect fifth drone anchoring the bottom end.
+!T1(octave: -2, span: 8) with .vel(95) .gate(100):
+  [ 0+4 _ _ _ ]
+
+// --- T3: Stalactite Plucks ---
+// Extremely sparse, randomized high plucks. Using a 16-step Euclidean rhythm
+// with only 3 hits, slowed way down, heavily humanized, and feeding a heavy delay.
+// The ?35 gives each potential note only a 35% chance to actually strike.
+T3(octave: 4, span: 4) with .vel(65) .stut(6, 0.5, 0.375) .E(3, 16) .humanize(15, 100.0):
+  [ 7 6 4 2 ] ?35
+
+// --- T4: Crystal Arp ---
+// A creeping 'pinkyupdown' arp. It repeatedly strikes the highest note of the 
+// cluster (the perfect 5th) while rolling up and down the tense, clustered 
+// lower intervals of the Phrygian mode (Root, minor 2nd, minor 3rd).
+T1(octave: 1, span: 4) with .arp(pinkyupdown) .speed(0.125) .vel(55) .humanize(10, 150.0):
+  [ 0+1+2+4 ]

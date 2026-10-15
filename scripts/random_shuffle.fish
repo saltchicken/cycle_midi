@@ -1,6 +1,6 @@
 #!/usr/bin/env fish
 
-set scene_dir /home/saltchicken/Projects/cycle_midi/examples
+set scene_dir /home/saltchicken/Projects/cycle_midi/examples/ambient
 
 while true
     # Pick a random .mmn file from the directory

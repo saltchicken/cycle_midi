@@ -1,0 +1,47 @@
+// =====================================================================
+// Scene: "Drifting in the Void"
+// Style: Generative Ambient / Evolving Drone
+// =====================================================================
+
+#BPM=50
+#QUANTIZE=auto
+
+// Slowly cycle through modes every 8 macro-cycles (bars) to create an 
+// endless feeling of floating through different emotional states.
+#SCALE_SEQ={ (0, 8): D3 dorian | (8, 16): F3 lydian | (16, 24): A3 dorian | (24, 32): C3 major}
+
+// --- AUTOMATION ---
+// Sending slow, independent LFOs to CC11 (Expression) and CC74 (Filter Cutoff).
+// Because they have different float speeds, they will organically drift in 
+// and out of phase with each other over time.
+let ambient_motion = (
+  cc11@sine(40, 100, 0.0625) | 
+  cc74@tri(20, 90, 0.03125)
+)
+
+// --- T1: Lush Evolving Pads ---
+// A wide 9th chord spanning 8 full cycles. Because we are using the scale 
+// sequence above, playing the root (0) automatically morphs the chord to fit 
+// the current mode perfectly.
+T1(octave: 0, span: 8) with .vel(75) .gate(100):
+  ( [ 0+2+4+6+8 _ _ _ ] | ambient_motion )
+
+// --- T2: Sub / Grounding Drone ---
+// A deep, unwavering root note.
+T2(octave: -2, span: 8) with .vel(85) .gate(100):
+  [ 0 _ _ _ ]
+
+// --- T3: Shimmering Generative Arps ---
+// This uses a `diverge` arp pattern playing at 1/8th normal speed (.speed(0.125)).
+// Heavy humanization (up to 250ms of timing jitter) gives it a loose, 
+// wind-chime-like quality that ignores the rigid MIDI grid.
+T3(octave: 2, span: 4) with .arp(diverge) .speed(0.125) .vel(55) .humanize(25, 250.0):
+  [ 0+2+4+6 ]
+  [ 2+4+6+8 ]
+
+// --- T4: Granular / Delay Plucks ---
+// A Euclidean rhythm (3 hits across 8 steps) feeding a heavy "stut" (delay) modifier.
+// The `?60` applies a 60% probability, meaning these textural notes will 
+// only occasionally strike, letting the delay tails bleed out into the silence.
+T4(octave: 3) with .vel(70) .stut(6, 0.7, 0.25) .E(3, 8) .humanize(10, 50.0):
+  [ 4 6 7 9 ] ?60

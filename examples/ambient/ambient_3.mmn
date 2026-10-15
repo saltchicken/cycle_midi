@@ -1,0 +1,43 @@
+// =====================================================================
+// Scene: "Bioluminescent Deep"
+// Style: Generative Ambient / Evolving Drone
+// =====================================================================
+
+#BPM=45
+#QUANTIZE=auto
+
+// Slowly sink through a mysterious, deep progression over 32 macro-cycles
+#SCALE_SEQ={ (0, 8): F2 lydian | (8, 16): D2 dorian | (16, 24): Bb1 lydian | (24, 32): G1 dorian }
+
+// --- AUTOMATION ---
+// Sending slow, independent LFOs to CC11 (Expression) and CC74 (Filter Cutoff).
+// The prime-number offsets (0.033, 0.015) ensure the swell phases rarely repeat.
+let ocean_currents = (
+  cc11@sine(40, 110, 0.033) | 
+  cc74@tri(20, 85, 0.015)
+)
+
+// --- T1: Abyssal Pads ---
+// Slow, wide 9th chords that stretch across the 8-bar boundaries, layered 
+// with our continuous CC automation to create movement without note triggers.
+T1(octave: 1, span: 8) with .vel(70) .gate(100):
+  ( [ 0+2+4+6+8 _ _ _ ] | ocean_currents )
+
+// --- T2: Leviathan Sub ---
+// Ultra-deep, unrelenting root and 5th drone holding down the harmonic center.
+T2(octave: -1, span: 8) with .vel(90) .gate(100):
+  [ 0+4 _ _ _ ]
+
+// --- T3: Bioluminescent Plucks ---
+// A Euclidean rhythm (5 hits per 16 steps) triggering a lush delay (.stut) network.
+// The `?45` applies a 45% chance to play, creating sparse, scattered textures 
+// that echo off into the distance organically.
+T3(octave: 3, span: 4) with .vel(65) .stut(8, 0.65, 0.125) .E(5, 16) .humanize(15, 60.0):
+  [ 4 8 7 9 ] ?45
+
+// --- T4: Drifting Arp ---
+// A slow, sweeping 'pinkyupdown' arp that glides loosely over the top. 
+// Extreme timing humanization (up to 200ms) breaks it completely off the grid.
+T4(octave: 2, span: 4) with .arp(pinkyupdown) .speed(0.25) .vel(55) .humanize(10, 200.0):
+  [ 0+2+4+6 ]
+  [ 1+3+5+7 ]

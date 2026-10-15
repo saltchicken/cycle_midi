@@ -1,0 +1,46 @@
+// =====================================================================
+// Scene: "Stellar Nursery"
+// Style: Generative Ambient / Evolving Drone
+// =====================================================================
+
+#BPM=42
+#QUANTIZE=auto
+
+// Using the algorithmic circle_of_fifths generator to endlessly rise
+// in tension, shifting the root note up a perfect 5th every 8 macro-cycles.
+// Starting in Lydian gives it an inherently bright, floating, spacey feel.
+#SCALE_SEQ=circle_of_fifths(C2 lydian, 8)
+
+// --- AUTOMATION ---
+// Drifting LFOs for Expression (Volume/Dynamics) and Filter Cutoff.
+// Prime number frequencies (0.029, 0.017) ensure the modulation phases 
+// take a very long time to sync up and repeat exactly.
+let nebula_sweep = (
+  cc11@tri(40, 100, 0.029) | 
+  cc74@sine(20, 85, 0.017)
+)
+
+// --- T1: Nebular Pads ---
+// Lush, wide 9th chords that span across 8 cycles, heavily modulated
+// by our continuous CC sweeps to breathe life into the static triggers.
+T1(octave: 1, span: 8) with .vel(70) .gate(100):
+  ( [ 0+2+4+6+8 _ _ _ ] | nebula_sweep )
+
+// --- T2: Gravitational Sub ---
+// A deep, unrelenting root drone that anchors the floating upper voices.
+T2(octave: -1, span: 8) with .vel(85) .gate(100):
+  [ 0 _ _ _ ]
+
+// --- T3: Stardust Arps ---
+// A slow, converging arpeggiator. Extreme timing humanization (up to 250ms)
+// breaks it completely off the grid for a free-flowing, wind-chime texture.
+T3(octave: 3, span: 4) with .arp(converge) .speed(0.125) .vel(55) .humanize(20, 250.0):
+  [ 0+2+4+6 ]
+  [ 2+4+6+8 ]
+
+// --- T4: Granular Echoes ---
+// Euclidean rhythm (5 hits per 16 steps) feeding a long, shifting delay (.stut).
+// The `?40` probability means each sequence hit only has a 40% chance to 
+// trigger, letting the heavy delay tails bleed out into the silence.
+T4(octave: 4, span: 4) with .vel(65) .stut(8, 0.6, 0.33) .E(5, 16) .humanize(10, 50.0):
+  [ 4 7 6 9 ] ?40
