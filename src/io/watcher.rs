@@ -96,7 +96,7 @@ pub fn start_file_watcher(watch_dir: PathBuf, file_path: PathBuf, tx: Sender<(St
             Err(e) => { eprintln!("Failed to create file watcher debouncer: {}", e); return; }
         };
 
-        if let Err(e) = debouncer.watcher().watch(&watch_dir, RecursiveMode::NonRecursive) {
+        if let Err(e) = debouncer.watcher().watch(&watch_dir, RecursiveMode::Recursive) {
             eprintln!("Failed to watch directory {}: {}", watch_dir.display(), e); return;
         }
 
